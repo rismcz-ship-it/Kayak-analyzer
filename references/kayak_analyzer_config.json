@@ -1,0 +1,12 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Kayak Analyzer Configuration Change",
+  "type": "object",
+  "required": ["weight_kg", "lcg_pct_lwl", "kg_mm"],
+  "properties": {
+    "weight_kg": { "type": "number", "minimum": 0, "description": "Target all-up weight in kg" },
+    "lcg_pct_lwl": { "type": "number", "minimum": 0, "maximum": 100, "description": "LCG as percentage of LWL from bow" },
+    "kg_mm": { "type": "number", "minimum": 0, "description": "Vertical center of gravity above keel in mm" },
+    "note": { "type": "string", "description": "Reason for change (e.g. 'added seat', 'changed battery position')" }
+  }
+}

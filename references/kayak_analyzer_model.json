@@ -1,0 +1,24 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Kayak Analyzer Model Upload",
+  "type": "object",
+  "required": ["file_name", "file_hash", "volume_liters", "bbox_mm", "watertight", "units"],
+  "properties": {
+    "file_name": { "type": "string", "description": "Original STL filename" },
+    "file_hash": { "type": "string", "description": "SHA256 of file content for deduplication" },
+    "volume_liters": { "type": "number", "minimum": 0, "description": "Enclosed volume in liters (Bearboat reference)" },
+    "bbox_mm": {
+      "type": "object",
+      "required": ["length", "beam", "draft"],
+      "properties": {
+        "length": { "type": "number" },
+        "beam": { "type": "number" },
+        "draft": { "type": "number" }
+      },
+      "description": "Bounding box in mm: length (LOA), beam (BOA), draft"
+    },
+    "watertight": { "type": "boolean", "description": "True if mesh is closed/manifold" },
+    "units": { "type": "string", "enum": ["mm"], "description": "Solver units are mm" },
+    "notes": { "type": "string", "description": "e.g. 'not watertight - open cockpit'" }
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Kayak Analyzer Repo Sync",
+  "type": "object",
+  "required": ["commit_hash", "branch", "files_changed"],
+  "properties": {
+    "commit_hash": { "type": "string", "description": "Full or short git commit hash" },
+    "branch": { "type": "string", "description": "Git branch name" },
+    "files_changed": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "List of files added, modified, or deleted"
+    },
+    "note": { "type": "string", "description": "Summary of the commit changes" }
+  }
+}

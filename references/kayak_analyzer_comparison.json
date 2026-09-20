@@ -1,0 +1,23 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Kayak Analyzer Iteration Comparison",
+  "type": "object",
+  "required": ["base_model_hash", "compare_model_hash", "delta"],
+  "properties": {
+    "base_model_hash": { "type": "string", "description": "SHA256 of baseline model (e.g. v1)" },
+    "compare_model_hash": { "type": "string", "description": "SHA256 of comparison model (e.g. v2)" },
+    "delta": {
+      "type": "object",
+      "properties": {
+        "draft_mm": { "type": "number" },
+        "trim_deg": { "type": "number" },
+        "lwl_mm": { "type": "number" },
+        "bwl_mm": { "type": "number" },
+        "volume_liters": { "type": "number" },
+        "lcb_shift_mm": { "type": "number" },
+        "gx_mm": { "type": "number", "description": "GZ at 10deg heel if available" }
+      }
+    },
+    "note": { "type": "string", "description": "Design rationale (e.g. 'widened bow for more buoyancy')" }
+  }
+}

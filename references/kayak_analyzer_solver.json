@@ -1,0 +1,47 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Kayak Analyzer Solver Run",
+  "type": "object",
+  "required": ["model_hash", "targets", "results", "phase"],
+  "properties": {
+    "model_hash": { "type": "string", "description": "SHA256 of the STL model used" },
+    "targets": {
+      "type": "object",
+      "required": ["weight_kg", "lcg_pct_lwl", "kg_mm"],
+      "properties": {
+        "weight_kg": { "type": "number", "minimum": 0 },
+        "lcg_pct_lwl": { "type": "number", "minimum": 0, "maximum": 100, "description": "LCG as % of LWL from bow" },
+        "kg_mm": { "type": "number", "minimum": 0, "description": "Vertical center of gravity above keel in mm" }
+      }
+    },
+    "results": {
+      "type": "object",
+      "required": ["draft_mm", "trim_deg", "lwl_mm", "bwl_mm", "volume_liters", "lcb_xyz", "lcg_xyz", "waterline_polygon"],
+      "properties": {
+        "draft_mm": { "type": "number" },
+        "trim_deg": { "type": "number" },
+        "lwl_mm": { "type": "number", "description": "Length of waterline in mm" },
+        "bwl_mm": { "type": "number", "description": "Beam at waterline in mm" },
+        "volume_liters": { "type": "number", "description": "Displaced volume in liters" },
+        "lcb_xyz": { "type": "array", "items": { "type": "number" }, "minItems": 3, "maxItems": 3, "description": "LCB in mm [x, y, z]" },
+        "lcg_xyz": { "type": "array", "items": { "type": "number" }, "minItems": 3, "maxItems": 3, "description": "LCG in mm [x, y, z]" },
+        "waterline_polygon": { "type": "array", "items": { "type": "array", "items": { "type": "number" } }, "description": "Waterline polygon points [x, y] in mm" }
+      }
+    },
+    "coefficients": {
+      "type": "object",
+      "properties": {
+        "cp": { "type": "number" },
+        "cm": { "type": "number" },
+        "cb": { "type": "number" },
+        "kb_mm": { "type": "number" },
+        "bm_mm": { "type": "number" },
+        "km_mm": { "type": "number" },
+        "gm_mm": { "type": "number" }
+      }
+    },
+    "phase": { "type": "string", "enum": ["draft_only", "trim_lcg_lcb", "full_coefficients"] },
+    "solver_time_ms": { "type": "number" },
+    "stations_csv_path": { "type": "string", "description": "Path to stations.csv (20 stations)" }
+  }
+}
