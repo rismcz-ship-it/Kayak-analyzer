@@ -1,16 +1,17 @@
-# kayak-analyzer
+# Kayak Hydrostatics Analyzer
 
-Static kayak float + stability viewer (school project).
-Local web app: upload STL every run, set weight + balance, see waterline.
+Interactive 3D web tool for analyzing kayak hull hydrostatics, stability, and waterlines from STL models.
 
-## Run
+## Quick Start
 ```bash
 npm install
 npm run dev
 ```
 
-## Test hull
-`C:\Users\Richard Malán\Downloads\Kayak v2.stl`
+## Features
+- 3D STL hull visualization with Three.js
+- Waterline plane calculation based on paddler + gear weight
+- LCB (Center of Buoyancy) vs LCG (Center of Gravity) trim indicator
 
-## Workflow
-OpenCode writes code, I do all git commits myself.
+## Test Hull
+Sample file located in: `Kayak v2.stl`
