@@ -4,7 +4,7 @@
 Local web app for static kayak hydrostatics analysis.
 - **Frontend**: Vite + TypeScript + React/Three.js (STL rendering, slice visualization).
 - **Backend/Solver**: Python (FastAPI, trimesh, numpy, scipy) or client-side Three.js math.
-- **Goal**: Upload STL -> calculate enclosed volume, draft at target weight, LCG/LCB, waterline polygon.
+- **Goal**: Upload STL -> calculate enclosed volume, draft at target weight, LCG/LCB, waterline polygon, ability to rerun with new trim settings.
 
 ## Invariants & Math Conventions (FROZEN SPEC)
 - **Coordinate System**: Bow = +Z, Stern = -Z, Up = +Y, Starboard = +X.

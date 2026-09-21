@@ -12,6 +12,3 @@ npm run dev
 - 3D STL hull visualization with Three.js
 - Waterline plane calculation based on paddler + gear weight
 - LCB (Center of Buoyancy) vs LCG (Center of Gravity) trim indicator
-
-## Test Hull
-Sample file located in: `Kayak v2.stl`
