@@ -22,3 +22,7 @@ Before completing any task:
 1. Run build/typecheck: `npm run build` (or TypeScript compile check).
 2. For solver tasks: Verify against known test hulls (e.g. 100 mm box = 1,000,000 mm3 = 1 L).
 3. Ensure no unhandled runtime errors in the browser console.
+
+## Keep it simple
+- simple but complete is efficient
+- don't complicate it
