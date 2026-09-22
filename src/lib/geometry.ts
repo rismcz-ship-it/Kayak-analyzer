@@ -113,16 +113,17 @@ function isEvenPermutation(perm: readonly [AxisKey, AxisKey, AxisKey]): boolean 
   return inversions % 2 === 0
 }
 
-/** Reorder vertex coordinates so `perm[0]` becomes X, `perm[1]` Y, `perm[2]` Z. */
-function applyAxisMapping(
+/** Reorder vertex coordinates and apply signs. */
+function applyAxisMappingWithSigns(
   positions: Float32Array,
   perm: readonly [AxisKey, AxisKey, AxisKey],
+  signs: readonly [number, number, number],
 ): void {
   const src = new Float32Array(positions)
   for (let i = 0; i < positions.length; i += 3) {
-    positions[i] = src[i + AXIS_INDEX[perm[0]]]
-    positions[i + 1] = src[i + AXIS_INDEX[perm[1]]]
-    positions[i + 2] = src[i + AXIS_INDEX[perm[2]]]
+    positions[i] = src[i + AXIS_INDEX[perm[0]]] * signs[0]
+    positions[i + 1] = src[i + AXIS_INDEX[perm[1]]] * signs[1]
+    positions[i + 2] = src[i + AXIS_INDEX[perm[2]]] * signs[2]
   }
 }
 
@@ -180,59 +181,125 @@ export function applyRotateY90(positions: Float32Array): void {
   }
 }
 
+/** 90° rotation about the Z axis: X' = -Y, Y' = X (det = +1). */
+export function applyRotateZ90(positions: Float32Array): void {
+  for (let i = 0; i < positions.length; i += 3) {
+    const x = positions[i]
+    const y = positions[i + 1]
+    positions[i] = -y
+    positions[i + 1] = x
+  }
+}
+
+/**
+ * 180° rotation about the Z (vertical) axis: X' = -X, Y' = -Y (det = +1).
+ * Flips bow ↔ stern while keeping deck-up. Equivalent to two Rot Z clicks,
+ * provided as a single deterministic step so users don't have to count.
+ */
+export function applyRotateZ180(positions: Float32Array): void {
+  for (let i = 0; i < positions.length; i += 3) {
+    positions[i] = -positions[i]
+    positions[i + 1] = -positions[i + 1]
+  }
+}
+
+/**
+ * Pitch rotation about the transverse Y axis by `thetaRad` radians,
+ * pivoting about `(pivotX, pivotZ)` (e.g. LCG or bounding-box center).
+ * Positive theta = bow UP (marine trim convention).
+ * Det = +1 (proper rotation), preserving winding / normals / volume.
+ */
+export function applyPitchY(
+  positions: Float32Array,
+  thetaRad: number,
+  pivotX = 0,
+  pivotZ = 0,
+): void {
+  if (Math.abs(thetaRad) < 1e-12) return
+  const c = Math.cos(thetaRad)
+  const s = Math.sin(thetaRad)
+  for (let i = 0; i < positions.length; i += 3) {
+    const x = positions[i] - pivotX
+    const z = positions[i + 2] - pivotZ
+    // Marine convention: positive pitch = bow up.
+    // Standard RH rotation around +Y gives bow down for positive theta.
+    // Flip sign of sin terms to get bow up for positive theta.
+    positions[i] = x * c - z * s + pivotX
+    positions[i + 2] = x * s + z * c + pivotZ
+  }
+}
+
 /**
  * Auto-orient a hull to the app's internal axes — longest extent on X (length),
  * middle on Y (beam), shortest on Z (depth / up) — when incoming STL axes are
- * arbitrary. The axis swap is always an even permutation (a proper rotation,
- * det = +1) so winding / normals / signed volume stay valid. After sorting, if
- * the vertex-average centroid lies below the bounding-box center the hull is
- * treated as keel-up and Z is flipped deck-up: a closed/decked hull
- * concentrates volume toward the flat deck (e.g. triangular midship section
- * with its centroid 1/3 off the deck), so deck-up puts the centroid in the
- * top half, while keel-up puts it in the bottom half.
+ * arbitrary. It uses a proper rotation (det = +1) to preserve triangle winding,
+ * signs of signed volume and outward normals. If the orientation requires an
+ * odd permutation of coordinates, it mirrors the Y axis (lateral symmetry)
+ * instead of swapping axes, guaranteeing that length is always on X, beam on Y,
+ * and depth on Z. After re-orienting, it checks if the hull is keel-up and flips Z
+ * if needed to ensure the deck is up.
  *
  * Mutates `positions` in place and returns a short human-readable note of the
- * change (e.g. which axes were swapped).
+ * change.
  */
 export function autoOrientToZUp(positions: Float32Array): string {
   const bounds = computeBounds(positions)
-  const axes: [AxisKey, number][] = [
-    ['x', bounds.size.x],
-    ['y', bounds.size.y],
-    ['z', bounds.size.z],
+  const axes: { name: AxisKey; size: number }[] = [
+    { name: 'x', size: bounds.size.x },
+    { name: 'y', size: bounds.size.y },
+    { name: 'z', size: bounds.size.z },
   ]
-  axes.sort((a, b) => b[1] - a[1])
+  // Sort axes descending by size
+  axes.sort((a, b) => b.size - a.size)
 
-  let perm: [AxisKey, AxisKey, AxisKey] = [axes[0][0], axes[1][0], axes[2][0]]
-  // An odd permutation is a reflection (det = -1) and would invert winding.
-  // Swap the last two axes to reach the nearest even permutation (det = +1).
-  // This deliberately keeps the longest extent on X (LOA); only beam/depth
-  // (Y/Z) may be swapped versus the ideal sort, which is the least harmful
-  // compromise since a proper rotation cannot realise an odd permutation.
+  const perm: [AxisKey, AxisKey, AxisKey] = [axes[0].name, axes[1].name, axes[2].name]
+  const signs: [number, number, number] = [1, 1, 1]
+
+  // If the axis permutation is odd, we negate the Y axis to ensure det = +1 (proper rotation).
+  // This preserves winding and volume sign, and since kayaks are laterally symmetric,
+  // mirroring Y is completely harmless and visually identical.
   if (!isEvenPermutation(perm)) {
-    perm = [perm[0], perm[2], perm[1]]
+    signs[1] = -1
   }
 
   const notes: string[] = []
+  const identity = perm[0] === 'x' && perm[1] === 'y' && perm[2] === 'z' && signs[1] === 1
 
-  const identity = perm[0] === 'x' && perm[1] === 'y' && perm[2] === 'z'
   if (!identity) {
-    applyAxisMapping(positions, perm)
+    applyAxisMappingWithSigns(positions, perm, signs)
+    const mirrorStr = signs[1] === -1 ? ' (mirrored Y)' : ''
     notes.push(
-      `Reoriented: X←${perm[0].toUpperCase()}, Y←${perm[1].toUpperCase()}, Z←${perm[2].toUpperCase()}`,
+      `Reoriented: X←${perm[0].toUpperCase()}, Y←${perm[1].toUpperCase()}${mirrorStr}, Z←${perm[2].toUpperCase()}`,
     )
   }
 
   const oriented = computeBounds(positions)
   let centroidZ = 0
-  for (let i = 2; i < positions.length; i += 3) {
-    centroidZ += positions[i]
+  let centroidX = 0
+  const vertCount = positions.length / 3
+  for (let i = 0; i < positions.length; i += 3) {
+    centroidX += positions[i]
+    centroidZ += positions[i + 2]
   }
-  centroidZ /= positions.length / 3
+  centroidX /= vertCount
+  centroidZ /= vertCount
 
   if (centroidZ < oriented.center.z) {
     applyFlipZ(positions)
     notes.push('Flipped Z for deck-up')
+  }
+
+  // Bow vs Stern detection along X using VOLUME centroid (not vertex centroid).
+  // Vertex centroid is biased by STL tessellation density (more triangles at complex stern/cockpit).
+  // Volume centroid accurately represents the hull's mass distribution.
+  // Kayak bow is sharper/finer (less volume/width) than the stern/cockpit region,
+  // so the volume centroid sits towards the stern.
+  // If volumeCentroidX > center.x, the fuller stern is at +X and bow is at -X -> flip 180° around Z.
+  const vol = computeVolumeAndCentroid(positions)
+  const volumeCentroidX = vol.centroid.x
+  if (volumeCentroidX > oriented.center.x) {
+    applyRotateZ180(positions)
+    notes.push('Rotated Z 180° (bow → +X)')
   }
 
   return notes.length > 0 ? notes.join(' · ') : 'Already X-length · Y-beam · Z-up'
@@ -285,6 +352,61 @@ export function computeVolumeMm3(positions: Float32Array): number {
       az * (bx * cy - by * cx)
   }
   return Math.abs(sum) / 6
+}
+
+export interface VolumeCentroid {
+  volumeMm3: number
+  centroid: Vec3
+}
+
+/**
+ * Compute signed volume and 3D centroid of a closed triangle mesh
+ * using the divergence theorem / signed tetrahedra integration.
+ */
+export function computeVolumeAndCentroid(positions: Float32Array): VolumeCentroid {
+  let vSigned = 0
+  let mx = 0
+  let my = 0
+  let mz = 0
+
+  for (let i = 0; i < positions.length; i += 9) {
+    const ax = positions[i]
+    const ay = positions[i + 1]
+    const az = positions[i + 2]
+    const bx = positions[i + 3]
+    const by = positions[i + 4]
+    const bz = positions[i + 5]
+    const cx = positions[i + 6]
+    const cy = positions[i + 7]
+    const cz = positions[i + 8]
+
+    // 6 * signed tetrahedron volume
+    const v6 =
+      ax * (by * cz - bz * cy) +
+      ay * (bz * cx - bx * cz) +
+      az * (bx * cy - by * cx)
+
+    vSigned += v6 / 6
+
+    // Centroid of tetrahedron is (A+B+C)/4, weighted by v6 / 6
+    const factor = v6 / 24
+    mx += factor * (ax + bx + cx)
+    my += factor * (ay + by + cy)
+    mz += factor * (az + bz + cz)
+  }
+
+  if (Math.abs(vSigned) < 1e-12) {
+    return { volumeMm3: 0, centroid: { x: 0, y: 0, z: 0 } }
+  }
+
+  return {
+    volumeMm3: Math.abs(vSigned),
+    centroid: {
+      x: mx / vSigned,
+      y: my / vSigned,
+      z: mz / vSigned,
+    },
+  }
 }
 
 /** Total area of all triangles (Heron-free, cross-product form). */

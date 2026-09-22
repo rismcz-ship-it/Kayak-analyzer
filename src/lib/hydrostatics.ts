@@ -6,7 +6,12 @@
 // - Fresh water: rho = 1000 kg/m^3, so 1 kg <-> 1 L <-> 1_000_000 mm^3.
 // - Zero trim means the waterplane is horizontal (no heel, no trim angle).
 
-import { computeBounds } from './geometry'
+import {
+  applyPitchY,
+  computeBounds,
+  computeVolumeAndCentroid,
+  type Vec3,
+} from './geometry'
 
 /** Minimal hull input: flat interleaved xyz Float32Array (stride 9 per tri). */
 export interface Mesh {
@@ -26,6 +31,8 @@ export interface Draft0TrimResult {
   /** displacedVolumeMm3 / 1e6 — should equal targetKg for fresh water. */
   displacementKg: number
   targetKg: number
+  /** Center of Buoyancy (LCB) in mesh coordinates. */
+  lcb: Vec3
   /** Waterplane (cap) area at the waterline, mm^2. */
   waterplaneAreaMm2: number
   /** Sweep step used (1 mm planes, per spec). */
@@ -33,6 +40,31 @@ export interface Draft0TrimResult {
   /** Number of waterplane evaluations during the sweep. */
   planesEvaluated: number
   /** True when the bracket + verification volume closed on the target. */
+  converged: boolean
+}
+
+export interface TrimSolveResult {
+  /** Equilibrium trim angle in degrees (+ = bow up, - = bow down). */
+  trimDeg: number
+  /** Equilibrium draft at hull center (above keel) in mm. */
+  draftMm: number
+  /** Waterline Z at center in mesh coordinates. */
+  waterlineZ: number
+  /** Displaced volume in mm^3. */
+  displacedVolumeMm3: number
+  /** Displaced mass in kg. */
+  displacementKg: number
+  targetKg: number
+  /** Center of Buoyancy in hull coordinates. */
+  lcb: Vec3
+  /** Target Center of Gravity in hull coordinates. */
+  lcg: Vec3
+  /** Longitudinal offset between LCB and LCG (|LCB_x - LCG_x|) in mm. */
+  lcbLcgOffsetMm: number
+  /** Waterplane area in mm^2. */
+  waterplaneAreaMm2: number
+  /** Total evaluations across trim sweep. */
+  planesEvaluated: number
   converged: boolean
 }
 
@@ -364,20 +396,22 @@ export function find_draft_0trim(mesh: MeshLike, target_kg: number): Draft0TrimR
   planesEvaluated++
 
   // Degenerate case: target equals total volume — floating at the deck edge.
-  if (upperV <= targetVolumeMm3) {
-    const { waterplaneAreaMm2 } = clipBelowPlane(positions, upperH)
-    return {
-      draftMm: maxZ - minZ,
-      waterlineZ: maxZ,
-      displacedVolumeMm3: upperV,
-      displacementKg: upperV / MM3_PER_KG,
-      targetKg: target_kg,
-      waterplaneAreaMm2,
-      stepMm,
-      planesEvaluated,
-      converged: Math.abs(upperV - targetVolumeMm3) / targetVolumeMm3 < 1e-6,
+    if (upperV <= targetVolumeMm3) {
+      const { clipped, waterplaneAreaMm2 } = clipBelowPlane(positions, upperH)
+      const { centroid: lcb } = computeVolumeAndCentroid(clipped)
+      return {
+        draftMm: maxZ - minZ,
+        waterlineZ: maxZ,
+        displacedVolumeMm3: upperV,
+        displacementKg: upperV / MM3_PER_KG,
+        targetKg: target_kg,
+        lcb,
+        waterplaneAreaMm2,
+        stepMm,
+        planesEvaluated,
+        converged: Math.abs(upperV - targetVolumeMm3) / targetVolumeMm3 < 1e-6,
+      }
     }
-  }
 
   let lowerH = upperH
   let lowerV = upperV
@@ -415,10 +449,15 @@ export function find_draft_0trim(mesh: MeshLike, target_kg: number): Draft0TrimR
   // Verification pass: clip exactly at the interpolated waterline so the
   // returned displacement is a measured mesh volume, not the interpolation.
   const { clipped, waterplaneAreaMm2 } = clipBelowPlane(positions, waterlineZ)
-  const verifiedVolumeMm3 = clipped.length === 0 ? 0 : Math.abs(signedVolumeMm3(clipped))
-  planesEvaluated += 1
+    const { volumeMm3: verifiedVolumeMm3, centroid: lcb } =
+      computeVolumeAndCentroid(clipped)
+    planesEvaluated += 1
 
-  const displacementKg = verifiedVolumeMm3 / MM3_PER_KG
+    // Force transverse symmetry: LCB Y = hull centerline
+    const boundsForLcb = computeBounds(positions)
+    lcb.y = boundsForLcb.center.y
+
+    const displacementKg = verifiedVolumeMm3 / MM3_PER_KG
   const relErr = Math.abs(verifiedVolumeMm3 - targetVolumeMm3) / targetVolumeMm3
 
   return {
@@ -427,9 +466,116 @@ export function find_draft_0trim(mesh: MeshLike, target_kg: number): Draft0TrimR
     displacedVolumeMm3: verifiedVolumeMm3,
     displacementKg,
     targetKg: target_kg,
+    lcb,
     waterplaneAreaMm2,
     stepMm,
     planesEvaluated,
     converged: relErr < 0.01,
+  }
+}
+
+/**
+ * Trim & LCG/LCB equilibrium solver.
+ *
+ * Sweeps pitch angles between -maxTrimDeg and +maxTrimDeg in trimStepDeg increments.
+ * For each candidate pitch angle, finds the equilibrium draft for targetKg,
+ * computes the resulting Center of Buoyancy (LCB), and identifies the pitch angle
+ * that aligns LCB longitudinally with the target LCG (minimizing |LCB_x - LCG_x|).
+ */
+export function solve_trim(
+  mesh: MeshLike,
+  target_kg: number,
+  options?: {
+    targetLcgPercentFromBow?: number // e.g. 52% default
+    maxTrimDeg?: number // default 3 deg
+    trimStepDeg?: number // default 0.1 deg
+  },
+): TrimSolveResult {
+  const positions = toPositions(mesh)
+  if (positions.length === 0) throw new Error('solve_trim: empty mesh')
+
+  const bounds = computeBounds(positions)
+  const lengthX = bounds.size.x
+  const bowX = bounds.max.x
+
+  const targetLcgPercent = options?.targetLcgPercentFromBow ?? 52
+  // Bow is at max X; stern is at min X
+  const targetLcgX = bowX - (targetLcgPercent / 100) * lengthX
+  const lcg: Vec3 = {
+    x: targetLcgX,
+    y: bounds.center.y,
+    z: bounds.min.z + 280, // Default KG 280mm above keel
+  }
+
+  const maxTrimDeg = options?.maxTrimDeg ?? 4.5
+    const stepDeg = options?.trimStepDeg ?? 0.1
+
+  let bestAngleDeg = 0
+  let bestOffset = Infinity
+  let bestResult: Draft0TrimResult | null = null
+  let totalPlanes = 0
+
+  // Working copy of positions to avoid mutating source mesh during pitch sweeps
+  const workingPositions = new Float32Array(positions.length)
+
+  for (let deg = -maxTrimDeg; deg <= maxTrimDeg + 1e-6; deg += stepDeg) {
+    const rad = (deg * Math.PI) / 180
+    workingPositions.set(positions)
+    applyPitchY(workingPositions, rad, targetLcgX, bounds.center.z)
+
+    try {
+      const res = find_draft_0trim(workingPositions, target_kg)
+      totalPlanes += res.planesEvaluated
+
+      // Rotate LCB back to original un-pitched coordinates.
+      // applyPitchY for +rad gives:
+      //   x' = (x - pivotX)*cos(rad) - (z - pivotZ)*sin(rad) + pivotX
+      //   z' = (x - pivotX)*sin(rad) + (z - pivotZ)*cos(rad) + pivotZ
+      // Un-pitching (inverse matrix with -rad) translates res.lcb back to original space:
+      const cosA = Math.cos(rad)
+      const sinA = Math.sin(rad)
+      const rx = res.lcb.x - targetLcgX
+      const rz = res.lcb.z - bounds.center.z
+      const origLcbX = rx * cosA + rz * sinA + targetLcgX
+      const origLcbY = bounds.center.y // Force transverse symmetry
+      const origLcbZ = -rx * sinA + rz * cosA + bounds.center.z
+
+      const offset = Math.abs(origLcbX - targetLcgX)
+      if (offset < bestOffset) {
+        bestOffset = offset
+        bestAngleDeg = deg
+        bestResult = {
+          ...res,
+          lcb: { x: origLcbX, y: origLcbY, z: origLcbZ },
+        }
+      }
+    } catch {
+      // Continue if one extreme angle fails to bracket
+    }
+  }
+
+  if (!bestResult) {
+      const fallback = find_draft_0trim(positions, target_kg)
+      bestResult = {
+        ...fallback,
+        lcb: { ...fallback.lcb, y: bounds.center.y }, // Force centerline
+      }
+      bestAngleDeg = 0
+      bestOffset = Math.abs(bestResult.lcb.x - targetLcgX)
+    }
+
+  return {
+    trimDeg: Number(bestAngleDeg.toFixed(2)),
+    draftMm: bestResult.draftMm,
+    waterlineZ: bestResult.waterlineZ,
+    displacedVolumeMm3: bestResult.displacedVolumeMm3,
+    displacementKg: bestResult.displacementKg,
+    targetKg: target_kg,
+    lcb: bestResult.lcb,
+    lcg,
+    lcbLcgOffsetMm: bestOffset,
+    waterplaneAreaMm2: bestResult.waterplaneAreaMm2,
+    planesEvaluated: totalPlanes,
+    converged: bestOffset < 15.0, // within 15mm alignment or best reachable
   }
 }

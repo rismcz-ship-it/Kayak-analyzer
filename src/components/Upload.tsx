@@ -1,7 +1,7 @@
 import { type DragEvent, useCallback, useRef, useState } from 'react'
 import { STLLoader } from 'three/addons/loaders/STLLoader.js'
 import type { BufferGeometry } from 'three'
-import { analyzeMesh, autoOrientToZUp, centerToOrigin, computeBounds, type MeshStats } from '../lib/geometry'
+import { analyzeMesh, centerToOrigin, computeBounds, type MeshStats } from '../lib/geometry'
 
 export const MAX_UPLOAD_BYTES = 25 * 1024 * 1024 // 25 MB cap, in-memory only
 
@@ -38,28 +38,24 @@ export default function Upload({ onLoaded, compact = false }: UploadProps) {
         return
       }
       setError(null)
-      setBusy(true)
-      try {
-        const buffer = await file.arrayBuffer()
-        const geometry = new STLLoader().parse(buffer) // non-indexed, mm units
+            setBusy(true)
+            try {
+              const buffer = await file.arrayBuffer()
+              const geometry = new STLLoader().parse(buffer) // non-indexed, mm units
 
-        // Incoming STL axes are arbitrary (Fusion 360, Thingiverse, …);
-        // auto-detect longest→X (LOA), middle→Y (beam), shortest→Z (depth)
-        // with a proper rotation, then flip deck-up. (see autoOrientToZUp
-        // in src/lib/geometry.ts)
-        const positions = geometry.getAttribute('position').array as Float32Array
-        let orientNote = autoOrientToZUp(positions)
-        // Recenter so the bounding-box center sits at the origin; stats are
-        // computed after this so displayed bounds/volume match.
-        const preCenter = computeBounds(positions).center
-        centerToOrigin(positions)
-        const dx = -preCenter.x
-        const dy = -preCenter.y
-        const dz = -preCenter.z
-        orientNote += ` · recentered by (${dx.toFixed(1)}, ${dy.toFixed(1)}, ${dz.toFixed(1)}) mm`
-        geometry.computeVertexNormals()
+              const positions = geometry.getAttribute('position').array as Float32Array
 
-        const stats = analyzeMesh(positions)
+              // NO auto-orient — keep raw STL axes so user can rotate manually with Rot buttons.
+              // Just center at origin so the model loads in view.
+              const preCenter = computeBounds(positions).center
+              centerToOrigin(positions)
+              const dx = -preCenter.x
+              const dy = -preCenter.y
+              const dz = -preCenter.z
+              const orientNote = `Raw STL axes · centered by (${dx.toFixed(1)}, ${dy.toFixed(1)}, ${dz.toFixed(1)}) mm`
+              geometry.computeVertexNormals()
+
+              const stats = analyzeMesh(positions)
         onLoaded({
           id: Date.now(),
           fileName: file.name,

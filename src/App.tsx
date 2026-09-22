@@ -3,11 +3,13 @@ import Upload, { type LoadedMesh } from './components/Upload';
 import Viewer3D from './components/Viewer3D';
 import {
   analyzeMesh,
-  centerToOrigin,
+  autoOrientToZUp,
 } from './lib/geometry';
 import {
   find_draft_0trim,
+  solve_trim,
   type Draft0TrimResult,
+  type TrimSolveResult,
 } from './lib/hydrostatics';
 
 const fmt = (v: number, digits = 1) =>
@@ -26,12 +28,22 @@ function positionsOf(mesh: LoadedMesh): Float32Array {
   return mesh.geometry.getAttribute('position').array as Float32Array;
 }
 
+function refreshGeometry(mesh: LoadedMesh, orientNote?: string): LoadedMesh {
+  mesh.geometry.getAttribute('position').needsUpdate = true;
+  mesh.geometry.computeVertexNormals();
+  mesh.geometry.computeBoundingBox();
+  const stats = analyzeMesh(positionsOf(mesh));
+  return orientNote ? { ...mesh, id: Date.now(), stats, orientNote } : { ...mesh, id: Date.now(), stats };
+}
+
 export default function App() {
   const [mesh, setMesh] = useState<LoadedMesh | null>(null);
   const [draftResult, setDraftResult] = useState<Draft0TrimResult | null>(null);
+  const [trimResult, setTrimResult] = useState<TrimSolveResult | null>(null);
   const [draftError, setDraftError] = useState<string | null>(null);
   const [isCalculating, setIsCalculating] = useState(false);
   const [targetWeight, setTargetWeight] = useState(75); // kg, fresh water 1 kg = 1 L
+  const [targetLcgPercent, setTargetLcgPercent] = useState(52); // % from bow
   const calcToken = useRef(0);
 
   const handleLoaded = useCallback((next: LoadedMesh) => {
@@ -39,22 +51,15 @@ export default function App() {
       if (prev) prev.geometry.dispose();
       return next;
     });
-    // Invalidate stale hydrostatics immediately; the effect below recomputes.
+    // Invalidate stale hydrostatics immediately. No auto-calculation here —
+    // the user must orient the hull then click "Calculate Draft".
     setDraftResult(null);
-    setDraftError(null);
-  }, []);
-
-  const clear = useCallback(() => {
-    setMesh((prev) => {
-      prev?.geometry.dispose();
-      return null;
-    });
-    setDraftResult(null);
+    setTrimResult(null);
     setDraftError(null);
   }, []);
 
   const runCalculation = useCallback(
-    (weightKg: number, current: LoadedMesh) => {
+    (weightKg: number, lcgPercent: number, current: LoadedMesh) => {
       const token = ++calcToken.current;
       setIsCalculating(true);
       setDraftError(null);
@@ -68,22 +73,27 @@ export default function App() {
             throw new Error('Empty mesh — the STL contained no triangles.');
           }
           if (!Number.isFinite(weightKg) || weightKg <= 0) {
-            throw new Error(
-              `Target weight must be > 0 kg (got ${String(weightKg)}).`,
-            );
+            throw new Error(`Target weight must be > 0 kg (got ${String(weightKg)}).`);
           }
-          // Dynamic import would complicate types; call synchronously here.
-          // find_draft_0trim throws on non-positive / over-capacity targets.
-          const result = find_draft_0trim(positions, weightKg);
+          // First run zero-trim draft
+          const draft = find_draft_0trim(positions, weightKg);
           if (calcToken.current !== token) return;
-          setDraftResult(result);
+          setDraftResult(draft);
+
+          // Then run full trim solver
+          const trim = solve_trim(positions, weightKg, {
+            targetLcgPercentFromBow: lcgPercent,
+            maxTrimDeg: 4.5,
+            trimStepDeg: 0.1,
+          });
+          if (calcToken.current !== token) return;
+          setTrimResult(trim);
           setDraftError(null);
         } catch (err) {
           if (calcToken.current !== token) return;
           setDraftResult(null);
-          setDraftError(
-            err instanceof Error ? err.message : 'Draft calculation failed.',
-          );
+          setTrimResult(null);
+          setDraftError(err instanceof Error ? err.message : 'Draft calculation failed.');
         } finally {
           if (calcToken.current === token) setIsCalculating(false);
         }
@@ -92,36 +102,34 @@ export default function App() {
     [],
   );
 
-  // Reactivity: recompute (debounced) whenever the hull or target weight changes.
+  // Clear stale results when hull changes — DO NOT auto-calculate.
+  // User must click "Calculate Draft" after rotating / setting weight / LCG.
   const meshId = mesh?.id;
   useEffect(() => {
     if (!mesh) return;
     setDraftResult(null);
+    setTrimResult(null);
     setDraftError(null);
-    const t = window.setTimeout(() => runCalculation(targetWeight, mesh), 350);
-    return () => window.clearTimeout(t);
-  }, [meshId, targetWeight, runCalculation]); // eslint-disable-line react-hooks/exhaustive-deps
+    // NOTE: no auto-run here. User must click "Calculate Draft" after rotating.
+  }, [meshId, mesh]);
 
   const calculateDraft = useCallback(() => {
     if (!mesh) {
       setDraftError('Load an STL hull first.');
       return;
     }
-    runCalculation(targetWeight, mesh);
-  }, [mesh, targetWeight, runCalculation]);
+    runCalculation(targetWeight, targetLcgPercent, mesh);
+  }, [mesh, targetWeight, targetLcgPercent, runCalculation]);
 
-  const handleCenter = useCallback(() => {
+  // Automatic orientation based on bounding-box sizes.
+  // Longest -> X (length), middle -> Y (beam), shortest -> Z (depth).
+  // Automatically detects keel-up and flips Z for deck-up.
+  const handleAutoOrient = useCallback(() => {
     setMesh((prev) => {
       if (!prev) return prev;
       const positions = positionsOf(prev);
-      centerToOrigin(positions);
-      prev.geometry.getAttribute('position').needsUpdate = true;
-      prev.geometry.computeVertexNormals();
-      prev.geometry.computeBoundingBox();
-      // Stats + bounds shown in the sidebar must reflect the moved vertices,
-      // and the draft effect re-runs on the new id.
-      const stats = analyzeMesh(positions);
-      return { ...prev, id: Date.now(), stats };
+      const note = autoOrientToZUp(positions);
+      return refreshGeometry(prev, note);
     });
   }, []);
 
@@ -155,28 +163,40 @@ export default function App() {
                 <Viewer3D
                   key={mesh.id}
                   geometry={mesh.geometry}
-                  waterlineZ={draftResult?.waterlineZ ?? null}
+                  waterlineZ={trimResult?.waterlineZ ?? draftResult?.waterlineZ ?? null}
+                  trimDeg={trimResult?.trimDeg ?? 0}
+                  waterlineCenterY={trimResult?.lcg.y ?? 0}
+                  lcg={trimResult?.lcg ?? null}
+                  lcb={trimResult?.lcb ?? draftResult?.lcb ?? null}
                 />
               </div>
               <div className="flex flex-wrap items-center gap-2 px-1 pb-1 pt-2">
-                <span className="text-xs text-zinc-500">Orientation:</span>
+                <span
+                  className="text-xs text-zinc-500"
+                  title="Automatically orient the hull: longest dimension becomes Length (X), second-longest becomes Beam (Y), and shortest becomes Depth (Z)."
+                >
+                  Orientation:
+                </span>
                 <button
                   type="button"
-                  onClick={handleCenter}
-                  className="rounded border border-zinc-700 bg-zinc-800/60 px-2 py-1 text-xs text-zinc-300 hover:border-zinc-500 hover:text-zinc-100">
-                  Center
-                </button>
-                <button
-                  type="button"
-                  onClick={clear}
-                  className="rounded border border-zinc-700 bg-zinc-800/60 px-2 py-1 text-xs text-zinc-300 hover:border-zinc-500 hover:text-zinc-100">
-                  Clear hull
+                  onClick={handleAutoOrient}
+                  className="rounded border border-emerald-700 bg-emerald-900/60 px-2 py-1 text-xs text-emerald-200 hover:border-emerald-500 hover:text-white"
+                  title="Automatically orient the hull: longest dimension becomes Length (X), second-longest becomes Beam (Y), and shortest becomes Depth (Z)."
+                >
+                  Auto Orient
                 </button>
                 <span className="ml-auto truncate text-xs text-zinc-500" title={mesh.fileName}>
-                  {mesh.fileName} · {fmt(s.bounds.size.x)} × {fmt(s.bounds.size.y)} × {fmt(s.bounds.size.z)} mm
+                  {mesh.fileName} · {fmt(s.bounds.size.x)} × {fmt(s.bounds.size.y)} ×{' '}
+                  {fmt(s.bounds.size.z)} mm
                 </span>
               </div>
+              {(s.bounds.size.x < s.bounds.size.y || s.bounds.size.x < s.bounds.size.z) && (
+                <p className="px-1 pb-1 text-xs text-amber-400" role="note">
+                  Length is not on X — click "Auto Orient" to fix.
+                </p>
+              )}
             </section>
+
             <aside className="flex w-80 shrink-0 flex-col gap-3 overflow-y-auto">
               <section className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-4">
                 <h2 className="mb-1 text-sm font-semibold text-zinc-200">Hull</h2>
@@ -191,7 +211,9 @@ export default function App() {
                     s.watertight.watertight ? 'yes' : `${s.watertight.openEdgeCount} open edges`,
                   )}
                 </dl>
-                <p className="mt-2 text-xs text-zinc-500" title={mesh.orientNote}>{mesh.orientNote}</p>
+                <p className="mt-2 text-xs text-zinc-500" title={mesh.orientNote}>
+                  {mesh.orientNote}
+                </p>
                 <div className="mt-3">
                   <Upload onLoaded={handleLoaded} compact />
                 </div>
@@ -202,7 +224,7 @@ export default function App() {
                 <label htmlFor="target-weight" className="mb-1 block text-xs text-zinc-400">
                   Target weight (kg) — paddler + gear + boat
                 </label>
-                <div className="flex items-center gap-2 mb-2">
+                <div className="mb-2 flex items-center gap-2">
                   <input
                     id="target-weight"
                     type="number"
@@ -216,9 +238,25 @@ export default function App() {
                   <button
                     onClick={calculateDraft}
                     disabled={isCalculating || !mesh}
-                    className="rounded bg-blue-500 px-4 py-2 text-white hover:bg-blue-600 disabled:cursor-not-allowed disabled:opacity-50">
+                    className="rounded bg-blue-500 px-4 py-2 text-white hover:bg-blue-600 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
                     {isCalculating ? 'Calculating…' : 'Calculate Draft'}
                   </button>
+                </div>
+                <label htmlFor="target-lcg" className="mb-1 block text-xs text-zinc-400">
+                  LCG from bow (%) — 52% = midship
+                </label>
+                <div className="mb-4 flex items-center gap-2">
+                  <input
+                    id="target-lcg"
+                    type="number"
+                    min={0}
+                    max={100}
+                    step={0.1}
+                    value={Number.isFinite(targetLcgPercent) ? targetLcgPercent : ''}
+                    onChange={(e) => setTargetLcgPercent(Number(e.target.value))}
+                    className="w-32 rounded border border-zinc-700 bg-zinc-800 p-2 text-white"
+                  />
                 </div>
                 {maxKg !== null && (
                   <p className="mb-2 text-xs text-zinc-500">
@@ -226,7 +264,9 @@ export default function App() {
                   </p>
                 )}
                 {weightInvalid && (
-                  <p className="mb-2 text-xs text-amber-400" role="note">{weightInvalid}</p>
+                  <p className="mb-2 text-xs text-amber-400" role="note">
+                    {weightInvalid}
+                  </p>
                 )}
                 {isCalculating && (
                   <p className="mb-2 text-xs text-zinc-400" role="status" aria-live="polite">
@@ -234,18 +274,46 @@ export default function App() {
                   </p>
                 )}
                 {draftError && (
-                  <p className="mb-2 rounded border border-rose-900 bg-rose-950/50 p-2 text-xs text-rose-300" role="alert">
+                  <p
+                    className="mb-2 rounded border border-rose-900 bg-rose-950/50 p-2 text-xs text-rose-300"
+                    role="alert"
+                  >
                     {draftError}
                   </p>
                 )}
                 <output className="block text-sm" id="draft-output" aria-live="polite">
-                  {draftResult ? (
+                  {trimResult ? (
+                    <dl className="space-y-1">
+                      {statRow(
+                        'Trim',
+                        `${trimResult.trimDeg >= 0 ? '+' : ''}${fmt(trimResult.trimDeg)}°`,
+                        true,
+                      )}
+                      {statRow('Draft (center)', `${fmt(trimResult.draftMm)} mm`)}
+                      {statRow('Waterline Z', `${fmt(trimResult.waterlineZ)} mm`)}
+                      {statRow('Displacement', `${fmt(trimResult.displacementKg)} kg`)}
+                      {statRow('Target', `${fmt(trimResult.targetKg)} kg`)}
+                      {statRow('Waterplane area', `${fmt(trimResult.waterplaneAreaMm2 / 1e6, 3)} m²`)}
+                      {statRow('LCG X', `${fmt(trimResult.lcg.x)} mm`)}
+                      {statRow('LCB X', `${fmt(trimResult.lcb.x)} mm`)}
+                      {statRow('LCB–LCG offset', `${fmt(trimResult.lcbLcgOffsetMm)} mm`, true)}
+                      {statRow(
+                        'Converged',
+                        trimResult.converged
+                          ? `yes (${trimResult.planesEvaluated} planes)`
+                          : `approx (${trimResult.planesEvaluated} planes)`,
+                      )}
+                    </dl>
+                  ) : draftResult ? (
                     <dl className="space-y-1">
                       {statRow('Draft', `${fmt(draftResult.draftMm)} mm`, true)}
                       {statRow('Waterline Z', `${fmt(draftResult.waterlineZ)} mm`)}
                       {statRow('Displacement', `${fmt(draftResult.displacementKg)} kg`)}
                       {statRow('Target', `${fmt(draftResult.targetKg)} kg`)}
-                      {statRow('Waterplane area', `${fmt(draftResult.waterplaneAreaMm2 / 1e6, 3)} m²`)}
+                      {statRow(
+                        'Waterplane area',
+                        `${fmt(draftResult.waterplaneAreaMm2 / 1e6, 3)} m²`,
+                      )}
                       {statRow(
                         'Converged',
                         draftResult.converged
@@ -266,25 +334,11 @@ export default function App() {
               <div className="mb-6 text-center">
                 <h2 className="text-xl font-semibold text-zinc-200">No hull loaded yet</h2>
                 <p className="mt-1 text-sm text-zinc-500">
-                  Upload an STL of your kayak to inspect dimensions, volume and build quality before hydrostatics.
+                  Upload an STL of your kayak to inspect dimensions, volume and build quality
+                  before hydrostatics.
                 </p>
               </div>
               <Upload onLoaded={handleLoaded} />
-              <div className="mx-auto mt-4 max-w-md rounded-lg border border-zinc-800 bg-zinc-900/40 p-4">
-                <label htmlFor="target-weight-empty" className="mb-1 block text-xs text-zinc-400">
-                  Target weight (kg) — applied once a hull is loaded
-                </label>
-                <input
-                  id="target-weight-empty"
-                  type="number"
-                  min={0}
-                  step="any"
-                  value={Number.isFinite(targetWeight) ? targetWeight : ''}
-                  onChange={(e) => setTargetWeight(Number(e.target.value))}
-                  placeholder="e.g. 95"
-                  className="w-full rounded border border-zinc-700 bg-zinc-800 p-2 text-white"
-                />
-              </div>
             </div>
           </div>
         )}
