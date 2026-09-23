@@ -10,8 +10,8 @@ import {
   AXIS_INDEX,
   analyzeMesh,
   computeVolumeAndCentroid
-} from './src/lib/geometry.js';
-import { solve_trim, find_draft_0trim } from './src/lib/hydrostatics.js';
+} from '../src/lib/geometry.js';
+import { solve_trim, find_draft_0trim } from '../src/lib/hydrostatics.js';
 import * as THREE from 'three';
 import * as fs from 'fs';
 

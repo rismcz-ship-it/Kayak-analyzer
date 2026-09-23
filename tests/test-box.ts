@@ -52,8 +52,8 @@ function createTestHull(): Float32Array {
   return arr;
 }
 
-import { computeBounds, autoOrientToZUp, applyRotateZ180, centerToOrigin, computeVolumeAndCentroid } from './src/lib/geometry.js';
-import { solve_trim } from './src/lib/hydrostatics.js';
+import { computeBounds, autoOrientToZUp, applyRotateZ180, centerToOrigin, computeVolumeAndCentroid } from '../src/lib/geometry.js';
+import { solve_trim } from '../src/lib/hydrostatics.js';
 
 const positions = createTestHull();
 console.log(`Triangles: ${positions.length / 9}`);

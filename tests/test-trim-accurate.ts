@@ -5,8 +5,8 @@ import {
   applyRotateZ180,
   centerToOrigin,
   computeVolumeAndCentroid
-} from './src/lib/geometry.js';
-import { solve_trim } from './src/lib/hydrostatics.js';
+} from '../src/lib/geometry.js';
+import { solve_trim } from '../src/lib/hydrostatics.js';
 import * as fs from 'fs';
 
 const buffer = fs.readFileSync('./test-kayak.stl');
