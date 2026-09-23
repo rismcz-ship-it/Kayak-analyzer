@@ -23,6 +23,19 @@ Before completing any task:
 2. For solver tasks: Verify against known test hulls (e.g. 100 mm box = 1,000,000 mm3 = 1 L).
 3. Ensure no unhandled runtime errors in the browser console.
 
+## Test Resources
+Validation targets in `tests/` — run when modifying the corresponding module:
+
+| Test | Trigger | Validates |
+|------|---------|-----------|
+| `test-auto-orient.ts` | Geometry: orientation | `autoOrientToZUp()` — arbitrary STL axes → Z-up, deck-up, volume-centroid bow detection |
+| `test-box.ts` | Geometry: primitives | All geometry helpers + `solve_trim` on synthetic hull with known ground truth |
+| `test-solver.ts` | Solver: trim | Full pipeline: 4 orientation scenarios × trim sweep — catches orientation-dependent behavior |
+| `test-lcb.mjs` | Mesh: external | Raw mesh validation on `~/Downloads/Kayak v2.stl` — watertightness, volume, centroid (optional) |
+| `test-kayak.stl` | — | Test mesh (2 MB) used by the above |
+
+Run: `npx tsx tests/<file>.ts` or `node tests/test-lcb.mjs`
+
 ## Keep it simple
 - simple but complete is efficient
 - don't complicate it
