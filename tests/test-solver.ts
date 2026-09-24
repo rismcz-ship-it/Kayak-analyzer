@@ -17,7 +17,7 @@ import * as fs from 'fs';
 
 async function test() {
   // Load the STL
-  const buffer = fs.readFileSync('./test-kayak.stl');
+  const buffer = fs.readFileSync(new URL('./test-kayak.stl', import.meta.url));
   const loader = new STLLoader();
   const geometry = loader.parse(buffer.buffer);
   const positions = geometry.getAttribute('position').array as Float32Array;

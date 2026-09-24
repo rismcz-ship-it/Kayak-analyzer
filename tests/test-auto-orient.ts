@@ -8,7 +8,7 @@ import {
 } from '../src/lib/geometry.js';
 import * as fs from 'fs';
 
-const buffer = fs.readFileSync('./test-kayak.stl');
+const buffer = fs.readFileSync(new URL('./test-kayak.stl', import.meta.url));
 const loader = new STLLoader();
 const geometry = loader.parse(buffer.buffer);
 const positions = geometry.getAttribute('position').array as Float32Array;

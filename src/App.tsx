@@ -1,16 +1,12 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import Upload, { type LoadedMesh } from './components/Upload';
-import Viewer3D from './components/Viewer3D';
-import {
-  analyzeMesh,
-  autoOrientToZUp,
-} from './lib/geometry';
+import { useCallback, useEffect, useRef, useState } from 'react'
+import Upload, { type LoadedMesh } from './components/Upload'
+import Viewer3D from './components/Viewer3D'
 import {
   find_draft_0trim,
   solve_trim,
   type Draft0TrimResult,
   type TrimSolveResult,
-} from './lib/hydrostatics';
+} from './lib/hydrostatics'
 
 const fmt = (v: number, digits = 1) =>
   v.toLocaleString('en-US', { maximumFractionDigits: digits });
@@ -26,14 +22,6 @@ function statRow(label: string, value: string, accent = false) {
 
 function positionsOf(mesh: LoadedMesh): Float32Array {
   return mesh.geometry.getAttribute('position').array as Float32Array;
-}
-
-function refreshGeometry(mesh: LoadedMesh, orientNote?: string): LoadedMesh {
-  mesh.geometry.getAttribute('position').needsUpdate = true;
-  mesh.geometry.computeVertexNormals();
-  mesh.geometry.computeBoundingBox();
-  const stats = analyzeMesh(positionsOf(mesh));
-  return orientNote ? { ...mesh, id: Date.now(), stats, orientNote } : { ...mesh, id: Date.now(), stats };
 }
 
 export default function App() {
@@ -121,19 +109,7 @@ export default function App() {
     runCalculation(targetWeight, targetLcgPercent, mesh);
   }, [mesh, targetWeight, targetLcgPercent, runCalculation]);
 
-  // Automatic orientation based on bounding-box sizes.
-  // Longest -> X (length), middle -> Y (beam), shortest -> Z (depth).
-  // Automatically detects keel-up and flips Z for deck-up.
-  const handleAutoOrient = useCallback(() => {
-    setMesh((prev) => {
-      if (!prev) return prev;
-      const positions = positionsOf(prev);
-      const note = autoOrientToZUp(positions);
-      return refreshGeometry(prev, note);
-    });
-  }, []);
-
-  const s = mesh?.stats;
+    const s = mesh?.stats;
   const maxKg = s ? s.volumeLiters : null;
   const weightInvalid =
     !Number.isFinite(targetWeight) || targetWeight <= 0
@@ -170,31 +146,12 @@ export default function App() {
                   lcb={trimResult?.lcb ?? draftResult?.lcb ?? null}
                 />
               </div>
-              <div className="flex flex-wrap items-center gap-2 px-1 pb-1 pt-2">
-                <span
-                  className="text-xs text-zinc-500"
-                  title="Automatically orient the hull: longest dimension becomes Length (X), second-longest becomes Beam (Y), and shortest becomes Depth (Z)."
-                >
-                  Orientation:
-                </span>
-                <button
-                  type="button"
-                  onClick={handleAutoOrient}
-                  className="rounded border border-emerald-700 bg-emerald-900/60 px-2 py-1 text-xs text-emerald-200 hover:border-emerald-500 hover:text-white"
-                  title="Automatically orient the hull: longest dimension becomes Length (X), second-longest becomes Beam (Y), and shortest becomes Depth (Z)."
-                >
-                  Auto Orient
-                </button>
-                <span className="ml-auto truncate text-xs text-zinc-500" title={mesh.fileName}>
+              <div className="flex items-center justify-end px-1 pb-1 pt-2">
+                <span className="truncate text-xs text-zinc-500" title={mesh.fileName}>
                   {mesh.fileName} · {fmt(s.bounds.size.x)} × {fmt(s.bounds.size.y)} ×{' '}
                   {fmt(s.bounds.size.z)} mm
                 </span>
               </div>
-              {(s.bounds.size.x < s.bounds.size.y || s.bounds.size.x < s.bounds.size.z) && (
-                <p className="px-1 pb-1 text-xs text-amber-400" role="note">
-                  Length is not on X — click "Auto Orient" to fix.
-                </p>
-              )}
             </section>
 
             <aside className="flex w-80 shrink-0 flex-col gap-3 overflow-y-auto">

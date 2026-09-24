@@ -1,7 +1,7 @@
 import { type DragEvent, useCallback, useRef, useState } from 'react'
 import { STLLoader } from 'three/addons/loaders/STLLoader.js'
 import type { BufferGeometry } from 'three'
-import { analyzeMesh, centerToOrigin, computeBounds, type MeshStats } from '../lib/geometry'
+import { analyzeMesh, autoOrientToZUp, centerToOrigin, computeBounds, type MeshStats } from '../lib/geometry'
 
 export const MAX_UPLOAD_BYTES = 25 * 1024 * 1024 // 25 MB cap, in-memory only
 
@@ -41,29 +41,32 @@ export default function Upload({ onLoaded, compact = false }: UploadProps) {
             setBusy(true)
             try {
               const buffer = await file.arrayBuffer()
-              const geometry = new STLLoader().parse(buffer) // non-indexed, mm units
+                            const geometry = new STLLoader().parse(buffer) // non-indexed, mm units
 
-              const positions = geometry.getAttribute('position').array as Float32Array
+                            const positions = geometry.getAttribute('position').array as Float32Array
 
-              // NO auto-orient — keep raw STL axes so user can rotate manually with Rot buttons.
-              // Just center at origin so the model loads in view.
-              const preCenter = computeBounds(positions).center
-              centerToOrigin(positions)
-              const dx = -preCenter.x
-              const dy = -preCenter.y
-              const dz = -preCenter.z
-              const orientNote = `Raw STL axes · centered by (${dx.toFixed(1)}, ${dy.toFixed(1)}, ${dz.toFixed(1)}) mm`
-              geometry.computeVertexNormals()
+                            // Auto-orient on load: longest → X (length), middle → Y (beam), shortest → Z (depth).
+                            // Detects keel-up and flips Z for deck-up. Rotates bow to +X via volume centroid.
+                            const orientNote = autoOrientToZUp(positions)
 
-              const stats = analyzeMesh(positions)
-        onLoaded({
-          id: Date.now(),
-          fileName: file.name,
-          sizeBytes: file.size,
-          geometry,
-          stats,
-          orientNote,
-        })
+                            // Center at origin so the model loads in view.
+                            const preCenter = computeBounds(positions).center
+                            centerToOrigin(positions)
+                            const dx = -preCenter.x
+                            const dy = -preCenter.y
+                            const dz = -preCenter.z
+                            const fullNote = `${orientNote} · centered by (${dx.toFixed(1)}, ${dy.toFixed(1)}, ${dz.toFixed(1)}) mm`
+                            geometry.computeVertexNormals()
+
+                            const stats = analyzeMesh(positions)
+                      onLoaded({
+                        id: Date.now(),
+                        fileName: file.name,
+                        sizeBytes: file.size,
+                        geometry,
+                        stats,
+                        orientNote: fullNote,
+                      })
       } catch (err) {
         setError(
           `Could not parse ${file.name}: ${err instanceof Error ? err.message : 'unknown error'}`,
