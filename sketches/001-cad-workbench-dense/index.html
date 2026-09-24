@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Kayak Analyzer — CAD Workbench Dense</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --panel: #1e293b;
+      --panel-border: #33415b;
+      --text: #e2e8f0;
+      --text-dim: #94a3b8;
+      --accent: #38bdf8;
+      --accent-hover: #7dd3fc;
+      --mono: 'Fira Code', monospace;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+    }
+    body[data-theme="light"] {
+      --bg: #f1f5f9;
+      --panel: #ffffff;
+      --panel-border: #cbd5e1;
+      --text: #0f172a;
+      --text-dim: #475569;
+      --accent: #0ea5e9;
+      --accent-hover: #0284c7;
+    }
+    .mono { font-family: var(--mono); }
+    .panel { background: var(--panel); border: 1px solid var(--panel-border); }
+    .vector-lcg { stroke: #ef4444; stroke-width: 3; }
+    .vector-lcb { stroke: #22c55e; stroke-width: 3; }
+    .waterline { fill: rgba(56, 189, 248, 0.15); stroke: var(--accent); stroke-width: 2; }
+    .hull { fill: none; stroke: var(--text); stroke-width: 0.8; opacity: 0.85; }
+    .status-pill { font-size: 0.7rem; padding: 2px 8px; border-radius: 12px; }
+    .status-ok { background: rgba(34, 197, 94, 0.15); color: #4ade80; }
+    .status-warn { background: rgba(251, 193, 7, 0.15); color: #facc15; }
+    .active-tab { border-b-2 border-cyan-400 text-cyan-400; }
+  </style>
+</head>
+<body>
+  <!-- Top Toolbar -->
+  <div class="panel h-12 flex items-center justify-between px-3 mono text-sm">
+    <div class="flex items-center space-x-4">
+      <span class="text-cyan-400 font-bold">⚙ KAYAK-ANALYZER v2.1</span>
+      <span class="status-pill status-ok">Watertight: YES</span>
+      <span class="status-pill status-ok">Volume: 215.4L</span>
+      <span class="status-pill status-ok">LOA: 271cm / BOA: 60cm</span>
+      <span class="status-pill status-warn">LCB-LCG Offset: 12mm</span>
+    </div>
+    <div class="flex items-center space-x-2">
+      <button class="px-3 py-1 text-xs hover:bg-cyan-600/20 border border-cyan-600/30 rounded">Coordinate: Z-Up X-Fwd</button>
+      <button class="px-3 py-1 text-xs hover:bg-cyan-600/20 border border-cyan-600/30 rounded">Auto-Orient Mesh</button>
+      <button class="px-3 py-1 text-xs bg-cyan-600 hover:bg-cyan-500 rounded">Solve Equilibrium</button>
+      <button class="px-3 py-1 text-xs hover:bg-cyan-600/20 border border-cyan-600/30 rounded">Export JSON/PDF</button>
+    </div>
+  </div>
+
+  <!-- Split panes: Left Inspector + Center Viewport + Right Inspector -->
+  <div class="flex h-[calc(100vh-3rem)]">
+    <!-- Left Inspector -->
+    <div class="panel w-64 p-4 overflow-y-auto">
+      <h2 class="text-cyan-400 mono mb-3">Payload &amp; Geometry</h2>
+      <div class="space-y-3 text-sm">
+        <div>
+          <label class="block text-xs text-slate-400 mb-1">Hull Model</label>
+          <input type="text" value="RTM_Paname-S_x_RipR-Evo2_STL.STL" class="w-full px-2 py-1 bg-slate-800 text-slate-200 border border-slate-600 rounded mono">
+        </div>
+        <div>
+          <label class="block text-xs text-slate-400 mb-1">Paddler Weight</label>
+          <input type="number" value="65" class="w-full px-2 py-1 bg-slate-800 text-slate-200 border border-slate-600 rounded mono">
+          <span class="text-xs text-slate-400">(kg)</span>
+        </div>
+        <div>
+          <label class="block text-xs text-slate-400 mb-1">LCG Position</label>
+          <input type="range" min="40" max="60" value="52" class="w-full">
+          <span class="mono text-cyan-400">52%</span>
+        </div>
+        <div>
+          <label class="block text-xs text-slate-400 mb-1">KG Height</label>
+          <input type="number" value="220" class="w-full px-2 py-1 bg-slate-800 text-slate-200 border border-slate-600 rounded mono">
+          <span class="text-xs text-slate-400">(mm)</span>
+        </div>
+        <div>
+          <label class="block text-xs text-slate-400 mb-1">Solver Sweep</label>
+          <select class="w-full px-2 py-1 bg-slate-800 text-slate-200 border border-slate-600 rounded text-sm">
+            <option>Trim + LCG/LCB Equilibrium</option>
+            <option>Draft Only Sweep</option>
+            <option>Full Stability Matrix</option>
+          </select>
+        </div>
+      </div>
+
+      <h3 class="text-cyan-400 mono mt-5 mb-2">Results Panel</h3>
+      <div class="space-y-2 text-sm mono">
+        <div class="flex justify-between"><span class="text-slate-400">Equilibrium Draft:</span><span class="text-cyan-300">110.2 mm</span></div>
+        <div class="flex justify-between"><span class="text-slate-400">Trim Angle:</span><span class="text-cyan-300">-0.18°</span></div>
+        <div class="flex justify-between"><span class="text-slate-400">Metacentric Height:</span><span class="text-cyan-300">152 mm</span></div>
+        <div class="flex justify-between"><span class="text-slate-400">LCB Offset:</span><span class="text-cyan-300">+12 mm</span></div>
+        <div class="flex justify-between"><span class="text-slate-400">Reserve Volume:</span><span class="text-cyan-300">68.0%</span></div>
+      </div>
+    </div>
+
+    <!-- Center Viewport -->
+    <div class="flex-1 panel m-2 rounded-lg relative">
+      <div class="absolute top-2 right-2 z-10">
+        <button class="panel px-2 py-1 text-xs mr-1 active-tab">Isometric</button>
+        <button class="panel px-2 py-1 text-xs mr-1">Side Profile</button>
+        <button class="panel px-2 py-1 text-xs">Cross Section</button>
+      </div>
+      <svg viewBox="0 0 800 400" class="w-full h-full">
+        <!-- Hull mesh approximation -->
+        <path class="hull" d="M200,200 C220,190 270,180 300,185 C330,190 370,195 400,200 C430,205 470,210 500,200 C530,190 580,185 600,200 C620,210 650,205 700,200 C700,210 720,220 720,230 C720,240 600,260 400,270 C200,260 80,240 80,230 C80,220 100,210 200,200 Z"/>
+        <!-- Waterline -->
+        <path class="waterline" d="M180,208 Q250,212 320,210 Q400,208 480,212 Q560,215 620,210 Q680,205 720,210 L720,215 L180,215 Z"/>
+        <!-- LCG Vector -->
+        <line x1="410" y1="205" x2="410" y2="235" class="vector-lcg" marker-end="url(#arrow-lcg)" />
+        <!-- LCB Vector -->
+        <line x1="422" y1="207" x2="422" y2="235" class="vector-lcb" marker-end="url(#arrow-lcb)" />
+        <!-- Definitions for markers -->
+        <defs>
+          <marker id="arrow-lcb" markerWidth="10" markerHeight="7" refX="5" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" fill="#22c55e" />
+          </marker>
+          <marker id="arrow-lcg" markerWidth="10" markerHeight="7" refX="5" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" fill="#ef4444" />
+          </marker>
+        </defs>
+      </svg>
+    </div>
+
+    <!-- Right Data Inspector -->
+    <div class="panel w-72 p-4 overflow-y-auto">
+      <ul class="flex mb-3 border-b border-slate-600 text-xs mono">
+        <li class="mr-4 active-tab cursor-pointer">Hydrostatics</li>
+        <li class="mr-4 cursor-pointer text-slate-400">Form Factors</li>
+        <li class="mr-4 cursor-pointer text-slate-400">Coefficients</li>
+      </ul>
+      <div class="space-y-2 text-sm mono">
+        <div class="flex justify-between"><span class="text-slate-400">Waterplane Area:</span><span class="text-cyan-300">0.68 m²</span></div>
+        <div class="flex justify-between"><span class="text-slate-400">Wetted Surface:</span><span class="text-cyan-300">1.72 m²</span></div>
+        <div class="flex justify-between"><span class="text-slate-400">Disp. Volume:</span><span class="text-cyan-300">65.4 L</span></div>
+        <div class="flex justify-between"><span class="text-slate-400">Cb:</span><span class="text-cyan-300">0.52</span></div>
+        <div class="flex justify-between"><span class="text-slate-400">Cp:</span><span class="text-cyan-300">0.78</span></div>
+        <div class="flex justify-between"><span class="text-slate-400">CM:</span><span class="text-cyan-300">0.91</span></div>
+        <div class="flex justify-between"><span class="text-slate-400">Cwp:</span><span class="text-cyan-300">0.64</span></div>
+      </div>
+
+      <h3 class="text-cyan-400 mono mt-5 mb-2">Bottom Dock</h3>
+      <ul class="flex border-b border-slate-600 text-xs mono mb-2">
+        <li class="mr-4 active-tab cursor-pointer">GZ Stability Curve</li>
+        <li class="mr-4 cursor-pointer text-slate-400">Station Slices</li>
+      </ul>
+      <svg viewBox="0 0 300 180" class="w-full h-auto mono">
+        <path d="M10,170 L290,170 L290,10 L10,10 Z" fill="none" stroke="var(--panel-border)"/>
+        <path d="M10,165 Q50,140 100,120 T200,90 270,60" fill="none" stroke="var(--accent)" stroke-width="2"/>
+        <text x="150" y="178" text-anchor="middle" class="fill-slate-400" font-size="11">Heel Angle (°)</text>
+        <text x="5" y="90" text-anchor="middle" class="fill-slate-400" font-size="11" transform="rotate(-90 5 90)">GZ (mm)</text>
+      </svg>
+    </div>
+  </div>
+</body>
+</html>

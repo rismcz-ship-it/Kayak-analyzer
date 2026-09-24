@@ -10,6 +10,8 @@ import {
   applyPitchY,
   computeBounds,
   computeVolumeAndCentroid,
+  decimateMesh,
+  DEFAULT_SOLVER_TRIANGLES,
   type Vec3,
 } from './geometry'
 
@@ -389,62 +391,64 @@ export function find_draft_0trim(mesh: MeshLike, target_kg: number): Draft0TrimR
   const stepMm = 1
   let planesEvaluated = 0
 
-  // Sweep downwards: h = maxZ, maxZ-1, … — first plane already holds the full
-  // volume, so V(h) decreases monotonically-ish as h drops.
-  let upperH = maxZ
-  let upperV = volumeBelowPlane(positions, upperH)
+  // Volume at the deck plane (h = maxZ) is the total hull volume.
+  const upperH = maxZ
+  const upperV = volumeBelowPlane(positions, upperH)
   planesEvaluated++
 
   // Degenerate case: target equals total volume — floating at the deck edge.
-    if (upperV <= targetVolumeMm3) {
-      const { clipped, waterplaneAreaMm2 } = clipBelowPlane(positions, upperH)
-      const { centroid: lcb } = computeVolumeAndCentroid(clipped)
-      return {
-        draftMm: maxZ - minZ,
-        waterlineZ: maxZ,
-        displacedVolumeMm3: upperV,
-        displacementKg: upperV / MM3_PER_KG,
-        targetKg: target_kg,
-        lcb,
-        waterplaneAreaMm2,
-        stepMm,
-        planesEvaluated,
-        converged: Math.abs(upperV - targetVolumeMm3) / targetVolumeMm3 < 1e-6,
+  if (upperV <= targetVolumeMm3) {
+    const { clipped, waterplaneAreaMm2 } = clipBelowPlane(positions, upperH)
+    const { centroid: lcb } = computeVolumeAndCentroid(clipped)
+    return {
+      draftMm: maxZ - minZ,
+      waterlineZ: maxZ,
+      displacedVolumeMm3: upperV,
+      displacementKg: upperV / MM3_PER_KG,
+      targetKg: target_kg,
+      lcb,
+      waterplaneAreaMm2,
+      stepMm,
+      planesEvaluated,
+      converged: Math.abs(upperV - targetVolumeMm3) / targetVolumeMm3 < 1e-6,
+    }
+  }
+
+  // Binary search: find waterline Z so volumeBelowPlane(positions, Z) ≈ target.
+    // V(h) decreases monotonically as h drops from maxZ to minZ, so bisection
+    // converges quickly. Bracket phase steps down in 10 mm increments, then bisects.
+    let lo = minZ
+    let hi = upperH
+    let waterlineZ = upperH
+
+    // Bracket: coarse scan to narrow the range to a 10mm window.
+    for (let h = maxZ - 10; h >= minZ; h -= 10) {
+      const v = volumeBelowPlane(positions, h)
+      planesEvaluated++
+      if (v <= targetVolumeMm3) {
+        hi = h + 10 // upper bound (just above the crossing)
+        lo = h     // lower bound (just below)
+        break
       }
+      waterlineZ = h // keep stepping; still above target
     }
 
-  let lowerH = upperH
-  let lowerV = upperV
-  let bracketed = false
-
-  for (let h = maxZ - stepMm; h >= minZ; h -= stepMm) {
-    const v = volumeBelowPlane(positions, h)
-    planesEvaluated++
-    if (v <= targetVolumeMm3) {
-      lowerH = h
-      lowerV = v
-      bracketed = true
-      break
+  // Bisect to sub-millimetre precision.
+    // Note: volumeBelowPlane increases with higher Z (more of hull is submerged below plane).
+    // So if v < targetVolume, we need higher Z (lo = mid).
+    // If v > targetVolume, we need lower Z (hi = mid).
+    for (let iter = 0; iter < 16; iter++) {
+      const mid = (lo + hi) / 2
+      const v = volumeBelowPlane(positions, mid)
+      planesEvaluated++
+      if (v < targetVolumeMm3) {
+        lo = mid
+      } else {
+        hi = mid
+      }
+      waterlineZ = mid
+      if (hi - lo < 0.05) break // sub-mm convergence (0.05 mm window)
     }
-    upperH = h
-    upperV = v
-  }
-
-  if (!bracketed) {
-    // Target smaller than the bottom 1 mm slice — sit just off the keel.
-    lowerH = minZ
-    lowerV = 0
-    bracketed = true
-  }
-
-  // Linear interpolation between the bracketing 1 mm planes.
-  let waterlineZ: number
-  if (upperV <= lowerV || Math.abs(upperV - lowerV) < 1e-12) {
-    waterlineZ = lowerH
-  } else {
-    const f = (targetVolumeMm3 - lowerV) / (upperV - lowerV)
-    waterlineZ = lowerH + Math.max(0, Math.min(1, f)) * stepMm
-  }
 
   // Verification pass: clip exactly at the interpolated waterline so the
   // returned displacement is a measured mesh volume, not the interpolation.
@@ -494,7 +498,11 @@ export function solve_trim(
   const positions = toPositions(mesh)
   if (positions.length === 0) throw new Error('solve_trim: empty mesh')
 
-  const bounds = computeBounds(positions)
+  // Decimate once for the entire trim sweep — keeps solver fast.
+  // Use decimated mesh for all hydrostatic evaluations; original mesh for display.
+  const solveMesh = decimateMesh(positions, DEFAULT_SOLVER_TRIANGLES)
+
+  const bounds = computeBounds(solveMesh)
   const lengthX = bounds.size.x
   const bowX = bounds.max.x
 
@@ -507,8 +515,9 @@ export function solve_trim(
     z: bounds.min.z + 280, // Default KG 280mm above keel
   }
 
-  const maxTrimDeg = options?.maxTrimDeg ?? 4.5
-    const stepDeg = options?.trimStepDeg ?? 0.1
+  const maxTrimDeg = options?.maxTrimDeg ?? 3.5
+  const fineStepDeg = options?.trimStepDeg ?? 0.1
+  const coarseStepDeg = fineStepDeg * 5 // 0.5° default
 
   let bestAngleDeg = 0
   let bestOffset = Infinity
@@ -516,28 +525,24 @@ export function solve_trim(
   let totalPlanes = 0
 
   // Working copy of positions to avoid mutating source mesh during pitch sweeps
-  const workingPositions = new Float32Array(positions.length)
+  const workingPositions = new Float32Array(solveMesh.length)
 
-  for (let deg = -maxTrimDeg; deg <= maxTrimDeg + 1e-6; deg += stepDeg) {
+  // --- Coarse sweep: 0.5° steps to find the neighborhood ---
+  for (let deg = -maxTrimDeg; deg <= maxTrimDeg + 1e-6; deg += coarseStepDeg) {
     const rad = (deg * Math.PI) / 180
-    workingPositions.set(positions)
+    workingPositions.set(solveMesh)
     applyPitchY(workingPositions, rad, targetLcgX, bounds.center.z)
 
     try {
       const res = find_draft_0trim(workingPositions, target_kg)
       totalPlanes += res.planesEvaluated
 
-      // Rotate LCB back to original un-pitched coordinates.
-      // applyPitchY for +rad gives:
-      //   x' = (x - pivotX)*cos(rad) - (z - pivotZ)*sin(rad) + pivotX
-      //   z' = (x - pivotX)*sin(rad) + (z - pivotZ)*cos(rad) + pivotZ
-      // Un-pitching (inverse matrix with -rad) translates res.lcb back to original space:
       const cosA = Math.cos(rad)
       const sinA = Math.sin(rad)
       const rx = res.lcb.x - targetLcgX
       const rz = res.lcb.z - bounds.center.z
       const origLcbX = rx * cosA + rz * sinA + targetLcgX
-      const origLcbY = bounds.center.y // Force transverse symmetry
+      const origLcbY = bounds.center.y
       const origLcbZ = -rx * sinA + rz * cosA + bounds.center.z
 
       const offset = Math.abs(origLcbX - targetLcgX)
@@ -554,15 +559,49 @@ export function solve_trim(
     }
   }
 
-  if (!bestResult) {
-      const fallback = find_draft_0trim(positions, target_kg)
-      bestResult = {
-        ...fallback,
-        lcb: { ...fallback.lcb, y: bounds.center.y }, // Force centerline
+  // --- Fine sweep: ±0.5° around best at 0.1° steps ---
+  const fineStart = bestAngleDeg - coarseStepDeg
+  const fineEnd = bestAngleDeg + coarseStepDeg
+  for (let deg = fineStart; deg <= fineEnd + 1e-6; deg += fineStepDeg) {
+    const rad = (deg * Math.PI) / 180
+    workingPositions.set(solveMesh)
+    applyPitchY(workingPositions, rad, targetLcgX, bounds.center.z)
+
+    try {
+      const res = find_draft_0trim(workingPositions, target_kg)
+      totalPlanes += res.planesEvaluated
+
+      const cosA = Math.cos(rad)
+      const sinA = Math.sin(rad)
+      const rx = res.lcb.x - targetLcgX
+      const rz = res.lcb.z - bounds.center.z
+      const origLcbX = rx * cosA + rz * sinA + targetLcgX
+      const origLcbY = bounds.center.y
+      const origLcbZ = -rx * sinA + rz * cosA + bounds.center.z
+
+      const offset = Math.abs(origLcbX - targetLcgX)
+      if (offset < bestOffset) {
+        bestOffset = offset
+        bestAngleDeg = deg
+        bestResult = {
+          ...res,
+          lcb: { x: origLcbX, y: origLcbY, z: origLcbZ },
+        }
       }
-      bestAngleDeg = 0
-      bestOffset = Math.abs(bestResult.lcb.x - targetLcgX)
+    } catch {
+      // Continue if one angle fails
     }
+  }
+
+  if (!bestResult) {
+    const fallback = find_draft_0trim(solveMesh, target_kg)
+    bestResult = {
+      ...fallback,
+      lcb: { ...fallback.lcb, y: bounds.center.y }, // Force centerline
+    }
+    bestAngleDeg = 0
+    bestOffset = Math.abs(bestResult.lcb.x - targetLcgX)
+  }
 
   return {
     trimDeg: Number(bestAngleDeg.toFixed(2)),

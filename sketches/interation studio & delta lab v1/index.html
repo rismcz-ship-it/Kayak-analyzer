@@ -1,0 +1,355 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Kayak Analyzer — Iteration Studio & Delta Lab</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    :root {
+      --bg: #090d16;
+      --card: #131b2e;
+      --card-border: #1e293b;
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+      --accent: #3b82f6;
+      --delta-pos: #10b981;
+      --delta-neg: #ef4444;
+      --delta-warn: #f59e0b;
+    }
+    body {
+      background-color: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+    .delta-badge-pos {
+      background: rgba(16, 185, 129, 0.15);
+      color: var(--delta-pos);
+      border: 1px solid rgba(16, 185, 129, 0.3);
+    }
+    .delta-badge-neg {
+      background: rgba(239, 68, 68, 0.15);
+      color: var(--delta-neg);
+      border: 1px solid rgba(239, 68, 68, 0.3);
+    }
+    .delta-badge-warn {
+      background: rgba(245, 158, 11, 0.15);
+      color: var(--delta-warn);
+      border: 1px solid rgba(245, 158, 11, 0.3);
+    }
+    .slider-thumb::-webkit-slider-thumb {
+      appearance: none;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: #3b82f6;
+      cursor: pointer;
+      box-shadow: 0 0 10px rgba(59, 130, 246, 0.6);
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col">
+
+  <!-- Top Bar / Context Switcher -->
+  <header class="border-b border-slate-800 bg-[#0f172a] px-6 py-3 flex items-center justify-between">
+    <div class="flex items-center space-x-4">
+      <div class="flex items-center space-x-2">
+        <div class="w-8 h-8 rounded-lg bg-blue-600/20 border border-blue-500/30 flex items-center justify-center font-bold text-blue-400">Δ</div>
+        <div>
+          <h1 class="font-bold text-sm tracking-wide flex items-center gap-2">
+            ITERATION STUDIO &amp; DELTA LAB
+            <span class="text-xs px-2 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20">v1.0-preview</span>
+          </h1>
+          <p class="text-xs text-slate-400">Hydrostatic &amp; Resistance Delta Benchmarking</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Quick Scenario Switcher -->
+    <div class="flex items-center space-x-3 text-xs">
+      <span class="text-slate-400">Paddler Condition:</span>
+      <div class="inline-flex bg-slate-900 rounded-lg p-1 border border-slate-800" id="scenario-selector">
+        <button onclick="setScenario('light', 55, 51.5)" class="scenario-btn px-3 py-1 rounded text-slate-400 hover:text-white transition">Light (55 kg)</button>
+        <button onclick="setScenario('target', 65, 52.0)" class="scenario-btn px-3 py-1 rounded bg-blue-600 text-white font-medium shadow transition">Target (65 kg)</button>
+        <button onclick="setScenario('heavy', 75, 52.5)" class="scenario-btn px-3 py-1 rounded text-slate-400 hover:text-white transition">Heavy (75 kg)</button>
+      </div>
+      <button class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-lg flex items-center gap-1.5 transition">
+        <span>💾</span> Export Delta Report
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Comparison Stage -->
+  <main class="flex-1 p-6 grid grid-cols-12 gap-6 max-w-[1700px] w-full mx-auto">
+
+    <!-- Left Column: Dual Viewport / Blend Canvas (7 Cols) -->
+    <div class="col-span-12 xl:col-span-7 flex flex-col space-y-4">
+      
+      <!-- Viewport Card -->
+      <div class="bg-slate-900/90 border border-slate-800 rounded-xl overflow-hidden flex flex-col shadow-xl">
+        <!-- Viewport Controls Bar -->
+        <div class="px-4 py-3 bg-slate-950/60 border-b border-slate-800 flex items-center justify-between text-xs">
+          <div class="flex items-center space-x-3">
+            <span class="font-medium text-slate-300">View Mode:</span>
+            <div class="inline-flex bg-slate-900 rounded-lg p-0.5 border border-slate-800">
+              <button onclick="setViewMode('split')" id="btn-mode-split" class="px-3 py-1 rounded bg-blue-600 text-white">Split Side-by-Side</button>
+              <button onclick="setViewMode('overlay')" id="btn-mode-overlay" class="px-3 py-1 rounded text-slate-400 hover:text-white">Ghost Overlay</button>
+            </div>
+          </div>
+          <div class="flex items-center space-x-2 text-slate-400">
+            <span>Projection:</span>
+            <button class="px-2 py-0.5 bg-slate-800 rounded hover:text-white">Side Profile</button>
+            <button class="px-2 py-0.5 bg-slate-800 rounded hover:text-white">Perspective</button>
+            <button class="px-2 py-0.5 bg-slate-800 rounded hover:text-white">Plan (Top)</button>
+          </div>
+        </div>
+
+        <!-- Visual Canvas Area -->
+        <div class="relative h-[340px] bg-[#070b14] p-4 flex items-center justify-center overflow-hidden">
+          
+          <!-- Split View -->
+          <div id="canvas-split" class="w-full h-full grid grid-cols-2 gap-4">
+            <!-- Hull A -->
+            <div class="relative border border-slate-800/80 rounded-lg bg-slate-950/40 p-3 flex flex-col justify-between">
+              <div class="flex justify-between items-center text-xs">
+                <span class="font-semibold text-sky-400">Baseline: Paname S Ref</span>
+                <span class="text-slate-500 font-mono">274cm / 60cm</span>
+              </div>
+              <svg viewBox="0 0 400 160" class="w-full h-auto my-auto">
+                <path d="M 20 80 Q 120 40 200 45 Q 320 50 380 80 Q 300 125 200 120 Q 100 120 20 80 Z" fill="none" stroke="#38bdf8" stroke-width="2" stroke-dasharray="2 2" />
+                <line x1="10" y1="85" x2="390" y2="85" stroke="#0ea5e9" stroke-width="1.5" stroke-opacity="0.8"/>
+                <!-- LCG & LCB markers -->
+                <circle cx="208" cy="85" r="4" fill="#ef4444" />
+                <circle cx="202" cy="85" r="4" fill="#22c55e" />
+              </svg>
+              <div class="flex justify-between text-[11px] font-mono text-slate-400">
+                <span>Draft: <b class="text-slate-200">114.6 mm</b></span>
+                <span>Trim: <b class="text-slate-200">-0.42°</b></span>
+              </div>
+            </div>
+
+            <!-- Hull B -->
+            <div class="relative border border-blue-900/40 rounded-lg bg-blue-950/10 p-3 flex flex-col justify-between">
+              <div class="flex justify-between items-center text-xs">
+                <span class="font-semibold text-emerald-400">Target: Rip-R Hybrid v2.1</span>
+                <span class="text-slate-500 font-mono">271cm / 60cm</span>
+              </div>
+              <svg viewBox="0 0 400 160" class="w-full h-auto my-auto">
+                <path d="M 20 78 Q 120 42 200 44 Q 310 48 380 78 Q 290 120 200 116 Q 110 116 20 78 Z" fill="none" stroke="#34d399" stroke-width="2.5" />
+                <line x1="10" y1="81" x2="390" y2="81" stroke="#10b981" stroke-width="1.5" stroke-opacity="0.8"/>
+                <!-- LCG & LCB markers -->
+                <circle cx="208" cy="81" r="4" fill="#ef4444" />
+                <circle cx="206" cy="81" r="4" fill="#22c55e" />
+              </svg>
+              <div class="flex justify-between text-[11px] font-mono text-slate-400">
+                <span>Draft: <b class="text-emerald-300">110.1 mm</b></span>
+                <span>Trim: <b class="text-emerald-300">-0.12°</b></span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Overlay View (Hidden initially) -->
+          <div id="canvas-overlay" class="hidden w-full h-full relative flex items-center justify-center">
+            <svg viewBox="0 0 800 240" class="w-full h-full">
+              <!-- Hull A Ghost -->
+              <path id="ghost-a" d="M 40 120 Q 240 60 400 68 Q 640 75 760 120 Q 600 188 400 180 Q 200 180 40 120 Z" fill="none" stroke="#38bdf8" stroke-width="2" stroke-opacity="0.4" stroke-dasharray="4 4" />
+              <!-- Hull B Main -->
+              <path id="ghost-b" d="M 40 117 Q 240 63 400 66 Q 620 72 760 117 Q 580 180 400 174 Q 220 174 40 117 Z" fill="none" stroke="#34d399" stroke-width="2.5" stroke-opacity="0.9" />
+              <!-- Waterlines -->
+              <line x1="20" y1="128" x2="780" y2="128" stroke="#38bdf8" stroke-width="1.5" stroke-opacity="0.5" stroke-dasharray="3 3"/>
+              <line x1="20" y1="122" x2="780" y2="122" stroke="#34d399" stroke-width="2" stroke-opacity="0.9"/>
+            </svg>
+            <div class="absolute bottom-2 left-4 text-xs flex gap-4 font-mono">
+              <span class="text-sky-400">■ Baseline (Paname S)</span>
+              <span class="text-emerald-400">■ Target (Rip-R Hybrid v2.1)</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Cross-Fade Blend Slider -->
+        <div class="px-6 py-3 bg-slate-950/80 border-t border-slate-800 flex items-center space-x-4">
+          <span class="text-xs text-slate-400 font-mono">100% Baseline</span>
+          <input type="range" min="0" max="100" value="50" class="flex-1 slider-thumb h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer" oninput="updateBlend(this.value)">
+          <span class="text-xs text-emerald-400 font-mono">100% Target Hybrid</span>
+        </div>
+      </div>
+
+      <!-- Resistance & Drag Delta Breakdown -->
+      <div class="bg-slate-900/90 border border-slate-800 rounded-xl p-4 shadow-xl">
+        <div class="flex items-center justify-between mb-3">
+          <h3 class="text-sm font-semibold text-slate-200 flex items-center gap-2">
+            <span>⚡</span> Michlet Thin-Ship Resistance Curve (Drag vs Speed)
+          </h3>
+          <span class="text-xs text-slate-400 font-mono">Total Resistance Rt (N)</span>
+        </div>
+        <div class="grid grid-cols-4 gap-3 text-center">
+          <div class="bg-slate-950/60 p-3 rounded-lg border border-slate-800/80">
+            <span class="text-xs text-slate-400 block mb-1">Cruising (4.5 kts)</span>
+            <div class="text-lg font-mono font-bold text-slate-200">11.8 N</div>
+            <span class="text-xs font-mono delta-badge-pos px-1.5 py-0.5 rounded inline-block mt-1">-5.6% Rt</span>
+          </div>
+          <div class="bg-slate-950/60 p-3 rounded-lg border border-slate-800/80">
+            <span class="text-xs text-slate-400 block mb-1">Race Pace (6.0 kts)</span>
+            <div class="text-lg font-mono font-bold text-slate-200">22.4 N</div>
+            <span class="text-xs font-mono delta-badge-pos px-1.5 py-0.5 rounded inline-block mt-1">-7.1% Rt</span>
+          </div>
+          <div class="bg-slate-950/60 p-3 rounded-lg border border-slate-800/80">
+            <span class="text-xs text-slate-400 block mb-1">Sprint (7.5 kts)</span>
+            <div class="text-lg font-mono font-bold text-slate-200">48.2 N</div>
+            <span class="text-xs font-mono delta-badge-pos px-1.5 py-0.5 rounded inline-block mt-1">-4.2% Rt</span>
+          </div>
+          <div class="bg-slate-950/60 p-3 rounded-lg border border-slate-800/80">
+            <span class="text-xs text-slate-400 block mb-1">Hull Speed (8.5 kts)</span>
+            <div class="text-lg font-mono font-bold text-slate-200">89.6 N</div>
+            <span class="text-xs font-mono delta-badge-warn px-1.5 py-0.5 rounded inline-block mt-1">+1.8% Rt</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Right Column: Central Delta Matrix & Hydrostatic Metrics (5 Cols) -->
+    <div class="col-span-12 xl:col-span-5 flex flex-col space-y-4">
+      
+      <div class="bg-slate-900/90 border border-slate-800 rounded-xl p-5 shadow-xl flex-1 flex flex-col">
+        <div class="flex items-center justify-between pb-3 border-b border-slate-800 mb-4">
+          <div>
+            <h2 class="font-bold text-sm text-slate-100 tracking-wide">HYDROSTATIC DELTA MATRIX</h2>
+            <p class="text-xs text-slate-400">Comparing Baseline vs Rip-R Hybrid v2.1</p>
+          </div>
+          <span class="text-xs px-2 py-1 rounded bg-slate-800 text-slate-300 font-mono">Payload: 65.0 kg</span>
+        </div>
+
+        <!-- Delta Table -->
+        <div class="overflow-x-auto">
+          <table class="w-full text-xs text-left">
+            <thead>
+              <tr class="text-slate-400 border-b border-slate-800">
+                <th class="pb-2 font-medium">Metric</th>
+                <th class="pb-2 font-medium font-mono text-right text-sky-400">Paname S</th>
+                <th class="pb-2 font-medium font-mono text-right text-emerald-400">Rip-R v2.1</th>
+                <th class="pb-2 font-medium font-mono text-right">Delta (Δ)</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-800/60 font-mono">
+              <tr>
+                <td class="py-2.5 text-slate-300">Length Overall (LOA)</td>
+                <td class="text-right text-slate-400">274.0 cm</td>
+                <td class="text-right text-slate-200">271.0 cm</td>
+                <td class="text-right"><span class="delta-badge-warn px-1.5 py-0.5 rounded">-3.0 cm</span></td>
+              </tr>
+              <tr>
+                <td class="py-2.5 text-slate-300">Beam Overall (BOA)</td>
+                <td class="text-right text-slate-400">60.0 cm</td>
+                <td class="text-right text-slate-200">60.0 cm</td>
+                <td class="text-right"><span class="text-slate-500">0.0 cm</span></td>
+              </tr>
+              <tr>
+                <td class="py-2.5 text-slate-300">Total Volume</td>
+                <td class="text-right text-slate-400">207.0 L</td>
+                <td class="text-right text-slate-200">215.4 L</td>
+                <td class="text-right"><span class="delta-badge-pos px-1.5 py-0.5 rounded">+8.4 L (+4%)</span></td>
+              </tr>
+              <tr>
+                <td class="py-2.5 text-slate-300">Equilibrium Draft</td>
+                <td class="text-right text-slate-400">114.6 mm</td>
+                <td class="text-right text-slate-200">110.1 mm</td>
+                <td class="text-right"><span class="delta-badge-pos px-1.5 py-0.5 rounded">-4.5 mm</span></td>
+              </tr>
+              <tr>
+                <td class="py-2.5 text-slate-300">Trim Angle (@ 52% LCG)</td>
+                <td class="text-right text-slate-400">-0.42°</td>
+                <td class="text-right text-slate-200">-0.12°</td>
+                <td class="text-right"><span class="delta-badge-pos px-1.5 py-0.5 rounded">+0.30° (Flatter)</span></td>
+              </tr>
+              <tr>
+                <td class="py-2.5 text-slate-300">|LCB - LCG| Offset</td>
+                <td class="text-right text-slate-400">26.4 mm</td>
+                <td class="text-right text-slate-200">8.2 mm</td>
+                <td class="text-right"><span class="delta-badge-pos px-1.5 py-0.5 rounded">-18.2 mm</span></td>
+              </tr>
+              <tr>
+                <td class="py-2.5 text-slate-300">Wetted Surface Area (WSA)</td>
+                <td class="text-right text-slate-400">1.78 m²</td>
+                <td class="text-right text-slate-200">1.69 m²</td>
+                <td class="text-right"><span class="delta-badge-pos px-1.5 py-0.5 rounded">-0.09 m² (-5.1%)</span></td>
+              </tr>
+              <tr>
+                <td class="py-2.5 text-slate-300">Prismatic Coeff (Cp)</td>
+                <td class="text-right text-slate-400">0.582</td>
+                <td class="text-right text-slate-200">0.564</td>
+                <td class="text-right"><span class="delta-badge-pos px-1.5 py-0.5 rounded">-0.018</span></td>
+              </tr>
+              <tr>
+                <td class="py-2.5 text-slate-300">Block Coeff (Cb)</td>
+                <td class="text-right text-slate-400">0.448</td>
+                <td class="text-right text-slate-200">0.435</td>
+                <td class="text-right"><span class="delta-badge-pos px-1.5 py-0.5 rounded">-0.013</span></td>
+              </tr>
+              <tr>
+                <td class="py-2.5 text-slate-300">Initial Stability (GMt)</td>
+                <td class="text-right text-slate-400">142 mm</td>
+                <td class="text-right text-slate-200">156 mm</td>
+                <td class="text-right"><span class="delta-badge-pos px-1.5 py-0.5 rounded">+14 mm (+9.8%)</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Evaluation Verdict Banner -->
+        <div class="mt-5 p-3.5 bg-emerald-950/30 border border-emerald-500/30 rounded-lg flex items-start space-x-3">
+          <span class="text-emerald-400 text-base">✓</span>
+          <div class="text-xs">
+            <span class="font-bold text-emerald-300 block mb-0.5">Design Assessment: Target Hybrid Approved</span>
+            <p class="text-slate-300">
+              Rip-R Hybrid achieves <b>5.1% lower wetted area</b> and reduced trim deviation (-0.12° vs -0.42°) while gaining <b>8.4L reserve volume</b> around the cockpit and bow reflector.
+            </p>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+
+  </main>
+
+  <script>
+    function setViewMode(mode) {
+      const split = document.getElementById('canvas-split');
+      const overlay = document.getElementById('canvas-overlay');
+      const btnSplit = document.getElementById('btn-mode-split');
+      const btnOverlay = document.getElementById('btn-mode-overlay');
+
+      if (mode === 'split') {
+        split.classList.remove('hidden');
+        overlay.classList.add('hidden');
+        btnSplit.className = 'px-3 py-1 rounded bg-blue-600 text-white';
+        btnOverlay.className = 'px-3 py-1 rounded text-slate-400 hover:text-white';
+      } else {
+        split.classList.add('hidden');
+        overlay.classList.remove('hidden');
+        btnOverlay.className = 'px-3 py-1 rounded bg-blue-600 text-white';
+        btnSplit.className = 'px-3 py-1 rounded text-slate-400 hover:text-white';
+      }
+    }
+
+    function updateBlend(val) {
+      const ghostA = document.getElementById('ghost-a');
+      const ghostB = document.getElementById('ghost-b');
+      if (ghostA && ghostB) {
+        ghostA.setAttribute('stroke-opacity', (1 - val/100) * 0.9);
+        ghostB.setAttribute('stroke-opacity', (val/100) * 0.9);
+      }
+    }
+
+    function setScenario(name, weight, lcg) {
+      document.querySelectorAll('.scenario-btn').forEach(btn => {
+        btn.classList.remove('bg-blue-600', 'text-white', 'font-medium', 'shadow');
+        btn.classList.add('text-slate-400');
+      });
+      event.target.classList.add('bg-blue-600', 'text-white', 'font-medium', 'shadow');
+      event.target.classList.remove('text-slate-400');
+    }
+  </script>
+</body>
+</html>

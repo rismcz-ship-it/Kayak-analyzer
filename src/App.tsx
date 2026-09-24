@@ -162,7 +162,6 @@ export default function App() {
                   {statRow('Beam (Y)', `${fmt(s.bounds.size.y)} mm`)}
                   {statRow('Depth (Z)', `${fmt(s.bounds.size.z)} mm`)}
                   {statRow('Volume', `${fmt(s.volumeLiters)} L`, true)}
-                  {statRow('Triangles', `${fmt(s.triangleCount, 0)}`)}
                   {statRow(
                     'Watertight',
                     s.watertight.watertight ? 'yes' : `${s.watertight.openEdgeCount} open edges`,

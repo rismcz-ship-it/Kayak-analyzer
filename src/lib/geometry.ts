@@ -1,10 +1,8 @@
 // Modular geometry helpers for the hull analyzer.
-//
 // Kept deliberately framework-free (no three / react imports) so a later
 // hydrostatics solver can reuse them: waterplane slicing, wetted area,
 // displaced volume at a draft, LCF/LCB, metacentric heights, righting arm, etc.
 // All STL files are assumed to be in millimetres.
-//
 // A raw three STLLoader geometry is NON-indexed: every triangle carries its own
 // three vertex copies, so all routines here iterate a flat interleaved xyz
 // Float32Array (stride 3 per vertex, 9 per triangle).
@@ -500,4 +498,142 @@ export function analyzeMesh(positions: Float32Array): MeshStats {
     volumeLiters: volumeMm3 / 1_000_000,
     watertight: checkWatertight(positions),
   }
+}
+
+/** Default triangle count for solver mesh decimation. */
+export const DEFAULT_SOLVER_TRIANGLES = 10000
+
+/**
+ * Decimate a mesh to approximately `targetTriangles` using spatial vertex clustering.
+ * Groups vertices into a 3D grid and averages positions within each cell.
+ * Preserves overall volume and shape well for hydrostatic calculations.
+ * Uses a very coarse grid that forces strong merging for elongated hulls.
+ * 
+ * @param positions Flat interleaved xyz Float32Array (9 values per triangle)
+ * @param targetTriangles Target number of triangles (default: 10000)
+ * @returns Decimated mesh as Float32Array, or original if already small enough
+ */
+export function decimateMesh(
+  positions: Float32Array,
+  targetTriangles: number = DEFAULT_SOLVER_TRIANGLES
+): Float32Array {
+  const triCount = positions.length / 9
+  if (triCount <= targetTriangles) return positions // already small enough
+
+  const bounds = computeBounds(positions)
+  const sizeX = bounds.max.x - bounds.min.x
+  const sizeY = bounds.max.y - bounds.min.y
+  const sizeZ = bounds.max.z - bounds.min.z
+
+  // Very coarse grid for kayak-like elongated hulls.
+  // 4 * 3 * 2 = 24 cells -> forces strong vertex merging
+  let cellsX = 4
+  let cellsY = 3
+  let cellsZ = 2
+
+  // Scale grid if target is significantly different
+  const baseCells = 4 * 3 * 2
+  const targetCells = Math.min(5000, Math.max(200, targetTriangles / 2))
+  const scale = Math.cbrt(targetCells / baseCells)
+  cellsX = Math.max(3, Math.round(cellsX * scale))
+  cellsY = Math.max(3, Math.round(cellsY * scale))
+  cellsZ = Math.max(3, Math.round(cellsZ * scale))
+
+  // Clamp to reasonable bounds
+  const maxCellsPerAxis = 30
+  cellsX = Math.min(cellsX, maxCellsPerAxis)
+  cellsY = Math.min(cellsY, maxCellsPerAxis)
+  cellsZ = Math.min(cellsZ, maxCellsPerAxis)
+
+  let decimated: Float32Array = positions
+  let bestDiff = Infinity
+
+  for (let attempt = 0; attempt < 8; attempt++) {
+    // Cell sizes
+    const dx = sizeX / cellsX
+    const dy = sizeY / cellsY
+    const dz = sizeZ / cellsZ
+
+    // Map: cell key -> { sumX, sumY, sumZ, count }
+    const cellMap = new Map<string, { sx: number; sy: number; sz: number; cnt: number }>()
+
+    // First pass: accumulate vertex sums per cell
+    for (let i = 0; i < positions.length; i += 3) {
+      const x = positions[i]
+      const y = positions[i + 1]
+      const z = positions[i + 2]
+
+      const cx = Math.min(cellsX - 1, Math.floor((x - bounds.min.x) / dx))
+      const cy = Math.min(cellsY - 1, Math.floor((y - bounds.min.y) / dy))
+      const cz = Math.min(cellsZ - 1, Math.floor((z - bounds.min.z) / dz))
+
+      const key = `${cx}|${cy}|${cz}`
+      const entry = cellMap.get(key)
+      if (entry) {
+        entry.sx += x
+        entry.sy += y
+        entry.sz += z
+        entry.cnt++
+      } else {
+        cellMap.set(key, { sx: x, sy: y, sz: z, cnt: 1 })
+      }
+    }
+
+    // Build cell centroid lookup
+    const cellCentroid = new Map<string, { x: number; y: number; z: number }>()
+    for (const [key, v] of cellMap) {
+      cellCentroid.set(key, { x: v.sx / v.cnt, y: v.sy / v.cnt, z: v.sz / v.cnt })
+    }
+
+    // Second pass: rebuild triangles using cell centroids
+    const out: number[] = []
+    for (let i = 0; i < positions.length; i += 9) {
+      const v0Key = `${Math.min(cellsX - 1, Math.floor((positions[i] - bounds.min.x) / dx))}|` +
+                     `${Math.min(cellsY - 1, Math.floor((positions[i + 1] - bounds.min.y) / dy))}|` +
+                     `${Math.min(cellsZ - 1, Math.floor((positions[i + 2] - bounds.min.z) / dz))}`
+      const v1Key = `${Math.min(cellsX - 1, Math.floor((positions[i + 3] - bounds.min.x) / dx))}|` +
+                     `${Math.min(cellsY - 1, Math.floor((positions[i + 4] - bounds.min.y) / dy))}|` +
+                     `${Math.min(cellsZ - 1, Math.floor((positions[i + 5] - bounds.min.z) / dz))}`
+      const v2Key = `${Math.min(cellsX - 1, Math.floor((positions[i + 6] - bounds.min.x) / dx))}|` +
+                     `${Math.min(cellsY - 1, Math.floor((positions[i + 7] - bounds.min.y) / dy))}|` +
+                     `${Math.min(cellsZ - 1, Math.floor((positions[i + 8] - bounds.min.z) / dz))}`
+
+      const c0 = cellCentroid.get(v0Key)
+      const c1 = cellCentroid.get(v1Key)
+      const c2 = cellCentroid.get(v2Key)
+
+      // Degenerate triangle check (all vertices collapsed to same centroid)
+      if (c0 && c1 && c2 && (v0Key !== v1Key || v1Key !== v2Key)) {
+        out.push(c0.x, c0.y, c0.z, c1.x, c1.y, c1.z, c2.x, c2.y, c2.z)
+      }
+    }
+
+    const newTriCount = out.length / 9
+    decimated = new Float32Array(out)
+
+    const diff = Math.abs(newTriCount - targetTriangles)
+    if (diff < bestDiff) {
+      bestDiff = diff
+    }
+
+    // Adjust grid for next attempt
+    if (newTriCount > targetTriangles * 1.2) {
+      // Too many triangles: increase grid resolution
+      const factor = Math.sqrt(newTriCount / targetTriangles)
+      cellsX = Math.min(maxCellsPerAxis, Math.ceil(cellsX * factor))
+      cellsY = Math.min(maxCellsPerAxis, Math.ceil(cellsY * factor))
+      cellsZ = Math.min(maxCellsPerAxis, Math.ceil(cellsZ * factor))
+    } else if (newTriCount < targetTriangles * 0.8) {
+      // Too few triangles: decrease grid resolution
+      const factor = Math.sqrt(targetTriangles / newTriCount)
+      cellsX = Math.max(3, Math.floor(cellsX * factor))
+      cellsY = Math.max(3, Math.floor(cellsY * factor))
+      cellsZ = Math.max(3, Math.floor(cellsZ * factor))
+    } else {
+      // Close enough
+      break
+    }
+  }
+
+  return decimated
 }
