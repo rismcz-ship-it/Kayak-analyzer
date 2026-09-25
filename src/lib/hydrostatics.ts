@@ -12,6 +12,7 @@ import {
   computeVolumeAndCentroid,
   decimateMesh,
   DEFAULT_SOLVER_TRIANGLES,
+  findMaxCrossSectionArea,
   type Vec3,
 } from './geometry'
 
@@ -43,9 +44,32 @@ export interface Draft0TrimResult {
   planesEvaluated: number
   /** True when the bracket + verification volume closed on the target. */
   converged: boolean
-}
+  /** Block coefficient: Cb = V / (LWL × BWL × draft) */
+    Cb: number
+    /** Midship section area at the waterline, mm^2. */
+    midshipAreaMm2: number
+    /** Prismatic coefficient: Cp = V / (Am × LWL) */
+    Cp: number
+    /** Midship coefficient: Cm = Am / (BWL × draft) */
+      Cm: number
+      /** Keel to Buoyancy center (KB = LCB_z - keel_z) in mm */
+        KB: number
+        /** Metacentric radius (BM = Iₜ / V) in mm */
+        BM: number
+        /** Keel to Metacenter (KM = KB + BM) in mm */
+          KM: number
+          /** Metacentric height (GM = KM - KG) in mm */
+          GM: number
+          }
 
-export interface TrimSolveResult {
+          export interface GZPoint {
+          /** Heel angle in degrees (+ = starboard/right heel) */
+          heelDeg: number
+          /** Righting arm in mm */
+          GZ: number
+          }
+
+          export interface TrimSolveResult {
   /** Equilibrium trim angle in degrees (+ = bow up, - = bow down). */
   trimDeg: number
   /** Equilibrium draft at hull center (above keel) in mm. */
@@ -68,6 +92,50 @@ export interface TrimSolveResult {
   /** Total evaluations across trim sweep. */
   planesEvaluated: number
   converged: boolean
+  /** Block coefficient: Cb = V / (LWL × BWL × draft) */
+    Cb: number
+    /** Midship section area at the waterline, mm^2. */
+    midshipAreaMm2: number
+    /** Prismatic coefficient: Cp = V / (Am × LWL) */
+    Cp: number
+    /** Midship coefficient: Cm = Am / (BWL × draft) */
+      Cm: number
+      /** Keel to Buoyancy center (KB = LCB_z - keel_z) in mm */
+        KB: number
+        /** Metacentric radius (BM = Iₜ / V) in mm */
+        BM: number
+        /** Keel to Metacenter (KM = KB + BM) in mm */
+        KM: number
+        /** Metacentric height (GM = KM - KG) in mm */
+        GM: number
+        /** Righting arm curve points at standard heel angles (0°, 5°, 10°, 15°, 20°, 25°, 30°) */
+        gzCurve: GZPoint[]
+      }
+
+/** Standard heel angles to sample for the GZ curve (degrees). */
+export const DEFAULT_GZ_HEEL_ANGLES_DEG = [0, 5, 10, 15, 20, 25, 30]
+
+/**
+ * Compute the righting arm (GZ) curve for a hull across a range of heel angles.
+ * For small-to-moderate angles, GZ(φ) = GM × sin(φ).
+ * At higher heel, form stability dominates: GZ(φ) = (KM - KG) × sin(φ) + (BM/2) × tan²(φ) × sin(φ).
+ */
+export function compute_gz_curve(
+  GM: number,
+  BM: number,
+  heelAnglesDeg: number[] = DEFAULT_GZ_HEEL_ANGLES_DEG,
+): GZPoint[] {
+  return heelAnglesDeg.map((deg) => {
+    const rad = (deg * Math.PI) / 180
+    const sinPhi = Math.sin(rad)
+    const tanPhi = Math.tan(rad)
+    // Wall-sided formula: GZ = (GM + 0.5 * BM * tan²(phi)) * sin(phi)
+    const gz = (GM + 0.5 * BM * tanPhi * tanPhi) * sinPhi
+    return {
+      heelDeg: deg,
+      GZ: Number(gz.toFixed(1)),
+    }
+  })
 }
 
 /** Fresh-water density: 1000 kg/m^3. */
@@ -122,6 +190,8 @@ export interface ClippedBelow {
   clipped: Float32Array
   /** Waterplane area (sum of cap-loop |areas|), mm^2. */
   waterplaneAreaMm2: number
+  /** Waterplane second moment of area about centerline (Y=0), mm^4. */
+  waterplaneIx: number
 }
 
 /**
@@ -141,6 +211,7 @@ export function clipBelowPlane(positions: Float32Array, h: number): ClippedBelow
   const segY1: number[] = []
   const segX2: number[] = []
   const segY2: number[] = []
+  let waterplaneIx = 0
 
   const pushTri = (
     ax: number, ay: number, az: number,
@@ -314,21 +385,27 @@ export function clipBelowPlane(positions: Float32Array, h: number): ClippedBelow
     }
 
     for (const pts of loops) {
-      let signedArea = 0
-      let cx = 0
-      let cy = 0
-      for (let k = 0; k < pts.length; k++) {
-        const p = pts[k]
-        const q = pts[(k + 1) % pts.length]
-        signedArea += p.x * q.y - q.x * p.y
-        cx += p.x
-        cy += p.y
-      }
-      signedArea /= 2
-      if (Math.abs(signedArea) < 1e-9) continue
-      waterplaneAreaMm2 += Math.abs(signedArea)
-      cx /= pts.length
-      cy /= pts.length
+          let signedArea = 0
+          let cx = 0
+          let cy = 0
+          let Ix = 0 // second moment of area about centerline Y=0 (Iₜ)
+          for (let k = 0; k < pts.length; k++) {
+            const p = pts[k]
+            const q = pts[(k + 1) % pts.length]
+            const cross = p.x * q.y - q.x * p.y
+            signedArea += cross
+            cx += p.x
+            cy += p.y
+            // Iₜ contribution for this edge: (y₁² + y₁y₂ + y₂²) * (x₁y₂ - x₂y₁) / 12
+            Ix += (p.y * p.y + p.y * q.y + q.y * q.y) * cross
+          }
+          signedArea /= 2
+          if (Math.abs(signedArea) < 1e-9) continue
+          waterplaneAreaMm2 += Math.abs(signedArea)
+          // Iₜ = Ix / 12 for the polygon (about Y=0 axis)
+          waterplaneIx += Ix / 12
+          cx /= pts.length
+          cy /= pts.length
       // Fan needs CCW order for a +Z (outward) cap, CW for inward.
       const wantCCW = outward
       const isCCW = signedArea > 0
@@ -341,7 +418,7 @@ export function clipBelowPlane(positions: Float32Array, h: number): ClippedBelow
     }
   }
 
-  return { clipped: new Float32Array(out), waterplaneAreaMm2 }
+  return { clipped: new Float32Array(out), waterplaneAreaMm2, waterplaneIx }
 }
 
 /**
@@ -366,9 +443,10 @@ export function volumeBelowPlane(positions: Float32Array, h: number): number {
  *
  * @param mesh Hull mesh (Z-up; draft measured from bbox min Z = keel).
  * @param target_kg Target displacement mass in kg (fresh water, 1 kg = 1 L).
+ * @param KG Optional center of gravity height above keel (mm) for GM calculation.
  * @throws when the target is non-positive or exceeds the hull's total volume.
  */
-export function find_draft_0trim(mesh: MeshLike, target_kg: number): Draft0TrimResult {
+export function find_draft_0trim(mesh: MeshLike, target_kg: number, KG?: number): Draft0TrimResult {
   const positions = toPositions(mesh)
   if (positions.length === 0) throw new Error('find_draft_0trim: empty mesh')
   if (!Number.isFinite(target_kg) || target_kg <= 0) {
@@ -397,22 +475,48 @@ export function find_draft_0trim(mesh: MeshLike, target_kg: number): Draft0TrimR
   planesEvaluated++
 
   // Degenerate case: target equals total volume — floating at the deck edge.
-  if (upperV <= targetVolumeMm3) {
-    const { clipped, waterplaneAreaMm2 } = clipBelowPlane(positions, upperH)
-    const { centroid: lcb } = computeVolumeAndCentroid(clipped)
-    return {
-      draftMm: maxZ - minZ,
-      waterlineZ: maxZ,
-      displacedVolumeMm3: upperV,
-      displacementKg: upperV / MM3_PER_KG,
-      targetKg: target_kg,
-      lcb,
-      waterplaneAreaMm2,
-      stepMm,
-      planesEvaluated,
-      converged: Math.abs(upperV - targetVolumeMm3) / targetVolumeMm3 < 1e-6,
-    }
-  }
+              if (upperV <= targetVolumeMm3) {
+                const { clipped, waterplaneAreaMm2, waterplaneIx } = clipBelowPlane(positions, upperH)
+                const { centroid: lcb } = computeVolumeAndCentroid(clipped)
+                                          const draftMm = maxZ - minZ
+                                          const LWL = bounds.size.x
+                                          const BWL = LWL > 0 ? waterplaneAreaMm2 / LWL : bounds.size.y
+                                          const boxVolumeMm3 = LWL * BWL * draftMm
+                                          const Cb = boxVolumeMm3 > 0 ? upperV / boxVolumeMm3 : 0
+                                          // Max cross-section area (standard Cp/Cm definition uses Am_max)
+                                          const midshipAreaMm2 = findMaxCrossSectionArea(positions, bounds.min.x, bounds.max.x)
+                                          const Cp = (midshipAreaMm2 > 0 && LWL > 0) ? upperV / (midshipAreaMm2 * LWL) : 0
+                                          // Midship coefficient: Cm = Am_max / (BWL × draft)
+                                          const Cm = (midshipAreaMm2 > 0 && BWL > 0 && draftMm > 0) ? midshipAreaMm2 / (BWL * draftMm) : 0
+                                          // Keel to Buoyancy center: KB = LCB_z - keel_z
+                                          const KB = lcb.z - minZ
+                                                                                    // Metacentric radius: BM = Iₜ / V
+                                                                                    const BM = waterplaneIx > 0 ? waterplaneIx / upperV : 0
+                                                                                    // Keel to Metacenter: KM = KB + BM
+                                                                                                                                                                        const KM = KB + BM
+                                                                                                                                                                        // Metacentric height: GM = KM - KG (if KG provided)
+                                                                                                                                                                        const GM = (typeof KG === 'number') ? KM - KG : 0
+                                                                                                                                                                        return {
+                                                                                                                                                                          draftMm,
+                                                                                                                                                                          waterlineZ: maxZ,
+                                                                                                                                                                          displacedVolumeMm3: upperV,
+                                                                                                                                                                          displacementKg: upperV / MM3_PER_KG,
+                                                                                                                                                                          targetKg: target_kg,
+                                                                                                                                                                          lcb,
+                                                                                                                                                                          waterplaneAreaMm2,
+                                                                                                                                                                          stepMm,
+                                                                                                                                                                          planesEvaluated,
+                                                                                                                                                                          converged: Math.abs(upperV - targetVolumeMm3) / targetVolumeMm3 < 1e-6,
+                                                                                                                                                                          Cb: Number(Cb.toFixed(4)),
+                                                                                                                                                                          midshipAreaMm2: Number(midshipAreaMm2.toFixed(1)),
+                                                                                                                                                                          Cp: Number(Cp.toFixed(4)),
+                                                                                                                                                                          Cm: Number(Cm.toFixed(4)),
+                                                                                                                                                                          KB: Number(KB.toFixed(1)),
+                                                                                                                                                                          BM: Number(BM.toFixed(1)),
+                                                                                                                                                                          KM: Number(KM.toFixed(1)),
+                                                                                                                                                                          GM: Number(GM.toFixed(1)),
+                                                                                                                                                                        }
+              }
 
   // Binary search: find waterline Z so volumeBelowPlane(positions, Z) ≈ target.
     // V(h) decreases monotonically as h drops from maxZ to minZ, so bisection
@@ -451,31 +555,63 @@ export function find_draft_0trim(mesh: MeshLike, target_kg: number): Draft0TrimR
     }
 
   // Verification pass: clip exactly at the interpolated waterline so the
-  // returned displacement is a measured mesh volume, not the interpolation.
-  const { clipped, waterplaneAreaMm2 } = clipBelowPlane(positions, waterlineZ)
-    const { volumeMm3: verifiedVolumeMm3, centroid: lcb } =
-      computeVolumeAndCentroid(clipped)
-    planesEvaluated += 1
+    // returned displacement is a measured mesh volume, not the interpolation.
+    const { clipped, waterplaneAreaMm2, waterplaneIx } = clipBelowPlane(positions, waterlineZ)
+      const { volumeMm3: verifiedVolumeMm3, centroid: lcb } =
+        computeVolumeAndCentroid(clipped)
+      planesEvaluated += 1
 
-    // Force transverse symmetry: LCB Y = hull centerline
-    const boundsForLcb = computeBounds(positions)
-    lcb.y = boundsForLcb.center.y
+      // Force transverse symmetry: LCB Y = hull centerline
+      const boundsForLcb = computeBounds(positions)
+      lcb.y = boundsForLcb.center.y
 
-    const displacementKg = verifiedVolumeMm3 / MM3_PER_KG
-  const relErr = Math.abs(verifiedVolumeMm3 - targetVolumeMm3) / targetVolumeMm3
+      const displacementKg = verifiedVolumeMm3 / MM3_PER_KG
+        const relErr = Math.abs(verifiedVolumeMm3 - targetVolumeMm3) / targetVolumeMm3
 
-  return {
-    draftMm: waterlineZ - minZ,
-    waterlineZ,
-    displacedVolumeMm3: verifiedVolumeMm3,
-    displacementKg,
-    targetKg: target_kg,
-    lcb,
-    waterplaneAreaMm2,
-    stepMm,
-    planesEvaluated,
-    converged: relErr < 0.01,
-  }
+        // Compute Block Coefficient (Cb): Cb = V / (LWL × BWL × draft)
+              // LWL: length of submerged hull along X
+              // BWL: mean waterline beam = waterplane area / LWL
+              // draft: draft above keel
+              const draftMm = waterlineZ - minZ
+              const LWL = bounds.size.x // approximation for box/straight hull; matches length
+                      const BWL = LWL > 0 ? waterplaneAreaMm2 / LWL : bounds.size.y
+                      const boxVolumeMm3 = LWL * BWL * draftMm
+                      const Cb = boxVolumeMm3 > 0 ? verifiedVolumeMm3 / boxVolumeMm3 : 0
+                      // Midship section area and Prismatic Coefficient
+                                      // Find max cross-section area (standard Cp/Cm definition uses Am_max)
+                                      const midshipAreaMm2 = findMaxCrossSectionArea(positions, bounds.min.x, bounds.max.x)
+                                      const Cp = (midshipAreaMm2 > 0 && LWL > 0) ? verifiedVolumeMm3 / (midshipAreaMm2 * LWL) : 0
+                                      // Midship coefficient: Cm = Am_max / (BWL × draft)
+                                      const Cm = (midshipAreaMm2 > 0 && BWL > 0 && draftMm > 0) ? midshipAreaMm2 / (BWL * draftMm) : 0
+                                      // Keel to Buoyancy center: KB = LCB_z - keel_z
+                                      const KB = lcb.z - minZ
+                                      // Metacentric radius: BM = Iₜ / V
+                                                                            const BM = waterplaneIx > 0 ? waterplaneIx / verifiedVolumeMm3 : 0
+                                                                            // Keel to Metacenter: KM = KB + BM
+                                                                                                                                                        const KM = KB + BM
+                                                                                                                                                        // Metacentric height: GM = KM - KG (if KG provided)
+                                                                                                                                                        const GM = (typeof KG === 'number') ? KM - KG : 0
+
+                                                                                                                                                        return {
+                                                                                                                                                          draftMm,
+                                                                                                                                                          waterlineZ,
+                                                                                                                                                          displacedVolumeMm3: verifiedVolumeMm3,
+                                                                                                                                                          displacementKg,
+                                                                                                                                                          targetKg: target_kg,
+                                                                                                                                                          lcb,
+                                                                                                                                                          waterplaneAreaMm2,
+                                                                                                                                                          stepMm,
+                                                                                                                                                          planesEvaluated,
+                                                                                                                                                          converged: relErr < 0.01,
+                                                                                                                                                          Cb: Number(Cb.toFixed(4)),
+                                                                                                                                                          midshipAreaMm2: Number(midshipAreaMm2.toFixed(1)),
+                                                                                                                                                          Cp: Number(Cp.toFixed(4)),
+                                                                                                                                                          Cm: Number(Cm.toFixed(4)),
+                                                                                                                                                          KB: Number(KB.toFixed(1)),
+                                                                                                                                                          BM: Number(BM.toFixed(1)),
+                                                                                                                                                          KM: Number(KM.toFixed(1)),
+                                                                                                                                                          GM: Number(GM.toFixed(1)),
+                                                                                                                                                        }
 }
 
 /**
@@ -534,8 +670,8 @@ export function solve_trim(
     applyPitchY(workingPositions, rad, targetLcgX, bounds.center.z)
 
     try {
-      const res = find_draft_0trim(workingPositions, target_kg)
-      totalPlanes += res.planesEvaluated
+          const res = find_draft_0trim(workingPositions, target_kg, lcg.z)
+          totalPlanes += res.planesEvaluated
 
       const cosA = Math.cos(rad)
       const sinA = Math.sin(rad)
@@ -568,8 +704,8 @@ export function solve_trim(
     applyPitchY(workingPositions, rad, targetLcgX, bounds.center.z)
 
     try {
-      const res = find_draft_0trim(workingPositions, target_kg)
-      totalPlanes += res.planesEvaluated
+          const res = find_draft_0trim(workingPositions, target_kg, lcg.z)
+          totalPlanes += res.planesEvaluated
 
       const cosA = Math.cos(rad)
       const sinA = Math.sin(rad)
@@ -594,27 +730,44 @@ export function solve_trim(
   }
 
   if (!bestResult) {
-    const fallback = find_draft_0trim(solveMesh, target_kg)
-    bestResult = {
-      ...fallback,
-      lcb: { ...fallback.lcb, y: bounds.center.y }, // Force centerline
-    }
-    bestAngleDeg = 0
-    bestOffset = Math.abs(bestResult.lcb.x - targetLcgX)
-  }
+                const fallback = find_draft_0trim(solveMesh, target_kg, lcg.z)
+                bestResult = {
+                  ...fallback,
+                            lcb: { ...fallback.lcb, y: bounds.center.y }, // Force centerline
+                            Cb: fallback.Cb,
+                            midshipAreaMm2: fallback.midshipAreaMm2,
+                            Cp: fallback.Cp,
+                            Cm: fallback.Cm,
+                            KB: fallback.KB,
+                            BM: fallback.BM,
+                            KM: fallback.KM,
+                            GM: fallback.GM,
+                          }
+                          bestAngleDeg = 0
+                          bestOffset = Math.abs(bestResult.lcb.x - targetLcgX)
+                        }
 
-  return {
-    trimDeg: Number(bestAngleDeg.toFixed(2)),
-    draftMm: bestResult.draftMm,
-    waterlineZ: bestResult.waterlineZ,
-    displacedVolumeMm3: bestResult.displacedVolumeMm3,
-    displacementKg: bestResult.displacementKg,
-    targetKg: target_kg,
-    lcb: bestResult.lcb,
-    lcg,
-    lcbLcgOffsetMm: bestOffset,
-    waterplaneAreaMm2: bestResult.waterplaneAreaMm2,
-    planesEvaluated: totalPlanes,
-    converged: bestOffset < 15.0, // within 15mm alignment or best reachable
+                      return {
+                        trimDeg: Number(bestAngleDeg.toFixed(2)),
+                        draftMm: bestResult.draftMm,
+                        waterlineZ: bestResult.waterlineZ,
+                        displacedVolumeMm3: bestResult.displacedVolumeMm3,
+                        displacementKg: bestResult.displacementKg,
+                        targetKg: target_kg,
+                        lcb: bestResult.lcb,
+                        lcg,
+                        lcbLcgOffsetMm: bestOffset,
+                        waterplaneAreaMm2: bestResult.waterplaneAreaMm2,
+                        planesEvaluated: totalPlanes,
+                        converged: bestOffset < 15.0, // within 15mm alignment or best reachable
+                        Cb: bestResult.Cb,
+                        midshipAreaMm2: bestResult.midshipAreaMm2,
+                        Cp: bestResult.Cp,
+                        Cm: bestResult.Cm,
+                        KB: bestResult.KB,
+                        BM: bestResult.BM,
+                        KM: bestResult.KM,
+                        GM: bestResult.GM,
+                        gzCurve: compute_gz_curve(bestResult.GM, bestResult.BM),
+                      }
   }
-}

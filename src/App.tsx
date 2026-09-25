@@ -7,6 +7,15 @@ import {
   type Draft0TrimResult,
   type TrimSolveResult,
 } from './lib/hydrostatics'
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+} from 'recharts'
 
 const fmt = (v: number, digits = 1) =>
   v.toLocaleString('en-US', { maximumFractionDigits: digits });
@@ -16,6 +25,16 @@ function statRow(label: string, value: string, accent = false) {
     <div className="flex items-baseline justify-between gap-3">
       <dt className="text-zinc-400">{label}</dt>
       <dd className={`font-medium ${accent ? 'text-sky-300' : 'text-zinc-100'}`}>{value}</dd>
+    </div>
+  );
+}
+
+function sectionTitle(title: string) {
+  return (
+    <div className="flex items-center gap-2 my-2">
+      <span className="h-0.5 flex-1 bg-zinc-700" />
+      <span className="text-xs font-semibold text-zinc-300 uppercase tracking-wider">{title}</span>
+      <span className="h-0.5 flex-1 bg-zinc-700" />
     </div>
   );
 }
@@ -238,49 +257,105 @@ export default function App() {
                   </p>
                 )}
                 <output className="block text-sm" id="draft-output" aria-live="polite">
-                  {trimResult ? (
-                    <dl className="space-y-1">
-                      {statRow(
-                        'Trim',
-                        `${trimResult.trimDeg >= 0 ? '+' : ''}${fmt(trimResult.trimDeg)}°`,
-                        true,
-                      )}
-                      {statRow('Draft (center)', `${fmt(trimResult.draftMm)} mm`)}
-                      {statRow('Waterline Z', `${fmt(trimResult.waterlineZ)} mm`)}
-                      {statRow('Displacement', `${fmt(trimResult.displacementKg)} kg`)}
-                      {statRow('Target', `${fmt(trimResult.targetKg)} kg`)}
-                      {statRow('Waterplane area', `${fmt(trimResult.waterplaneAreaMm2 / 1e6, 3)} m²`)}
-                      {statRow('LCG X', `${fmt(trimResult.lcg.x)} mm`)}
-                      {statRow('LCB X', `${fmt(trimResult.lcb.x)} mm`)}
-                      {statRow('LCB–LCG offset', `${fmt(trimResult.lcbLcgOffsetMm)} mm`, true)}
-                      {statRow(
-                        'Converged',
-                        trimResult.converged
-                          ? `yes (${trimResult.planesEvaluated} planes)`
-                          : `approx (${trimResult.planesEvaluated} planes)`,
-                      )}
-                    </dl>
-                  ) : draftResult ? (
-                    <dl className="space-y-1">
-                      {statRow('Draft', `${fmt(draftResult.draftMm)} mm`, true)}
-                      {statRow('Waterline Z', `${fmt(draftResult.waterlineZ)} mm`)}
-                      {statRow('Displacement', `${fmt(draftResult.displacementKg)} kg`)}
-                      {statRow('Target', `${fmt(draftResult.targetKg)} kg`)}
-                      {statRow(
-                        'Waterplane area',
-                        `${fmt(draftResult.waterplaneAreaMm2 / 1e6, 3)} m²`,
-                      )}
-                      {statRow(
-                        'Converged',
-                        draftResult.converged
-                          ? `yes (${draftResult.planesEvaluated} planes)`
-                          : `approx (${draftResult.planesEvaluated} planes)`,
-                      )}
-                    </dl>
-                  ) : !draftError && !isCalculating ? (
-                    <span className="text-zinc-500">No results yet.</span>
-                  ) : null}
-                </output>
+                                  {trimResult ? (
+                                    <dl className="space-y-1">
+                                      {sectionTitle('Equilibrium')}
+                                      {statRow(
+                                        'Trim',
+                                        `${trimResult.trimDeg >= 0 ? '+' : ''}${fmt(trimResult.trimDeg)}°`,
+                                        true,
+                                      )}
+                                      {statRow('Draft (center)', `${fmt(trimResult.draftMm)} mm`)}
+                                      {statRow('Waterline Z', `${fmt(trimResult.waterlineZ)} mm`)}
+                                      {statRow('Displacement', `${fmt(trimResult.displacementKg)} kg`)}
+                                      {statRow('Target', `${fmt(trimResult.targetKg)} kg`)}
+                                      {statRow('Waterplane area', `${fmt(trimResult.waterplaneAreaMm2 / 1e6, 3)} m²`)}
+                                      {statRow('LCG X', `${fmt(trimResult.lcg.x)} mm`)}
+                                      {statRow('LCB X', `${fmt(trimResult.lcb.x)} mm`)}
+                                      {statRow('LCB–LCG offset', `${fmt(trimResult.lcbLcgOffsetMm)} mm`, true)}
+                                      {statRow(
+                                        'Converged',
+                                        trimResult.converged
+                                          ? `yes (${trimResult.planesEvaluated} planes)`
+                                          : `approx (${trimResult.planesEvaluated} planes)`,
+                                      )}
+
+                                      {sectionTitle('Form Coefficients')}
+                                      {statRow('Block Coeff (Cb)', fmt(trimResult.Cb, 4))}
+                                      {statRow('Prismatic Coeff (Cp)', fmt(trimResult.Cp, 4))}
+                                      {statRow('Midship Coeff (Cm)', fmt(trimResult.Cm, 4))}
+
+                                      {sectionTitle('Stability')}
+                                      {statRow('KB (Keel→Buoyancy)', `${fmt(trimResult.KB)} mm`)}
+                                      {statRow('BM (Metacentric Radius)', `${fmt(trimResult.BM)} mm`)}
+                                      {statRow('KM (Keel→Metacenter)', `${fmt(trimResult.KM)} mm`, true)}
+                                      {statRow('GM (Metacentric Height)', `${fmt(trimResult.GM)} mm`, true)}
+
+                                      {sectionTitle('Righting Arm (GZ)')}
+                                      <ResponsiveContainer width="100%" height={180}>
+                                        <LineChart
+                                          data={trimResult.gzCurve.map((p) => ({
+                                            angle: p.heelDeg,
+                                            GZ: p.GZ,
+                                          }))}
+                                          margin={{ top: 5, right: 5, left: 0, bottom: 0 }}
+                                        >
+                                          <CartesianGrid strokeDasharray="3 3" stroke="#3f3f46" vertical={false} />
+                                          <XAxis
+                                            dataKey="angle"
+                                            type="number"
+                                            tick={{ fill: '#71717a', fontSize: 10 }}
+                                            axisLine={{ stroke: '#52525b' }}
+                                            label={{ value: 'Heel (°)', position: 'insideRight', offset: -10, fill: '#71717a', fontSize: 10 }}
+                                          />
+                                          <YAxis
+                                            type="number"
+                                            tick={{ fill: '#71717a', fontSize: 10 }}
+                                            axisLine={{ stroke: '#52525b' }}
+                                            label={{ value: 'GZ (mm)', angle: -90, position: 'insideLeft', offset: 10, fill: '#71717a', fontSize: 10 }}
+                                          />
+                                          <Tooltip
+                                                                      contentStyle={{
+                                                                        backgroundColor: '#18181b',
+                                                                        border: '1px solid #3f3f46',
+                                                                        borderRadius: '4px',
+                                                                        color: '#fafafa',
+                                                                      }}
+                                                                      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                                                                      formatter={(value: any, name: any) => [value != null ? `${fmt(value)} mm` : '—', name]}
+                                                                    />
+                                          <Line
+                                            type="monotone"
+                                            dataKey="GZ"
+                                            stroke="#0ea5e9"
+                                            strokeWidth={2}
+                                            dot={false}
+                                            activeDot={{ r: 4, fill: '#0ea5e9' }}
+                                          />
+                                        </LineChart>
+                                      </ResponsiveContainer>
+                                    </dl>
+                                  ) : draftResult ? (
+                                    <dl className="space-y-1">
+                                      {statRow('Draft', `${fmt(draftResult.draftMm)} mm`, true)}
+                                      {statRow('Waterline Z', `${fmt(draftResult.waterlineZ)} mm`)}
+                                      {statRow('Displacement', `${fmt(draftResult.displacementKg)} kg`)}
+                                      {statRow('Target', `${fmt(draftResult.targetKg)} kg`)}
+                                      {statRow(
+                                        'Waterplane area',
+                                        `${fmt(draftResult.waterplaneAreaMm2 / 1e6, 3)} m²`,
+                                      )}
+                                      {statRow(
+                                        'Converged',
+                                        draftResult.converged
+                                          ? `yes (${draftResult.planesEvaluated} planes)`
+                                          : `approx (${draftResult.planesEvaluated} planes)`,
+                                      )}
+                                    </dl>
+                                  ) : !draftError && !isCalculating ? (
+                                    <span className="text-zinc-500">No results yet.</span>
+                                  ) : null}
+                                </output>
               </section>
             </aside>
           </div>

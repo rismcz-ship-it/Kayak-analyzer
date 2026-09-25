@@ -479,15 +479,190 @@ export function checkWatertight(positions: Float32Array): WatertightResult {
   }
 
   return {
-    watertight: open === 0,
-    closedEdgeCount: closed,
-    openEdgeCount: open,
-    degenerateEdgeCount: degenerate,
+      watertight: open === 0,
+      closedEdgeCount: closed,
+      openEdgeCount: open,
+      degenerateEdgeCount: degenerate,
+    }
   }
-}
 
-/** One-stop analysis prep for a later hydrostatics pass. */
-export function analyzeMesh(positions: Float32Array): MeshStats {
+  /**
+   * Compute the midship cross-section area (Am) at X = centerX.
+   * Intersects all triangles with the plane X = centerX and computes
+   * the resulting cross-section area using trapezoidal integration.
+   * 
+   * @param positions Flat interleaved xyz Float32Array
+   * @param centerX X coordinate of the midship plane (usually bounds.center.x)
+   * @returns Midship section area in mm²
+   */
+  export function computeMidshipAreaMm2(positions: Float32Array, centerX: number): number {
+    let area = 0
+  
+    for (let i = 0; i < positions.length; i += 9) {
+      const x0 = positions[i]
+      const y0 = positions[i + 1]
+      const z0 = positions[i + 2]
+      const x1 = positions[i + 3]
+      const y1 = positions[i + 4]
+      const z1 = positions[i + 5]
+      const x2 = positions[i + 6]
+      const y2 = positions[i + 7]
+      const z2 = positions[i + 8]
+    
+      // Check if triangle crosses the X = centerX plane
+      const f0 = x0 - centerX
+      const f1 = x1 - centerX
+      const f2 = x2 - centerX
+    
+      // Count intersections
+      const intersections: { y: number; z: number }[] = []
+    
+      // Edge 0-1
+      if ((f0 <= 0 && f1 >= 0) || (f0 >= 0 && f1 <= 0)) {
+        if (f1 !== f0) {
+          const t = -f0 / (f1 - f0)
+          intersections.push({ y: y0 + t * (y1 - y0), z: z0 + t * (z1 - z0) })
+        }
+      }
+      // Edge 1-2
+      if ((f1 <= 0 && f2 >= 0) || (f1 >= 0 && f2 <= 0)) {
+        if (f2 !== f1) {
+          const t = -f1 / (f2 - f1)
+          intersections.push({ y: y1 + t * (y2 - y1), z: z1 + t * (z2 - z1) })
+        }
+      }
+      // Edge 2-0
+      if ((f2 <= 0 && f0 >= 0) || (f2 >= 0 && f0 <= 0)) {
+        if (f0 !== f2) {
+          const t = -f2 / (f0 - f2)
+          intersections.push({ y: y2 + t * (y0 - y2), z: z2 + t * (z0 - z2) })
+        }
+      }
+    
+      // Triangle contributes a segment if it crosses the plane (2 intersections)
+      if (intersections.length === 2) {
+        const a = intersections[0]
+        const b = intersections[1]
+        // Area contribution = trapezoid under the segment in Y-Z plane
+        const zAvg = (a.z + b.z) / 2
+        const deltaY = Math.abs(b.y - a.y)
+        area += zAvg * deltaY
+      }
+    }
+  
+    return Math.abs(area)
+      }
+
+      /**
+       * Compute midship cross-section properties at X = centerX.
+       * Returns area, beam (max Y extent), and draft (max Z extent) at that station.
+       * 
+       * @param positions Flat interleaved xyz Float32Array
+       * @param centerX X coordinate of the midship plane
+       * @returns { areaMm2, beamMm, draftMm }
+       */
+      export function computeMidshipSection(
+        positions: Float32Array,
+        centerX: number
+      ): { areaMm2: number; beamMm: number; draftMm: number } {
+        let area = 0
+        let minY = Infinity
+        let maxY = -Infinity
+        let minZ = Infinity
+        let maxZ = -Infinity
+        let hasIntersection = false
+    
+        for (let i = 0; i < positions.length; i += 9) {
+          const x0 = positions[i]
+          const y0 = positions[i + 1]
+          const z0 = positions[i + 2]
+          const x1 = positions[i + 3]
+          const y1 = positions[i + 4]
+          const z1 = positions[i + 5]
+          const x2 = positions[i + 6]
+          const y2 = positions[i + 7]
+          const z2 = positions[i + 8]
+      
+          const f0 = x0 - centerX
+          const f1 = x1 - centerX
+          const f2 = x2 - centerX
+      
+          const intersections: { y: number; z: number }[] = []
+      
+          if ((f0 <= 0 && f1 >= 0) || (f0 >= 0 && f1 <= 0)) {
+            if (f1 !== f0) {
+              const t = -f0 / (f1 - f0)
+              intersections.push({ y: y0 + t * (y1 - y0), z: z0 + t * (z1 - z0) })
+            }
+          }
+          if ((f1 <= 0 && f2 >= 0) || (f1 >= 0 && f2 <= 0)) {
+            if (f2 !== f1) {
+              const t = -f1 / (f2 - f1)
+              intersections.push({ y: y1 + t * (y2 - y1), z: z1 + t * (z2 - z1) })
+            }
+          }
+          if ((f2 <= 0 && f0 >= 0) || (f2 >= 0 && f0 <= 0)) {
+            if (f0 !== f2) {
+              const t = -f2 / (f0 - f2)
+              intersections.push({ y: y2 + t * (y0 - y2), z: z2 + t * (z0 - z2) })
+            }
+          }
+      
+          if (intersections.length === 2) {
+            hasIntersection = true
+            const a = intersections[0]
+            const b = intersections[1]
+            const zAvg = (a.z + b.z) / 2
+            const deltaY = Math.abs(b.y - a.y)
+            area += zAvg * deltaY
+            minY = Math.min(minY, a.y, b.y)
+            maxY = Math.max(maxY, a.y, b.y)
+            minZ = Math.min(minZ, a.z, b.z)
+            maxZ = Math.max(maxZ, a.z, b.z)
+          }
+        }
+    
+        if (!hasIntersection) {
+          return { areaMm2: 0, beamMm: 0, draftMm: 0 }
+        }
+    
+        return {
+          areaMm2: Math.abs(area),
+          beamMm: maxY - minY,
+          draftMm: maxZ - minZ,
+        }
+      }
+
+      /**
+       * Find the maximum cross-section area (Am) along the X axis.
+       * Samples cross-sections at multiple X positions and returns the maximum area.
+       * This is the standard definition for Prismatic Coefficient (Cp = V / (Am_max × L)).
+       * 
+       * @param positions Flat interleaved xyz Float32Array
+       * @param minX Minimum X coordinate (bow)
+       * @param maxX Maximum X coordinate (stern)
+       * @param numSamples Number of cross-sections to sample (default: 50)
+       * @returns Maximum cross-section area in mm²
+       */
+      export function findMaxCrossSectionArea(
+        positions: Float32Array,
+        minX: number,
+        maxX: number,
+        numSamples: number = 50
+      ): number {
+        let maxArea = 0
+    
+        for (let i = 0; i <= numSamples; i++) {
+          const x = minX + (maxX - minX) * (i / numSamples)
+          const area = computeMidshipAreaMm2(positions, x)
+          if (area > maxArea) maxArea = area
+        }
+    
+        return maxArea
+      }
+
+      /** One-stop analysis prep for a later hydrostatics pass. */
+      export function analyzeMesh(positions: Float32Array): MeshStats {
   const bounds = computeBounds(positions)
   const volumeMm3 = computeVolumeMm3(positions)
   return {

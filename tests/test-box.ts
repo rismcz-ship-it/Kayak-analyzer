@@ -75,6 +75,7 @@ vol = computeVolumeAndCentroid(p1);
 console.log(`Centroid X: ${vol.centroid.x.toFixed(1)}`);
 const t1 = solve_trim(p1, 15, { maxTrimDeg: 5, trimStepDeg: 0.5 });
 console.log(`Trim: ${t1.trimDeg.toFixed(2)}°, LCG: ${t1.lcg.x.toFixed(1)}, LCB: ${t1.lcb.x.toFixed(1)}`);
+console.log(`BM: ${t1.BM.toFixed(1)}mm`);
 
 // Test 2: Rotate Z 180 (bow at -X)
 console.log("\n=== ROT Z 180 (bow at -X) ===");
@@ -87,3 +88,4 @@ vol = computeVolumeAndCentroid(p2);
 console.log(`Centroid X: ${vol.centroid.x.toFixed(1)}`);
 const t2 = solve_trim(p2, 15, { maxTrimDeg: 5, trimStepDeg: 0.5 });
 console.log(`Trim: ${t2.trimDeg.toFixed(2)}°, LCG: ${t2.lcg.x.toFixed(1)}, LCB: ${t2.lcb.x.toFixed(1)}`);
+console.log(`BM: ${t2.BM.toFixed(1)}mm`);
