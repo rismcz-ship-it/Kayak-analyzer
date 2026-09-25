@@ -1,4 +1,4 @@
-# Kayak Hydrostatics Analyzer
+# Kayak-Analyzer
 
 Interactive 3D web tool for analyzing kayak hull hydrostatics, stability, and waterlines from STL models.
 
