@@ -20,6 +20,11 @@ Thumbs.db
 # Environment / secrets
 .env
 
+# Local dev scripts (wizard-generated)
+scripts/deploy-wizard.sh
+scripts/reset-to-commit.sh
+check-mesh.ts
+
 # Local uploads / test artifacts (keep repo small)
 uploads/
 *.stl
