@@ -16,10 +16,12 @@ interface Viewer3DProps {
   /** Center of Gravity (LCG) position in mesh coordinates. */
   lcg?: { x: number; y: number; z: number } | null
   /** Center of Buoyancy (LCB) position in mesh coordinates. */
-  lcb?: { x: number; y: number; z: number } | null
-  /** Rotate hull to show trim/heel (true = real life, false = rotate waterline). Default true. */
-  rotateHull?: boolean
-}
+    lcb?: { x: number; y: number; z: number } | null
+    /** Rotation pivot point (X, Y, Z) in mesh coordinates. Matches solver's applyPitchY pivot. */
+    pivot?: { x: number; y: number; z: number } | null
+    /** Rotate hull to show trim/heel (true = real life, false = rotate waterline). Default true. */
+    rotateHull?: boolean
+  }
 
 export default function Viewer3D({
   geometry,
@@ -29,6 +31,7 @@ export default function Viewer3D({
   waterlineCenterY = 0,
   lcg = null,
   lcb = null,
+  pivot = null,
   rotateHull = true,
 }: Viewer3DProps) {
   const mountRef = useRef<HTMLDivElement>(null)
@@ -95,70 +98,76 @@ export default function Viewer3D({
         const axesHelper = new THREE.AxesHelper(500)
         scene.add(axesHelper)
 
-        // Determine pivot point (LCG if available, else hull center)
-        const pivot = lcg
-          ? new THREE.Vector3(lcg.x, lcg.y, lcg.z)
-          : center.clone()
+        // Determine pivot point: pivot prop > LCG > hull center
+                const pivotVec = pivot
+                  ? new THREE.Vector3(pivot.x, pivot.y, pivot.z)
+                  : lcg
+                    ? new THREE.Vector3(lcg.x, lcg.y, lcg.z)
+                    : center.clone()
 
-        // Apply hull rotation (trim + heel) if rotateHull=true
-        if (rotateHull) {
-          const trimRad = (trimDeg * Math.PI) / 180
-          const heelRad = (heelDeg * Math.PI) / 180
+                // Apply hull rotation (trim + heel) if rotateHull=true
+                if (rotateHull) {
+                  const trimRad = (trimDeg * Math.PI) / 180
+                  const heelRad = (heelDeg * Math.PI) / 180
 
-          // Offset mesh so pivot sits at group origin
-          mesh.position.set(-pivot.x, -pivot.y, -pivot.z)
+                  // Offset mesh so pivot sits at group origin
+                  mesh.position.set(-pivotVec.x, -pivotVec.y, -pivotVec.z)
 
-          // Move group so pivot is at world pivot position
-          hullGroup.position.copy(pivot)
+                  // Move group so pivot is at world pivot position
+                  hullGroup.position.copy(pivotVec)
 
-          // Rotate around X (heel) then Y (trim). Order: heel first, then trim.
-          hullGroup.rotation.x = heelRad
-                hullGroup.rotation.y = trimRad
-              }
+                  // Rotate around X (heel) then Y (trim). Order: heel first, then trim.
+                  hullGroup.rotation.x = heelRad
+                                    hullGroup.rotation.y = trimRad
+                                  }
 
-              // Waterline plane: horizontal at waterlineZ (world coords).
-              // If rotateHull=true, hull rotates and waterline stays horizontal.
-              // If rotateHull=false, hull stays fixed and waterline rotates opposite (legacy).
-              let waterPlaneGroup: THREE.Group | null = null
-              if (waterlineZ !== null && Number.isFinite(waterlineZ)) {
-                const wbb = geometry.boundingBox
-                if (wbb) {
-                  const w = Math.max(wbb.max.x - wbb.min.x, 1) * 1.2
-                  const hgt = Math.max(wbb.max.y - wbb.min.y, 1) * 1.2
-                  const cx = (wbb.max.x + wbb.min.x) / 2
-                  const cy = waterlineCenterY !== null ? waterlineCenterY : (wbb.max.y + wbb.min.y) / 2
+                                // Waterline plane: horizontal at waterlineZ (world coords).
+                                                                              // If rotateHull=true, hull rotates and waterline stays horizontal.
+                                                                              // If rotateHull=false, hull stays fixed and waterline rotates opposite (legacy).
+                                                                              let waterPlaneMesh: THREE.Mesh | null = null
+                                                                              let waterPlaneGroup: THREE.Group | null = null
+                                                                              if (waterlineZ !== null && Number.isFinite(waterlineZ)) {
+                                                const wbb = geometry.boundingBox
+                                                if (wbb) {
+                                                  const w = Math.max(wbb.max.x - wbb.min.x, 1) * 1.2
+                                                  const hgt = Math.max(wbb.max.y - wbb.min.y, 1) * 1.2
 
-                  const waterPlaneMesh = new THREE.Mesh(
-                    new THREE.PlaneGeometry(w, hgt),
-                    new THREE.MeshBasicMaterial({
-                      color: 0x0284c7,
-                      transparent: true,
-                      opacity: 0.35,
-                      side: THREE.DoubleSide,
-                      depthWrite: false,
-                    }),
-                  )
+                                                  waterPlaneMesh = new THREE.Mesh(
+                                                    new THREE.PlaneGeometry(w, hgt),
+                                                    new THREE.MeshBasicMaterial({
+                                                      color: 0x0284c7,
+                                                      transparent: true,
+                                                      opacity: 0.35,
+                                                      side: THREE.DoubleSide,
+                                                      depthWrite: false,
+                                                    }),
+                                                  )
 
-                  if (rotateHull) {
-                    // Real life: hull rotates, waterline stays horizontal at waterlineZ
-                    waterPlaneMesh.position.set(cx, cy, waterlineZ)
-                    scene.add(waterPlaneMesh)
-                  } else {
-                    // Legacy: hull fixed, waterline rotates opposite to trim
-                    const pivotX = lcg ? lcg.x : cx
-                    const pivotY = cy
-                    const pivotZ = center.z
-                    waterPlaneMesh.position.set(cx - pivotX, cy - pivotY, waterlineZ - pivotZ)
-                    waterPlaneGroup = new THREE.Group()
-                    waterPlaneGroup.position.set(pivotX, pivotY, pivotZ)
-                    waterPlaneGroup.add(waterPlaneMesh)
-                    if (Math.abs(trimDeg) > 1e-6) {
-                      waterPlaneGroup.rotation.y = (trimDeg * Math.PI) / 180
-                    }
-                    scene.add(waterPlaneGroup)
-                  }
-                }
-              }
+                                                  if (rotateHull) {
+                                                    // Real life: hull rotates, waterline stays horizontal at waterlineZ
+                                                    // Waterline should be centered at the ROTATED hull center
+                                                    hullGroup.updateMatrixWorld(true)
+                                                    const rotatedCenter = center.clone().applyMatrix4(hullGroup.matrixWorld)
+                                                    waterPlaneMesh.position.set(rotatedCenter.x, rotatedCenter.y, waterlineZ)
+                                                    scene.add(waterPlaneMesh)
+                                                  } else {
+                                                    // Legacy: hull fixed, waterline rotates opposite to trim
+                                                    const cx = (wbb.max.x + wbb.min.x) / 2
+                                                    const cy = waterlineCenterY !== null ? waterlineCenterY : (wbb.max.y + wbb.min.y) / 2
+                                                    const pivotX = lcg ? lcg.x : cx
+                                                    const pivotY = cy
+                                                    const pivotZ = center.z
+                                                    waterPlaneMesh.position.set(cx - pivotX, cy - pivotY, waterlineZ - pivotZ)
+                                                    waterPlaneGroup = new THREE.Group()
+                                                    waterPlaneGroup.position.set(pivotX, pivotY, pivotZ)
+                                                    waterPlaneGroup.add(waterPlaneMesh)
+                                                    if (Math.abs(trimDeg) > 1e-6) {
+                                                      waterPlaneGroup.rotation.y = (trimDeg * Math.PI) / 180
+                                                    }
+                                                    scene.add(waterPlaneGroup)
+                                                  }
+                                                }
+                                              }
 
               // LCG marker (red sphere + vertical line to keel) - in hull local coords
     let lcgSphere: THREE.Mesh | null = null
@@ -223,16 +232,29 @@ export default function Viewer3D({
 
     const radius = (Math.max(size.x, size.y, size.z) || 1) * 0.6
 
-    // 3/4 bow view from above: length along X, beam along Y, up along Z.
-    const dir = new THREE.Vector3(1, -1.1, 0.55).normalize()
-    camera.position.copy(center).addScaledVector(dir, radius * 3)
-    camera.near = Math.max(radius / 1000, 0.001)
-    camera.far = radius * 1000
-    camera.updateProjectionMatrix()
-    controls.target.copy(center)
-    controls.update()
+        // 3/4 bow view from above: length along X, beam along Y, up along Z.
+        const dir = new THREE.Vector3(1, -1.1, 0.55).normalize()
+        // Camera target: rotated hull center in world coordinates
+                if (rotateHull && pivotVec) {
+                  // World matrix already updated above for waterplane; reuse rotatedCenter
+                  const rotatedCenter = center.clone().applyMatrix4(hullGroup.matrixWorld)
+                  camera.position.copy(rotatedCenter).addScaledVector(dir, radius * 3)
+                  camera.near = Math.max(radius / 1000, 0.001)
+                  camera.far = radius * 1000
+                  camera.updateProjectionMatrix()
+                  controls.target.copy(rotatedCenter)
+                  controls.update()
+                } else {
+                          // Camera target: unrotated hull center
+                          camera.position.copy(center).addScaledVector(dir, radius * 3)
+                          camera.near = Math.max(radius / 1000, 0.001)
+                          camera.far = radius * 1000
+                          camera.updateProjectionMatrix()
+                          controls.target.copy(center)
+                          controls.update()
+                        }
 
-    // GridHelper builds in the XZ plane (Y-up normal); rotate it into the XY
+                    // GridHelper builds in the XZ plane (Y-up normal); rotate it into the XY
     // plane so its normal is +Z and it sits under the hull at min Z.
     const grid = new THREE.GridHelper(radius * 6, 24, 0x3f3f46, 0x27272a)
     grid.rotation.x = Math.PI / 2
@@ -260,21 +282,26 @@ export default function Viewer3D({
     loop()
 
     return () => {
-          cancelAnimationFrame(raf)
-          ro.disconnect()
-          controls.dispose()
-          mesh.material.dispose()
-          hullGroup.remove(mesh)
-          scene.remove(hullGroup)
-          if (waterPlaneGroup) {
-        waterPlaneGroup.traverse((child) => {
-          if (child instanceof THREE.Mesh) {
-            child.geometry.dispose()
-            ;(child.material as THREE.Material).dispose()
-          }
-        })
-        scene.remove(waterPlaneGroup)
-      }
+              cancelAnimationFrame(raf)
+              ro.disconnect()
+              controls.dispose()
+              mesh.material.dispose()
+              hullGroup.remove(mesh)
+              scene.remove(hullGroup)
+          
+              // Cleanup waterline mesh (both modes)
+              if (waterPlaneMesh) {
+                waterPlaneMesh.geometry.dispose()
+                ;(waterPlaneMesh.material as THREE.Material).dispose()
+                if (rotateHull) {
+                  scene.remove(waterPlaneMesh)
+                } else if (waterPlaneGroup) {
+                  waterPlaneGroup.remove(waterPlaneMesh)
+                }
+              }
+              if (waterPlaneGroup) {
+                scene.remove(waterPlaneGroup)
+              }
       if (lcgSphere) {
         lcgSphere.geometry.dispose()
         ;(lcgSphere.material as THREE.Material).dispose()

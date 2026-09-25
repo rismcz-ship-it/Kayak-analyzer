@@ -84,8 +84,10 @@ export interface Draft0TrimResult {
   /** Center of Buoyancy in hull coordinates. */
   lcb: Vec3
   /** Target Center of Gravity in hull coordinates. */
-  lcg: Vec3
-  /** Longitudinal offset between LCB and LCG (|LCB_x - LCG_x|) in mm. */
+      lcg: Vec3
+      /** Rotation pivot used by solver (X, Y, Z). Matches applyPitchY pivot. */
+      pivot: { x: number; y: number; z: number }
+      /** Longitudinal offset between LCB and LCG (|LCB_x - LCG_x|) in mm. */
   lcbLcgOffsetMm: number
   /** Waterplane area in mm^2. */
   waterplaneAreaMm2: number
@@ -748,26 +750,27 @@ export function solve_trim(
                         }
 
                       return {
-                        trimDeg: Number(bestAngleDeg.toFixed(2)),
-                        draftMm: bestResult.draftMm,
-                        waterlineZ: bestResult.waterlineZ,
-                        displacedVolumeMm3: bestResult.displacedVolumeMm3,
-                        displacementKg: bestResult.displacementKg,
-                        targetKg: target_kg,
-                        lcb: bestResult.lcb,
-                        lcg,
-                        lcbLcgOffsetMm: bestOffset,
-                        waterplaneAreaMm2: bestResult.waterplaneAreaMm2,
-                        planesEvaluated: totalPlanes,
-                        converged: bestOffset < 15.0, // within 15mm alignment or best reachable
-                        Cb: bestResult.Cb,
-                        midshipAreaMm2: bestResult.midshipAreaMm2,
-                        Cp: bestResult.Cp,
-                        Cm: bestResult.Cm,
-                        KB: bestResult.KB,
-                        BM: bestResult.BM,
-                        KM: bestResult.KM,
-                        GM: bestResult.GM,
-                        gzCurve: compute_gz_curve(bestResult.GM, bestResult.BM),
-                      }
+                                              trimDeg: Number(bestAngleDeg.toFixed(2)),
+                                              draftMm: bestResult.draftMm,
+                                              waterlineZ: bestResult.waterlineZ,
+                                              displacedVolumeMm3: bestResult.displacedVolumeMm3,
+                                              displacementKg: bestResult.displacementKg,
+                                              targetKg: target_kg,
+                                              lcb: bestResult.lcb,
+                                              lcg,
+                                              pivot: { x: targetLcgX, y: bounds.center.y, z: bounds.center.z },
+                                              lcbLcgOffsetMm: bestOffset,
+                                              waterplaneAreaMm2: bestResult.waterplaneAreaMm2,
+                                              planesEvaluated: totalPlanes,
+                                              converged: bestOffset < 15.0, // within 15mm alignment or best reachable
+                                              Cb: bestResult.Cb,
+                                              midshipAreaMm2: bestResult.midshipAreaMm2,
+                                              Cp: bestResult.Cp,
+                                              Cm: bestResult.Cm,
+                                              KB: bestResult.KB,
+                                              BM: bestResult.BM,
+                                              KM: bestResult.KM,
+                                              GM: bestResult.GM,
+                                              gzCurve: compute_gz_curve(bestResult.GM, bestResult.BM),
+                                            }
   }

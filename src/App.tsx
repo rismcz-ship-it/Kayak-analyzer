@@ -159,11 +159,12 @@ export default function App() {
                                   key={mesh.id}
                                   geometry={mesh.geometry}
                                   waterlineZ={trimResult?.waterlineZ ?? draftResult?.waterlineZ ?? null}
-                                  trimDeg={trimResult?.trimDeg ?? 0}
+                                  trimDeg={-(trimResult?.trimDeg ?? 0)}
                                   heelDeg={0}
                                   waterlineCenterY={trimResult?.lcg.y ?? 0}
                                   lcg={trimResult?.lcg ?? null}
                                   lcb={trimResult?.lcb ?? draftResult?.lcb ?? null}
+                                  pivot={trimResult?.pivot ?? null}
                                   rotateHull={true}
                                 />
               </div>
