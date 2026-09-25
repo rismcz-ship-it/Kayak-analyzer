@@ -156,14 +156,16 @@ export default function App() {
             <section className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-lg border border-zinc-800 bg-zinc-900/40 p-2">
               <div className="min-h-0 flex-1">
                 <Viewer3D
-                  key={mesh.id}
-                  geometry={mesh.geometry}
-                  waterlineZ={trimResult?.waterlineZ ?? draftResult?.waterlineZ ?? null}
-                  trimDeg={trimResult?.trimDeg ?? 0}
-                  waterlineCenterY={trimResult?.lcg.y ?? 0}
-                  lcg={trimResult?.lcg ?? null}
-                  lcb={trimResult?.lcb ?? draftResult?.lcb ?? null}
-                />
+                                  key={mesh.id}
+                                  geometry={mesh.geometry}
+                                  waterlineZ={trimResult?.waterlineZ ?? draftResult?.waterlineZ ?? null}
+                                  trimDeg={trimResult?.trimDeg ?? 0}
+                                  heelDeg={0}
+                                  waterlineCenterY={trimResult?.lcg.y ?? 0}
+                                  lcg={trimResult?.lcg ?? null}
+                                  lcb={trimResult?.lcb ?? draftResult?.lcb ?? null}
+                                  rotateHull={true}
+                                />
               </div>
               <div className="flex items-center justify-end px-1 pb-1 pt-2">
                 <span className="truncate text-xs text-zinc-500" title={mesh.fileName}>

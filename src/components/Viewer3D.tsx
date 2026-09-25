@@ -9,21 +9,27 @@ interface Viewer3DProps {
   waterlineZ?: number | null
   /** Trim angle in degrees (+ bow up, - bow down). */
   trimDeg?: number
+  /** Heel angle in degrees (+ starboard/right heel). */
+  heelDeg?: number
   /** Waterline center Y for trimming pivot. */
   waterlineCenterY?: number
   /** Center of Gravity (LCG) position in mesh coordinates. */
   lcg?: { x: number; y: number; z: number } | null
   /** Center of Buoyancy (LCB) position in mesh coordinates. */
   lcb?: { x: number; y: number; z: number } | null
+  /** Rotate hull to show trim/heel (true = real life, false = rotate waterline). Default true. */
+  rotateHull?: boolean
 }
 
 export default function Viewer3D({
   geometry,
   waterlineZ = null,
   trimDeg = 0,
+  heelDeg = 0,
   waterlineCenterY = 0,
   lcg = null,
   lcb = null,
+  rotateHull = true,
 }: Viewer3DProps) {
   const mountRef = useRef<HTMLDivElement>(null)
 
@@ -57,83 +63,104 @@ export default function Viewer3D({
     key.position.set(1.2, -1, 1.6) // from front-side-above in Z-up space
     scene.add(hemi, key)
 
-    const mesh = new THREE.Mesh(
-      geometry,
-      new THREE.MeshStandardMaterial({
-        color: 0x38bdf8,
-        metalness: 0.05,
-        roughness: 0.55,
-        flatShading: true,
-        side: THREE.DoubleSide,
-      }),
-    )
-    scene.add(mesh)
+    // Pre-compute bounding box for marker sizing and pivot
+        geometry.computeBoundingBox()
+        const bb = geometry.boundingBox
+        const hullSizeX = bb ? Math.max(bb.max.x - bb.min.x, 1) : 100
 
-    // Add coordinate axes helper (Red=X, Green=Y, Blue=Z)
-    const axesHelper = new THREE.AxesHelper(500)
-    scene.add(axesHelper)
+        const size = new THREE.Vector3()
+        const center = new THREE.Vector3()
+        if (bb) {
+          bb.getSize(size)
+          bb.getCenter(center)
+        }
 
-    // Pre-compute bounding box for marker sizing
-    geometry.computeBoundingBox()
-    const bb = geometry.boundingBox
-    const hullSizeX = bb ? Math.max(bb.max.x - bb.min.x, 1) : 100
+        // Create a group for the hull so we can rotate it as a unit (mesh + markers)
+        const hullGroup = new THREE.Group()
+        scene.add(hullGroup)
 
-    const size = new THREE.Vector3()
-    const center = new THREE.Vector3()
-    if (bb) {
-      bb.getSize(size)
-      bb.getCenter(center)
-    }
-
-    // Waterline plane: translucent sheet at the solved draft.
-    // If trimDeg is non-zero, rotate around Y axis through LCG pivot.
-    let waterPlaneGroup: THREE.Group | null = null
-    if (waterlineZ !== null && Number.isFinite(waterlineZ)) {
-      const wbb = geometry.boundingBox
-      if (wbb) {
-        const w = Math.max(wbb.max.x - wbb.min.x, 1) * 1.2
-        const hgt = Math.max(wbb.max.y - wbb.min.y, 1) * 1.2
-        const cx = (wbb.max.x + wbb.min.x) / 2
-        const cy = waterlineCenterY !== null ? waterlineCenterY : (wbb.max.y + wbb.min.y) / 2
-        
-        const waterPlaneMesh = new THREE.Mesh(
-          new THREE.PlaneGeometry(w, hgt),
-          new THREE.MeshBasicMaterial({
-            color: 0x0284c7,
-            transparent: true,
-            opacity: 0.35,
+        const mesh = new THREE.Mesh(
+          geometry,
+          new THREE.MeshStandardMaterial({
+            color: 0x38bdf8,
+            metalness: 0.05,
+            roughness: 0.55,
+            flatShading: true,
             side: THREE.DoubleSide,
-            depthWrite: false,
           }),
         )
+        hullGroup.add(mesh)
 
-        // Rotation pivot matching the solver's pitch pivot (lcg.x longitudinally, center.z vertically)
-        const pivotX = lcg ? lcg.x : cx
-        const pivotY = cy
-        const pivotZ = center.z
+        // Add coordinate axes helper (Red=X, Green=Y, Blue=Z) - world axes
+        const axesHelper = new THREE.AxesHelper(500)
+        scene.add(axesHelper)
 
-        // Position mesh relative to group origin (pivotX, pivotY, pivotZ)
-        waterPlaneMesh.position.set(cx - pivotX, cy - pivotY, waterlineZ - pivotZ)
+        // Determine pivot point (LCG if available, else hull center)
+        const pivot = lcg
+          ? new THREE.Vector3(lcg.x, lcg.y, lcg.z)
+          : center.clone()
 
-        waterPlaneGroup = new THREE.Group()
-        waterPlaneGroup.position.set(pivotX, pivotY, pivotZ)
-        waterPlaneGroup.add(waterPlaneMesh)
+        // Apply hull rotation (trim + heel) if rotateHull=true
+        if (rotateHull) {
+          const trimRad = (trimDeg * Math.PI) / 180
+          const heelRad = (heelDeg * Math.PI) / 180
 
-        // Rotate around transverse Y axis for trim (pitch).
-        // Solver returns marine convention: positive trim = bow UP.
-        // In Three.js Z-up, rotation.y > 0 tilts +X (bow) UPwards (+X toward +Z).
-        // Physical: hull pitches, waterline stays horizontal.
-        // Viewer: hull fixed, waterline rotates OPPOSITE to hull.
-        // Hull bow UP (trimDeg < 0) → waterline bow DOWN (rotation.y < 0).
-        // So rotation.y = trimDeg (no negation, signs already match).
-        if (Math.abs(trimDeg) > 1e-6) {
-          waterPlaneGroup.rotation.y = (trimDeg * Math.PI) / 180
-        }
-        scene.add(waterPlaneGroup)
-      }
-    }
+          // Offset mesh so pivot sits at group origin
+          mesh.position.set(-pivot.x, -pivot.y, -pivot.z)
 
-    // LCG marker (red sphere + vertical line to keel)
+          // Move group so pivot is at world pivot position
+          hullGroup.position.copy(pivot)
+
+          // Rotate around X (heel) then Y (trim). Order: heel first, then trim.
+          hullGroup.rotation.x = heelRad
+                hullGroup.rotation.y = trimRad
+              }
+
+              // Waterline plane: horizontal at waterlineZ (world coords).
+              // If rotateHull=true, hull rotates and waterline stays horizontal.
+              // If rotateHull=false, hull stays fixed and waterline rotates opposite (legacy).
+              let waterPlaneGroup: THREE.Group | null = null
+              if (waterlineZ !== null && Number.isFinite(waterlineZ)) {
+                const wbb = geometry.boundingBox
+                if (wbb) {
+                  const w = Math.max(wbb.max.x - wbb.min.x, 1) * 1.2
+                  const hgt = Math.max(wbb.max.y - wbb.min.y, 1) * 1.2
+                  const cx = (wbb.max.x + wbb.min.x) / 2
+                  const cy = waterlineCenterY !== null ? waterlineCenterY : (wbb.max.y + wbb.min.y) / 2
+
+                  const waterPlaneMesh = new THREE.Mesh(
+                    new THREE.PlaneGeometry(w, hgt),
+                    new THREE.MeshBasicMaterial({
+                      color: 0x0284c7,
+                      transparent: true,
+                      opacity: 0.35,
+                      side: THREE.DoubleSide,
+                      depthWrite: false,
+                    }),
+                  )
+
+                  if (rotateHull) {
+                    // Real life: hull rotates, waterline stays horizontal at waterlineZ
+                    waterPlaneMesh.position.set(cx, cy, waterlineZ)
+                    scene.add(waterPlaneMesh)
+                  } else {
+                    // Legacy: hull fixed, waterline rotates opposite to trim
+                    const pivotX = lcg ? lcg.x : cx
+                    const pivotY = cy
+                    const pivotZ = center.z
+                    waterPlaneMesh.position.set(cx - pivotX, cy - pivotY, waterlineZ - pivotZ)
+                    waterPlaneGroup = new THREE.Group()
+                    waterPlaneGroup.position.set(pivotX, pivotY, pivotZ)
+                    waterPlaneGroup.add(waterPlaneMesh)
+                    if (Math.abs(trimDeg) > 1e-6) {
+                      waterPlaneGroup.rotation.y = (trimDeg * Math.PI) / 180
+                    }
+                    scene.add(waterPlaneGroup)
+                  }
+                }
+              }
+
+              // LCG marker (red sphere + vertical line to keel) - in hull local coords
     let lcgSphere: THREE.Mesh | null = null
     let lcgLine: THREE.Line | null = null
     if (lcg && Number.isFinite(lcg.x)) {
@@ -141,9 +168,13 @@ export default function Viewer3D({
       lcgSphere = new THREE.Mesh(new THREE.SphereGeometry(hullSizeX * 0.02), mat)
       lcgSphere.position.set(lcg.x, lcg.y, lcg.z)
       lcgSphere.renderOrder = 1
-      scene.add(lcgSphere)
+      if (rotateHull) {
+        hullGroup.add(lcgSphere)
+      } else {
+        scene.add(lcgSphere)
+      }
 
-      // Vertical line down to keel
+      // Vertical line down to keel (in hull coords)
       const lineGeom = new THREE.BufferGeometry()
       const keelZ = bb ? bb.min.z : 0
       lineGeom.setAttribute(
@@ -153,10 +184,14 @@ export default function Viewer3D({
       const lineMat = new THREE.LineBasicMaterial({ color: 0xef4444, linewidth: 2, depthTest: false })
       lcgLine = new THREE.Line(lineGeom, lineMat)
       lcgLine.renderOrder = 1
-      scene.add(lcgLine)
+      if (rotateHull) {
+        hullGroup.add(lcgLine)
+      } else {
+        scene.add(lcgLine)
+      }
     }
 
-    // LCB marker (green sphere + vertical line to keel)
+    // LCB marker (green sphere + vertical line to keel) - in hull local coords
     let lcbSphere: THREE.Mesh | null = null
     let lcbLine: THREE.Line | null = null
     if (lcb && Number.isFinite(lcb.x)) {
@@ -164,7 +199,11 @@ export default function Viewer3D({
       lcbSphere = new THREE.Mesh(new THREE.SphereGeometry(hullSizeX * 0.02), mat)
       lcbSphere.position.set(lcb.x, lcb.y, lcb.z)
       lcbSphere.renderOrder = 1
-      scene.add(lcbSphere)
+      if (rotateHull) {
+        hullGroup.add(lcbSphere)
+      } else {
+        scene.add(lcbSphere)
+      }
 
       const lineGeom = new THREE.BufferGeometry()
       const keelZ = bb ? bb.min.z : 0
@@ -175,7 +214,11 @@ export default function Viewer3D({
       const lineMat = new THREE.LineBasicMaterial({ color: 0x22c55e, linewidth: 2, depthTest: false })
       lcbLine = new THREE.Line(lineGeom, lineMat)
       lcbLine.renderOrder = 1
-      scene.add(lcbLine)
+      if (rotateHull) {
+        hullGroup.add(lcbLine)
+      } else {
+        scene.add(lcbLine)
+      }
     }
 
     const radius = (Math.max(size.x, size.y, size.z) || 1) * 0.6
@@ -217,12 +260,13 @@ export default function Viewer3D({
     loop()
 
     return () => {
-      cancelAnimationFrame(raf)
-      ro.disconnect()
-      controls.dispose()
-      mesh.material.dispose()
-      scene.remove(mesh)
-      if (waterPlaneGroup) {
+          cancelAnimationFrame(raf)
+          ro.disconnect()
+          controls.dispose()
+          mesh.material.dispose()
+          hullGroup.remove(mesh)
+          scene.remove(hullGroup)
+          if (waterPlaneGroup) {
         waterPlaneGroup.traverse((child) => {
           if (child instanceof THREE.Mesh) {
             child.geometry.dispose()
@@ -234,29 +278,45 @@ export default function Viewer3D({
       if (lcgSphere) {
         lcgSphere.geometry.dispose()
         ;(lcgSphere.material as THREE.Material).dispose()
-        scene.remove(lcgSphere)
+        if (rotateHull) {
+          hullGroup.remove(lcgSphere)
+        } else {
+          scene.remove(lcgSphere)
+        }
       }
       if (lcgLine) {
         lcgLine.geometry.dispose()
         ;(lcgLine.material as THREE.Material).dispose()
-        scene.remove(lcgLine)
+        if (rotateHull) {
+          hullGroup.remove(lcgLine)
+        } else {
+          scene.remove(lcgLine)
+        }
       }
       if (lcbSphere) {
         lcbSphere.geometry.dispose()
         ;(lcbSphere.material as THREE.Material).dispose()
-        scene.remove(lcbSphere)
+        if (rotateHull) {
+          hullGroup.remove(lcbSphere)
+        } else {
+          scene.remove(lcbSphere)
+        }
       }
       if (lcbLine) {
         lcbLine.geometry.dispose()
         ;(lcbLine.material as THREE.Material).dispose()
-        scene.remove(lcbLine)
+        if (rotateHull) {
+          hullGroup.remove(lcbLine)
+        } else {
+          scene.remove(lcbLine)
+        }
       }
       renderer.dispose()
       if (renderer.domElement.parentNode === mount) {
         mount.removeChild(renderer.domElement)
       }
     }
-  }, [geometry, waterlineZ, trimDeg, waterlineCenterY, lcg, lcb])
+  }, [geometry, waterlineZ, trimDeg, heelDeg, waterlineCenterY, lcg, lcb, rotateHull])
 
   return (
     <div ref={mountRef} className="relative h-full min-h-0 w-full overflow-hidden rounded-lg">
@@ -271,6 +331,11 @@ export default function Viewer3D({
       {Math.abs(trimDeg) > 1e-6 && (
         <div className="pointer-events-none absolute right-2 top-20 rounded bg-amber-950/80 px-2 py-1 font-mono text-[10px] tracking-wide text-amber-300">
           trim = {trimDeg >= 0 ? '+' : ''}{trimDeg.toFixed(2)}°
+        </div>
+      )}
+      {Math.abs(heelDeg) > 1e-6 && (
+        <div className="pointer-events-none absolute right-2 top-40 rounded bg-violet-950/80 px-2 py-1 font-mono text-[10px] tracking-wide text-violet-300">
+          heel = {heelDeg >= 0 ? '+' : ''}{heelDeg.toFixed(2)}°
         </div>
       )}
       {lcg && lcb && (
