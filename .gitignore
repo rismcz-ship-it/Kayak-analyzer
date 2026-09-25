@@ -17,6 +17,9 @@ Thumbs.db
 .vscode/*
 !.vscode/extensions.json
 
+# Environment / secrets
+.env
+
 # Local uploads / test artifacts (keep repo small)
 uploads/
 *.stl

@@ -59,8 +59,12 @@ export interface Draft0TrimResult {
         /** Keel to Metacenter (KM = KB + BM) in mm */
           KM: number
           /** Metacentric height (GM = KM - KG) in mm */
-          GM: number
-          }
+                    GM: number
+                    /** Bow freeboard: vertical distance from waterline to bow tip (+ = bow above water) */
+                    bowFreeboardMm: number
+                    /** Stern freeboard: vertical distance from waterline to stern tip (+ = stern above water) */
+                    sternFreeboardMm: number
+                    }
 
           export interface GZPoint {
           /** Heel angle in degrees (+ = starboard/right heel) */
@@ -111,8 +115,12 @@ export interface Draft0TrimResult {
         /** Metacentric height (GM = KM - KG) in mm */
         GM: number
         /** Righting arm curve points at standard heel angles (0°, 5°, 10°, 15°, 20°, 25°, 30°) */
-        gzCurve: GZPoint[]
-      }
+                gzCurve: GZPoint[]
+                /** Bow freeboard: vertical distance from waterline to bow tip (+ = bow above water) */
+                bowFreeboardMm: number
+                /** Stern freeboard: vertical distance from waterline to stern tip (+ = stern above water) */
+                sternFreeboardMm: number
+              }
 
 /** Standard heel angles to sample for the GZ curve (degrees). */
 export const DEFAULT_GZ_HEEL_ANGLES_DEG = [0, 5, 10, 15, 20, 25, 30]
@@ -491,14 +499,31 @@ export function find_draft_0trim(mesh: MeshLike, target_kg: number, KG?: number)
                                           // Midship coefficient: Cm = Am_max / (BWL × draft)
                                           const Cm = (midshipAreaMm2 > 0 && BWL > 0 && draftMm > 0) ? midshipAreaMm2 / (BWL * draftMm) : 0
                                           // Keel to Buoyancy center: KB = LCB_z - keel_z
-                                          const KB = lcb.z - minZ
-                                                                                    // Metacentric radius: BM = Iₜ / V
-                                                                                    const BM = waterplaneIx > 0 ? waterplaneIx / upperV : 0
-                                                                                    // Keel to Metacenter: KM = KB + BM
-                                                                                                                                                                        const KM = KB + BM
-                                                                                                                                                                        // Metacentric height: GM = KM - KG (if KG provided)
-                                                                                                                                                                        const GM = (typeof KG === 'number') ? KM - KG : 0
-                                                                                                                                                                        return {
+                                                                                                                              const KB = lcb.z - minZ
+                                                                                                                                                                        // Metacentric radius: BM = Iₜ / V
+                                                                                                                                                                        const BM = waterplaneIx > 0 ? waterplaneIx / upperV : 0
+                                                                                                                                                                        // Keel to Metacenter: KM = KB + BM
+                                                                                                                                                                                                                                                                                                      const KM = KB + BM
+                                                                                                                                                                                                                                                                                                      // Metacentric height: GM = KM - KG (if KG provided)
+                                                                                                                                                                                                                                                                                                      const GM = (typeof KG === 'number') ? KM - KG : 0
+                                                                                                                                                                                                                                                                                                      // Freeboard at bow/stern: find actual bow/stern tip Z from mesh vertices (zero trim)
+                                                                                                                                                                                                                                                                                                      let bowX = -Infinity
+                                                                                                                                                                                                                                                                                                      let sternX = Infinity
+                                                                                                                                                                                                                                                                                                      let bowZ = 0
+                                                                                                                                                                                                                                                                                                      let sternZ = 0
+                                                                                                                                                                                                                                                                                                      for (let i = 0; i < positions.length; i += 9) {
+                                                                                                                                                                                                                                                                                                          for (const vx of [i, i + 3, i + 6]) {
+                                                                                                                                                                                                                                                                                                              const x = positions[vx]
+                                                                                                                                                                                                                                                                                                              const z = positions[vx + 2]
+                                                                                                                                                                                                                                                                                                              if (x > bowX) { bowX = x; bowZ = z }
+                                                                                                                                                                                                                                                                                                              if (x < sternX) { sternX = x; sternZ = z }
+                                                                                                                                                                                                                                                                                                          }
+                                                                                                                                                                                                                                                                                                      }
+                                                                                                                                                                                                                                                                                                      const waterlineAtBow = maxZ - bowX * Math.tan(0)
+                                                                                                                                                                                                                                                                                                      const waterlineAtStern = maxZ - sternX * Math.tan(0)
+                                                                                                                                                                                                                                                                                                      const bowFreeboardMm = bowZ - waterlineAtBow
+                                                                                                                                                                                                                                                                                                      const sternFreeboardMm = sternZ - waterlineAtStern
+                                                                                                                                                                                                                                                                                                      return {
                                                                                                                                                                           draftMm,
                                                                                                                                                                           waterlineZ: maxZ,
                                                                                                                                                                           displacedVolumeMm3: upperV,
@@ -509,16 +534,18 @@ export function find_draft_0trim(mesh: MeshLike, target_kg: number, KG?: number)
                                                                                                                                                                           stepMm,
                                                                                                                                                                           planesEvaluated,
                                                                                                                                                                           converged: Math.abs(upperV - targetVolumeMm3) / targetVolumeMm3 < 1e-6,
-                                                                                                                                                                          Cb: Number(Cb.toFixed(4)),
-                                                                                                                                                                          midshipAreaMm2: Number(midshipAreaMm2.toFixed(1)),
-                                                                                                                                                                          Cp: Number(Cp.toFixed(4)),
-                                                                                                                                                                          Cm: Number(Cm.toFixed(4)),
-                                                                                                                                                                          KB: Number(KB.toFixed(1)),
-                                                                                                                                                                          BM: Number(BM.toFixed(1)),
-                                                                                                                                                                          KM: Number(KM.toFixed(1)),
-                                                                                                                                                                          GM: Number(GM.toFixed(1)),
-                                                                                                                                                                        }
-              }
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        Cb: Number(Cb.toFixed(4)),
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        midshipAreaMm2: Number(midshipAreaMm2.toFixed(1)),
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        Cp: Number(Cp.toFixed(4)),
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        Cm: Number(Cm.toFixed(4)),
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        KB: Number(KB.toFixed(1)),
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        BM: Number(BM.toFixed(1)),
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        KM: Number(KM.toFixed(1)),
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        GM: Number(GM.toFixed(1)),
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        bowFreeboardMm: Number(bowFreeboardMm.toFixed(1)),
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        sternFreeboardMm: Number(sternFreeboardMm.toFixed(1)),
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      }
+                                                                                                                                                                                        }
 
   // Binary search: find waterline Z so volumeBelowPlane(positions, Z) ≈ target.
     // V(h) decreases monotonically as h drops from maxZ to minZ, so bisection
@@ -586,15 +613,31 @@ export function find_draft_0trim(mesh: MeshLike, target_kg: number, KG?: number)
                                       // Midship coefficient: Cm = Am_max / (BWL × draft)
                                       const Cm = (midshipAreaMm2 > 0 && BWL > 0 && draftMm > 0) ? midshipAreaMm2 / (BWL * draftMm) : 0
                                       // Keel to Buoyancy center: KB = LCB_z - keel_z
-                                      const KB = lcb.z - minZ
-                                      // Metacentric radius: BM = Iₜ / V
-                                                                            const BM = waterplaneIx > 0 ? waterplaneIx / verifiedVolumeMm3 : 0
-                                                                            // Keel to Metacenter: KM = KB + BM
-                                                                                                                                                        const KM = KB + BM
-                                                                                                                                                        // Metacentric height: GM = KM - KG (if KG provided)
-                                                                                                                                                        const GM = (typeof KG === 'number') ? KM - KG : 0
-
-                                                                                                                                                        return {
+                                                                            const KB = lcb.z - minZ
+                                                                                                                  // Metacentric radius: BM = Iₜ / V
+                                                                                                                                                        const BM = waterplaneIx > 0 ? waterplaneIx / verifiedVolumeMm3 : 0
+                                                                                                                                                        // Keel to Metacenter: KM = KB + BM
+                                                                                                                                                                                                                                    const KM = KB + BM
+                                                                                                                                                                                                                                    // Metacentric height: GM = KM - KG (if KG provided)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                        const GM = (typeof KG === 'number') ? KM - KG : 0
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                        // Freeboard at bow/stern: find actual bow/stern tip Z from mesh vertices (zero trim)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                        let bowX = -Infinity
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                        let sternX = Infinity
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                        let bowZ = 0
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                        let sternZ = 0
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                        for (let i = 0; i < positions.length; i += 9) {
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                            for (const vx of [i, i + 3, i + 6]) {
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                const x = positions[vx]
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                const z = positions[vx + 2]
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                if (x > bowX) { bowX = x; bowZ = z }
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                if (x < sternX) { sternX = x; sternZ = z }
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                            }
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                        }
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                        const waterlineAtBow = waterlineZ - bowX * Math.tan(0)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                        const waterlineAtStern = waterlineZ - sternX * Math.tan(0)
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                        const bowFreeboardMm = bowZ - waterlineAtBow
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                        const sternFreeboardMm = sternZ - waterlineAtStern
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                        return {
                                                                                                                                                           draftMm,
                                                                                                                                                           waterlineZ,
                                                                                                                                                           displacedVolumeMm3: verifiedVolumeMm3,
@@ -605,15 +648,17 @@ export function find_draft_0trim(mesh: MeshLike, target_kg: number, KG?: number)
                                                                                                                                                           stepMm,
                                                                                                                                                           planesEvaluated,
                                                                                                                                                           converged: relErr < 0.01,
-                                                                                                                                                          Cb: Number(Cb.toFixed(4)),
-                                                                                                                                                          midshipAreaMm2: Number(midshipAreaMm2.toFixed(1)),
-                                                                                                                                                          Cp: Number(Cp.toFixed(4)),
-                                                                                                                                                          Cm: Number(Cm.toFixed(4)),
-                                                                                                                                                          KB: Number(KB.toFixed(1)),
-                                                                                                                                                          BM: Number(BM.toFixed(1)),
-                                                                                                                                                          KM: Number(KM.toFixed(1)),
-                                                                                                                                                          GM: Number(GM.toFixed(1)),
-                                                                                                                                                        }
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                              Cb: Number(Cb.toFixed(4)),
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                              midshipAreaMm2: Number(midshipAreaMm2.toFixed(1)),
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                              Cp: Number(Cp.toFixed(4)),
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                              Cm: Number(Cm.toFixed(4)),
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                              KB: Number(KB.toFixed(1)),
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                              BM: Number(BM.toFixed(1)),
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                              KM: Number(KM.toFixed(1)),
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                              GM: Number(GM.toFixed(1)),
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                              bowFreeboardMm: Number(bowFreeboardMm.toFixed(1)),
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                              sternFreeboardMm: Number(sternFreeboardMm.toFixed(1)),
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                            }
 }
 
 /**
@@ -637,14 +682,29 @@ export function solve_trim(
   if (positions.length === 0) throw new Error('solve_trim: empty mesh')
 
   // Decimate once for the entire trim sweep — keeps solver fast.
-  // Use decimated mesh for all hydrostatic evaluations; original mesh for display.
-  const solveMesh = decimateMesh(positions, DEFAULT_SOLVER_TRIANGLES)
+    // Use decimated mesh for all hydrostatic evaluations; original mesh for display.
+    const solveMesh = decimateMesh(positions, DEFAULT_SOLVER_TRIANGLES)
 
-  const bounds = computeBounds(solveMesh)
-  const lengthX = bounds.size.x
-  const bowX = bounds.max.x
+    const bounds = computeBounds(solveMesh)
+    const lengthX = bounds.size.x
+    const bowX = bounds.max.x
+    const sternX = bounds.min.x
 
-  const targetLcgPercent = options?.targetLcgPercentFromBow ?? 52
+    // Find bow/stern tip Z from ORIGINAL mesh (before decimation)
+    let bowTipZ = 0
+    let sternTipZ = 0
+    let maxX = -Infinity
+    let minX = Infinity
+    for (let i = 0; i < positions.length; i += 9) {
+      for (const vx of [i, i + 3, i + 6]) {
+        const x = positions[vx]
+        const z = positions[vx + 2]
+        if (x > maxX) { maxX = x; bowTipZ = z }
+        if (x < minX) { minX = x; sternTipZ = z }
+      }
+    }
+
+    const targetLcgPercent = options?.targetLcgPercentFromBow ?? 52
   // Bow is at max X; stern is at min X
   const targetLcgX = bowX - (targetLcgPercent / 100) * lengthX
   const lcg: Vec3 = {
@@ -732,45 +792,49 @@ export function solve_trim(
   }
 
   if (!bestResult) {
-                const fallback = find_draft_0trim(solveMesh, target_kg, lcg.z)
-                bestResult = {
-                  ...fallback,
-                            lcb: { ...fallback.lcb, y: bounds.center.y }, // Force centerline
-                            Cb: fallback.Cb,
-                            midshipAreaMm2: fallback.midshipAreaMm2,
-                            Cp: fallback.Cp,
-                            Cm: fallback.Cm,
-                            KB: fallback.KB,
-                            BM: fallback.BM,
-                            KM: fallback.KM,
-                            GM: fallback.GM,
+                  const fallback = find_draft_0trim(solveMesh, target_kg, lcg.z)
+                  bestResult = {
+                    ...fallback,
+                              lcb: { ...fallback.lcb, y: bounds.center.y }, // Force centerline
+                              Cb: fallback.Cb,
+                              midshipAreaMm2: fallback.midshipAreaMm2,
+                              Cp: fallback.Cp,
+                              Cm: fallback.Cm,
+                              KB: fallback.KB,
+                              BM: fallback.BM,
+                              KM: fallback.KM,
+                              GM: fallback.GM,
+                              bowFreeboardMm: Number((bowTipZ - (fallback.waterlineZ - bowX * Math.tan(0))).toFixed(1)),
+                              sternFreeboardMm: Number((sternTipZ - (fallback.waterlineZ - sternX * Math.tan(0))).toFixed(1)),
+                            }
+                            bestAngleDeg = 0
+                            bestOffset = Math.abs(bestResult.lcb.x - targetLcgX)
                           }
-                          bestAngleDeg = 0
-                          bestOffset = Math.abs(bestResult.lcb.x - targetLcgX)
-                        }
 
                       return {
                                               trimDeg: Number(bestAngleDeg.toFixed(2)),
-                                              draftMm: bestResult.draftMm,
-                                              waterlineZ: bestResult.waterlineZ,
-                                              displacedVolumeMm3: bestResult.displacedVolumeMm3,
-                                              displacementKg: bestResult.displacementKg,
-                                              targetKg: target_kg,
-                                              lcb: bestResult.lcb,
-                                              lcg,
-                                              pivot: { x: targetLcgX, y: bounds.center.y, z: bounds.center.z },
-                                              lcbLcgOffsetMm: bestOffset,
-                                              waterplaneAreaMm2: bestResult.waterplaneAreaMm2,
-                                              planesEvaluated: totalPlanes,
-                                              converged: bestOffset < 15.0, // within 15mm alignment or best reachable
-                                              Cb: bestResult.Cb,
-                                              midshipAreaMm2: bestResult.midshipAreaMm2,
-                                              Cp: bestResult.Cp,
-                                              Cm: bestResult.Cm,
-                                              KB: bestResult.KB,
-                                              BM: bestResult.BM,
-                                              KM: bestResult.KM,
-                                              GM: bestResult.GM,
-                                              gzCurve: compute_gz_curve(bestResult.GM, bestResult.BM),
+                                                                                            draftMm: bestResult.draftMm,
+                                                                                            waterlineZ: bestResult.waterlineZ,
+                                                                                            displacedVolumeMm3: bestResult.displacedVolumeMm3,
+                                                                                            displacementKg: bestResult.displacementKg,
+                                                                                            targetKg: target_kg,
+                                                                                            lcb: bestResult.lcb,
+                                                                                            lcg,
+                                                                                            pivot: { x: targetLcgX, y: bounds.center.y, z: bounds.center.z },
+                                                                                            lcbLcgOffsetMm: bestOffset,
+                                                                                            waterplaneAreaMm2: bestResult.waterplaneAreaMm2,
+                                                                                            planesEvaluated: totalPlanes,
+                                                                                            converged: bestOffset < 15.0, // within 15mm alignment or best reachable
+                                                                                            Cb: bestResult.Cb,
+                                                                                            midshipAreaMm2: bestResult.midshipAreaMm2,
+                                                                                            Cp: bestResult.Cp,
+                                                                                            Cm: bestResult.Cm,
+                                                                                            KB: bestResult.KB,
+                                                                                            BM: bestResult.BM,
+                                                                                            KM: bestResult.KM,
+                                                                                                                        GM: bestResult.GM,
+                                                                                            bowFreeboardMm: Number((bowTipZ - (bestResult.waterlineZ + bowX * Math.tan(bestAngleDeg * Math.PI / 180))).toFixed(1)),
+                                                                                            sternFreeboardMm: Number((sternTipZ - (bestResult.waterlineZ + sternX * Math.tan(bestAngleDeg * Math.PI / 180))).toFixed(1)),
+                                                                                            gzCurve: compute_gz_curve(bestResult.GM, bestResult.BM),
                                             }
   }

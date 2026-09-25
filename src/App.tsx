@@ -273,10 +273,12 @@ export default function App() {
                                       {statRow('Displacement', `${fmt(trimResult.displacementKg)} kg`)}
                                       {statRow('Target', `${fmt(trimResult.targetKg)} kg`)}
                                       {statRow('Waterplane area', `${fmt(trimResult.waterplaneAreaMm2 / 1e6, 3)} m²`)}
-                                      {statRow('LCG X', `${fmt(trimResult.lcg.x)} mm`)}
-                                      {statRow('LCB X', `${fmt(trimResult.lcb.x)} mm`)}
-                                      {statRow('LCB–LCG offset', `${fmt(trimResult.lcbLcgOffsetMm)} mm`, true)}
-                                      {statRow(
+                                                                            {statRow('LCG X', `${fmt(trimResult.lcg.x)} mm`)}
+                                                                            {statRow('LCB X', `${fmt(trimResult.lcb.x)} mm`)}
+                                                                            {statRow('LCB–LCG offset', `${fmt(trimResult.lcbLcgOffsetMm)} mm`, true)}
+                                                                            {statRow('Bow freeboard', `${fmt(trimResult.bowFreeboardMm)} mm`)}
+                                                                            {statRow('Stern freeboard', `${fmt(trimResult.sternFreeboardMm)} mm`)}
+                                                                            {statRow(
                                         'Converged',
                                         trimResult.converged
                                           ? `yes (${trimResult.planesEvaluated} planes)`
@@ -345,10 +347,12 @@ export default function App() {
                                       {statRow('Displacement', `${fmt(draftResult.displacementKg)} kg`)}
                                       {statRow('Target', `${fmt(draftResult.targetKg)} kg`)}
                                       {statRow(
-                                        'Waterplane area',
-                                        `${fmt(draftResult.waterplaneAreaMm2 / 1e6, 3)} m²`,
-                                      )}
-                                      {statRow(
+                                                                              'Waterplane area',
+                                                                              `${fmt(draftResult.waterplaneAreaMm2 / 1e6, 3)} m²`,
+                                                                            )}
+                                                                            {statRow('Bow freeboard', `${fmt(draftResult.bowFreeboardMm)} mm`)}
+                                                                            {statRow('Stern freeboard', `${fmt(draftResult.sternFreeboardMm)} mm`)}
+                                                                            {statRow(
                                         'Converged',
                                         draftResult.converged
                                           ? `yes (${draftResult.planesEvaluated} planes)`
