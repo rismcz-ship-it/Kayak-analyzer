@@ -419,8 +419,11 @@ export function clipBelowPlane(positions: Float32Array, h: number): ClippedBelow
           signedArea /= 2
           if (Math.abs(signedArea) < 1e-9) continue
           waterplaneAreaMm2 += Math.abs(signedArea)
-          // Iₜ = Ix / 12 for the polygon (about Y=0 axis)
-          waterplaneIx += Ix / 12
+          // Iₜ = Ix / 12 for the polygon (about Y=0 axis).
+          // The second moment is orientation-independent, but the shoelace
+          // cross product flips sign with the loop's winding direction, so a
+          // clockwise walk yields a negative Ix. Take abs() per loop.
+          waterplaneIx += Math.abs(Ix) / 12
           cx /= pts.length
           cy /= pts.length
       // Fan needs CCW order for a +Z (outward) cap, CW for inward.
