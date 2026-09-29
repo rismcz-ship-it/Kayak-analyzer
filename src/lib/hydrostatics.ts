@@ -11,9 +11,11 @@ import {
   applyRollX,
   computeBounds,
   computeVolumeAndCentroid,
+  computeWaterlineBeamMm,
+  computeWaterlineLengthMm,
   decimateMesh,
   DEFAULT_SOLVER_TRIANGLES,
-  findMaxCrossSectionArea,
+  findMaxSubmergedSection,
   type Vec3,
 } from './geometry'
 
@@ -510,15 +512,17 @@ export function find_draft_0trim(mesh: MeshLike, target_kg: number, KG?: number,
                   const { clipped, waterplaneAreaMm2, waterplaneIx } = clipBelowPlane(workingPositions, upperH)
                   const { centroid: lcb } = computeVolumeAndCentroid(clipped)
                                             const draftMm = maxZ - minZ
-                                            const LWL = bounds.size.x
-                                            const BWL = LWL > 0 ? waterplaneAreaMm2 / LWL : bounds.size.y
+                                            const LWL = computeWaterlineLengthMm(workingPositions, upperH) || bounds.size.x
+                                            const BWL = computeWaterlineBeamMm(workingPositions, upperH) || bounds.size.y
                                             const boxVolumeMm3 = LWL * BWL * draftMm
                                             const Cb = boxVolumeMm3 > 0 ? upperV / boxVolumeMm3 : 0
-                                            // Max cross-section area (standard Cp/Cm definition uses Am_max)
-                                            const midshipAreaMm2 = findMaxCrossSectionArea(workingPositions, bounds.min.x, bounds.max.x)
+                                            // Max submerged section + the rectangle it fits in (station-matched)
+                                            const maxSection = findMaxSubmergedSection(workingPositions, bounds.min.x, bounds.max.x, upperH)
+                                            const midshipAreaMm2 = maxSection.areaMm2
                                             const Cp = (midshipAreaMm2 > 0 && LWL > 0) ? upperV / (midshipAreaMm2 * LWL) : 0
-                                            // Midship coefficient: Cm = Am_max / (BWL × draft)
-                                            const Cm = (midshipAreaMm2 > 0 && BWL > 0 && draftMm > 0) ? midshipAreaMm2 / (BWL * draftMm) : 0
+                                            // Cm = Am / (beam at that station x depth at that station)
+                                            const cmRect = maxSection.beamMm * maxSection.depthMm
+                                            const Cm = cmRect > 0 ? midshipAreaMm2 / cmRect : 0
                                             // Keel to Buoyancy center: KB = LCB_z - keel_z
                                                                                                                                 const KB = lcb.z - minZ
                                                                                                                                                                           // Metacentric radius: BM = Iₜ / V
@@ -620,20 +624,26 @@ export function find_draft_0trim(mesh: MeshLike, target_kg: number, KG?: number,
         const relErr = Math.abs(verifiedVolumeMm3 - targetVolumeMm3) / targetVolumeMm3
 
         // Compute Block Coefficient (Cb): Cb = V / (LWL × BWL × draft)
-              // LWL: length of submerged hull along X
+              // LWL: length of the ACTUAL waterline (x-extent at waterlineZ).
+              //      Using the bounding box here overstates the length — the bow
+              //      and stern sit clear of the water at any sane load.
               // BWL: mean waterline beam = waterplane area / LWL
               // draft: draft above keel
               const draftMm = waterlineZ - minZ
-              const LWL = bounds.size.x // approximation for box/straight hull; matches length
-                      const BWL = LWL > 0 ? waterplaneAreaMm2 / LWL : bounds.size.y
-                      const boxVolumeMm3 = LWL * BWL * draftMm
-                      const Cb = boxVolumeMm3 > 0 ? verifiedVolumeMm3 / boxVolumeMm3 : 0
-                      // Midship section area and Prismatic Coefficient
-                                                            // Find max cross-section area (standard Cp/Cm definition uses Am_max)
-                                                            const midshipAreaMm2 = findMaxCrossSectionArea(workingPositions, bounds.min.x, bounds.max.x)
+              const LWL = computeWaterlineLengthMm(workingPositions, waterlineZ) || bounds.size.x
+              const BWL = computeWaterlineBeamMm(workingPositions, waterlineZ) || bounds.size.y
+              const boxVolumeMm3 = LWL * BWL * draftMm
+              const Cb = boxVolumeMm3 > 0 ? verifiedVolumeMm3 / boxVolumeMm3 : 0
+              // Midship section area and Prismatic Coefficient
+                                                            // Max SUBMERGED section + the rectangle it fits in.
+                                                            // Cm's denominator must come from the same station as
+                                                            // the numerator, or Cm exceeds 1 (physically impossible).
+                                                            const maxSection = findMaxSubmergedSection(workingPositions, bounds.min.x, bounds.max.x, waterlineZ)
+                                                            const midshipAreaMm2 = maxSection.areaMm2
                                       const Cp = (midshipAreaMm2 > 0 && LWL > 0) ? verifiedVolumeMm3 / (midshipAreaMm2 * LWL) : 0
-                                      // Midship coefficient: Cm = Am_max / (BWL × draft)
-                                      const Cm = (midshipAreaMm2 > 0 && BWL > 0 && draftMm > 0) ? midshipAreaMm2 / (BWL * draftMm) : 0
+                                      // Midship coefficient: Am / (station beam x station depth)
+                                      const cmRect = maxSection.beamMm * maxSection.depthMm
+                                      const Cm = cmRect > 0 ? midshipAreaMm2 / cmRect : 0
                                       // Keel to Buoyancy center: KB = LCB_z - keel_z
                                                                             const KB = lcb.z - minZ
                                                                                                                   // Metacentric radius: BM = Iₜ / V
