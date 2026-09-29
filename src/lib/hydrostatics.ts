@@ -403,29 +403,42 @@ export function clipBelowPlane(positions: Float32Array, h: number): ClippedBelow
 
     for (const pts of loops) {
           let signedArea = 0
-          let cx = 0
-          let cy = 0
-          let Ix = 0 // second moment of area about centerline Y=0 (Iₜ)
+          let Ix = 0 // second moment of area about the X axis through Y=0
           for (let k = 0; k < pts.length; k++) {
             const p = pts[k]
             const q = pts[(k + 1) % pts.length]
             const cross = p.x * q.y - q.x * p.y
             signedArea += cross
-            cx += p.x
-            cy += p.y
-            // Iₜ contribution for this edge: (y₁² + y₁y₂ + y₂²) * (x₁y₂ - x₂y₁) / 12
+            // I contribution for this edge: (y₁² + y₁y₂ + y₂²) * (x₁y₂ - x₂y₁) / 12
             Ix += (p.y * p.y + p.y * q.y + q.y * q.y) * cross
           }
           signedArea /= 2
           if (Math.abs(signedArea) < 1e-9) continue
-          waterplaneAreaMm2 += Math.abs(signedArea)
-          // Iₜ = Ix / 12 for the polygon (about Y=0 axis).
-          // The second moment is orientation-independent, but the shoelace
-          // cross product flips sign with the loop's winding direction, so a
-          // clockwise walk yields a negative Ix. Take abs() per loop.
-          waterplaneIx += Math.abs(Ix) / 12
-          cx /= pts.length
-          cy /= pts.length
+          const A = Math.abs(signedArea)
+
+          // Shoelace area centroid. Needed for the parallel-axis correction
+          // below AND for the cap fan, so it must be computed before either.
+          let mcx = 0
+          let mcy = 0
+          for (let k = 0; k < pts.length; k++) {
+            const p = pts[k]
+            const q = pts[(k + 1) % pts.length]
+            const cross = p.x * q.y - q.x * p.y
+            mcx += (p.x + q.x) * cross
+            mcy += (p.y + q.y) * cross
+          }
+          const sixA = 6 * signedArea
+          const cx = sixA !== 0 ? mcx / sixA : 0
+          const cy = sixA !== 0 ? mcy / sixA : 0
+
+          waterplaneAreaMm2 += A
+          // Parallel axis theorem: I(Y=0) = I_c + A·y_c², so the centroidal
+          // second moment is I(Y=0) − A·y_c². Without this the value carries a
+          // spurious A·y_c² term whenever the waterplane sits off the
+          // centreline — i.e. at heel, or on an asymmetric hull.
+          // The shoelace cross product flips sign with the loop's winding, so
+          // abs() each loop's Ix; the correction term is already unsigned.
+          waterplaneIx += Math.max(0, Math.abs(Ix) / 12 - A * cy * cy)
       // Fan needs CCW order for a +Z (outward) cap, CW for inward.
       const wantCCW = outward
       const isCCW = signedArea > 0

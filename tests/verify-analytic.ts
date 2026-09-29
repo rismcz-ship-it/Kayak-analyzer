@@ -11,6 +11,7 @@
 // curve, so it exercises the contour loop-walking rather than a 4-point polygon.
 
 import {
+  applyRollX,
   checkWatertight,
   computeBounds,
   computeSubmergedSectionAreaMm2,
@@ -117,6 +118,91 @@ console.log('\n=== CYLINDER along X, r = 300, L = 2000 mm ===')
   const bmCyl = (4 * r) / (3 * Math.PI)
   check('BM = 4r/(3*pi)', Math.abs(res.BM - bmCyl) < 5, `${res.BM} vs ${bmCyl.toFixed(1)} mm`)
   check('Cb = pi/4', Math.abs(res.Cb - Math.PI / 4) < 0.02, `${res.Cb} vs ${(Math.PI / 4).toFixed(4)}`)
+}
+
+// ------------------------------------------------- off-centreline box
+// Every other shape here is symmetric about Y=0, where the waterplane's own
+// area centroid IS the global centreline -- the two definitions of the second
+// moment coincide, so the suite above is blind to this. Offsetting the box in
+// Y separates them: a centroidal I is correct, while a centreline-based I
+// reads high by A*y_c^2 (parallel axis theorem).
+console.log('=== BOX offset 120 mm in Y ===')
+{
+  const L = 2000, B = 600, T = 300, YC = 120
+  const hx = L / 2, hy = B / 2, hz = T / 2
+  const corner = (i: number): [number, number, number] => [
+    i & 4 ? hx : -hx,
+    (i & 2 ? hy : -hy) + YC,
+    i & 1 ? hz : -hz,
+  ]
+  const faces: [number, number, number, number][] = [
+    [0, 2, 3, 1], [4, 5, 7, 6], [0, 1, 5, 4],
+    [2, 6, 7, 3], [0, 4, 6, 2], [1, 3, 7, 5],
+  ]
+  const v: number[] = []
+  for (const [a, b, c, d] of faces) {
+    v.push(...corner(a), ...corner(b), ...corner(c))
+    v.push(...corner(a), ...corner(c), ...corner(d))
+  }
+  const boxY = new Float32Array(v)
+  const wtY = checkWatertight(boxY)
+  check('watertight', wtY.watertight, `${wtY.openEdgeCount} open edges`)
+
+  const V = 50e6
+  const r = find_draft_0trim(boxY, 50, 100, 0)
+  const bmCentroid = (L * Math.pow(B, 3) / 12) / V
+  check('BM uses own centroid', Math.abs(r.BM - bmCentroid) < 1, `${r.BM.toFixed(1)} vs ${bmCentroid.toFixed(1)} mm`)
+}
+
+// ---------------------------------------------------- heeled box
+// The parallel-axis correction only bites when the waterplane sits off the
+// centreline, which at zero trim means never on a symmetric hull. Heel is
+// what exposes it, so this is the regression test that matters most.
+//
+// Heeling the box tilts the whole solid, so the z=0 plane no longer cuts a
+// chord between the end faces -- it exits through the long top/bottom faces
+// and the cut gets WIDER. Inverting applyRollX (y_w = y_l·cosφ − z_l·sinφ)
+// at z_w = 0 gives local y_l = y_w·cosφ, z_l = −y_w·sinφ, so the cut is
+// bounded by |y_w| ≤ hy/cosφ and |y_w| ≤ hz/sinφ:
+//     hw(φ) = min(hy/cosφ, hz/sinφ)
+// The waterplane is a rectangle L × 2·hw, hence
+//     A_wp = L·2·hw      I_c = L·(2·hw)³/12      BM = I_c / V
+console.log('=== BOX 2000 x 600 x 400 heeled about X ===')
+{
+  const L = 2000, B = 600, T = 400
+  const hx = L / 2, hy = B / 2, hz = T / 2
+  const corner = (i: number): [number, number, number] => [
+    i & 4 ? hx : -hx, i & 2 ? hy : -hy, i & 1 ? hz : -hz,
+  ]
+  const faces: [number, number, number, number][] = [
+    [0, 2, 3, 1], [4, 5, 7, 6], [0, 1, 5, 4],
+    [2, 6, 7, 3], [0, 4, 6, 2], [1, 3, 7, 5],
+  ]
+  const v: number[] = []
+  for (const [a, b, c, d] of faces) {
+    v.push(...corner(a), ...corner(b), ...corner(c))
+    v.push(...corner(a), ...corner(c), ...corner(d))
+  }
+  const V = L * B * T * 0.5 // half displacement, so freeboard exists at heel
+  const kg = V / 1e6
+
+  for (const deg of [5, 10, 20, 30]) {
+    const phi = (deg * Math.PI) / 180
+    const s = Math.sin(phi)
+    const hw = s < 1e-12 ? hy : Math.min(hy / Math.cos(phi), hz / s)
+    const w = 2 * hw
+    const aExpect = L * w
+    const bmExpect = (L * Math.pow(w, 3) / 12) / V
+
+    const m = new Float32Array(v)
+    applyRollX(m, phi, 0, 0)
+    const r = find_draft_0trim(m, kg, 100, 0)
+
+    check(`A_wp at ${deg}° heel`, Math.abs(r.waterplaneAreaMm2 - aExpect) / aExpect < 0.01,
+      `${r.waterplaneAreaMm2.toFixed(0)} vs ${aExpect.toFixed(0)} mm2`)
+    check(`BM at ${deg}° heel`, Math.abs(r.BM - bmExpect) / bmExpect < 0.01,
+      `${r.BM.toFixed(1)} vs ${bmExpect.toFixed(1)} mm`)
+  }
 }
 
 console.log(fails === 0 ? '\nALL CHECKS PASS' : `\n${fails} CHECK(S) FAILED`)
