@@ -228,6 +228,30 @@ export function applyPitchY(
 }
 
 /**
+ * Roll rotation about the longitudinal X axis by `phiRad` radians,
+ * pivoting about `(pivotY, pivotZ)` (e.g. centerline and baseline/center).
+ * Positive phi = starboard (right) down.
+ * Det = +1 (proper rotation), preserving winding / normals / volume.
+ */
+export function applyRollX(
+  positions: Float32Array,
+  phiRad: number,
+  pivotY = 0,
+  pivotZ = 0,
+): void {
+  if (Math.abs(phiRad) < 1e-12) return
+  const c = Math.cos(phiRad)
+  const s = Math.sin(phiRad)
+  for (let i = 0; i < positions.length; i += 3) {
+    const y = positions[i + 1] - pivotY
+    const z = positions[i + 2] - pivotZ
+    // Positive roll (starboard down): +Y rotates towards -Z (downward)
+    positions[i + 1] = y * c - z * s + pivotY
+    positions[i + 2] = y * s + z * c + pivotZ
+  }
+}
+
+/**
  * Auto-orient a hull to the app's internal axes — longest extent on X (length),
  * middle on Y (beam), shortest on Z (depth / up) — when incoming STL axes are
  * arbitrary. It uses a proper rotation (det = +1) to preserve triangle winding,

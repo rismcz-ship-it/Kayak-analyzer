@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
 import Upload, { type LoadedMesh } from './components/Upload'
 import Viewer3D from './components/Viewer3D'
 import {
@@ -20,7 +21,7 @@ import {
 const fmt = (v: number, digits = 1) =>
   v.toLocaleString('en-US', { maximumFractionDigits: digits });
 
-function statRow(label: string, value: string, accent = false) {
+function statRow(label: string, value: string | ReactNode, accent = false) {
   return (
     <div className="flex items-baseline justify-between gap-3">
       <dt className="text-zinc-400">{label}</dt>
@@ -51,6 +52,8 @@ export default function App() {
   const [isCalculating, setIsCalculating] = useState(false);
   const [targetWeight, setTargetWeight] = useState(75); // kg, fresh water 1 kg = 1 L
   const [targetLcgPercent, setTargetLcgPercent] = useState(52); // % from bow
+  const [showHeelInput, setShowHeelInput] = useState(false); // toggle for fixed heel input
+  const [heelInputDeg, setHeelInputDeg] = useState(0); // fixed heel angle in degrees
   const calcToken = useRef(0);
 
   const handleLoaded = useCallback((next: LoadedMesh) => {
@@ -66,7 +69,7 @@ export default function App() {
   }, []);
 
   const runCalculation = useCallback(
-    (weightKg: number, lcgPercent: number, current: LoadedMesh) => {
+    (weightKg: number, lcgPercent: number, heelDeg: number, current: LoadedMesh) => {
       const token = ++calcToken.current;
       setIsCalculating(true);
       setDraftError(null);
@@ -82,8 +85,9 @@ export default function App() {
           if (!Number.isFinite(weightKg) || weightKg <= 0) {
             throw new Error(`Target weight must be > 0 kg (got ${String(weightKg)}).`);
           }
-          // First run zero-trim draft
-          const draft = find_draft_0trim(positions, weightKg);
+          const heelRad = (heelDeg * Math.PI) / 180;
+          // First run zero-trim draft (with heel if set)
+          const draft = find_draft_0trim(positions, weightKg, undefined, heelRad);
           if (calcToken.current !== token) return;
           setDraftResult(draft);
 
@@ -92,6 +96,7 @@ export default function App() {
             targetLcgPercentFromBow: lcgPercent,
             maxTrimDeg: 4.5,
             trimStepDeg: 0.1,
+            fixedHeelDeg: heelDeg,
           });
           if (calcToken.current !== token) return;
           setTrimResult(trim);
@@ -125,8 +130,9 @@ export default function App() {
       setDraftError('Load an STL hull first.');
       return;
     }
-    runCalculation(targetWeight, targetLcgPercent, mesh);
-  }, [mesh, targetWeight, targetLcgPercent, runCalculation]);
+    const appliedHeel = showHeelInput ? heelInputDeg : 0;
+    runCalculation(targetWeight, targetLcgPercent, appliedHeel, mesh);
+  }, [mesh, targetWeight, targetLcgPercent, showHeelInput, heelInputDeg, runCalculation]);
 
     const s = mesh?.stats;
   const maxKg = s ? s.volumeLiters : null;
@@ -160,7 +166,7 @@ export default function App() {
                                   geometry={mesh.geometry}
                                   waterlineZ={trimResult?.waterlineZ ?? draftResult?.waterlineZ ?? null}
                                   trimDeg={-(trimResult?.trimDeg ?? 0)}
-                                  heelDeg={0}
+                                  heelDeg={trimResult?.heelDeg ?? draftResult?.heelDeg ?? (showHeelInput ? heelInputDeg : 0)}
                                   waterlineCenterY={trimResult?.lcg.y ?? 0}
                                   lcg={trimResult?.lcg ?? null}
                                   lcb={trimResult?.lcb ?? draftResult?.lcb ?? null}
@@ -236,6 +242,42 @@ export default function App() {
                     className="w-32 rounded border border-zinc-700 bg-zinc-800 p-2 text-white"
                   />
                 </div>
+
+                <div className="mb-4 space-y-2">
+                  <label className="flex items-center gap-2 cursor-pointer group">
+                    <div className={`w-8 h-4 rounded-full transition-colors border border-zinc-700 ${showHeelInput ? 'bg-blue-600 border-blue-400' : 'bg-zinc-800'}`}>
+                      <div className={`w-3 h-3 m-0.5 rounded-full bg-white transition-transform ${showHeelInput ? 'translate-x-4' : 'translate-x-0'}`} />
+                    </div>
+                    <input
+                      type="checkbox"
+                      className="hidden"
+                      checked={showHeelInput}
+                      onChange={(e) => setShowHeelInput(e.target.checked)}
+                    />
+                    <span className="text-xs text-zinc-400 group-hover:text-zinc-300">Set fixed heel angle</span>
+                  </label>
+
+                  {showHeelInput && (
+                    <div className="animate-in fade-in slide-in-from-top-1 duration-200">
+                      <label htmlFor="heel-input" className="mb-1 block text-xs text-zinc-400">
+                        Heel angle (°) — positive = starboard down
+                      </label>
+                      <div className="flex items-center gap-3">
+                        <input
+                          id="heel-input"
+                          type="range"
+                          min={-30}
+                          max={30}
+                          step={1}
+                          value={heelInputDeg}
+                          onChange={(e) => setHeelInputDeg(Number(e.target.value))}
+                          className="flex-1 h-1.5 bg-zinc-700 appearance-none rounded-lg cursor-pointer accent-blue-500"
+                        />
+                        <span className="text-xs font-mono text-zinc-300 w-8 text-right">{heelInputDeg}°</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
                 {maxKg !== null && (
                   <p className="mb-2 text-xs text-zinc-500">
                     Hull capacity ≈ {fmt(maxKg)} kg (volume {fmt(maxKg)} L).
@@ -277,9 +319,10 @@ export default function App() {
                                                                             {statRow('LCB X', `${fmt(trimResult.lcb.x)} mm`)}
                                                                             {statRow('LCB–LCG offset', `${fmt(trimResult.lcbLcgOffsetMm)} mm`, true)}
                                                                             {statRow('Bow freeboard', `${fmt(trimResult.bowFreeboardMm)} mm`)}
-                                                                            {statRow('Stern freeboard', `${fmt(trimResult.sternFreeboardMm)} mm`)}
-                                                                            {statRow(
-                                        'Converged',
+                                                                                                                                                                                                                                    {statRow('Stern freeboard', `${fmt(trimResult.sternFreeboardMm)} mm`)}
+                                                                                                                                                                                                                                    {trimResult.heelDeg !== 0 && statRow('Fixed heel angle', `${trimResult.heelDeg >= 0 ? '+' : ''}${fmt(trimResult.heelDeg)}°`, true)}
+                                                                                                                                                                                                                                    {statRow(
+                                                                                                                    'Converged',
                                         trimResult.converged
                                           ? `yes (${trimResult.planesEvaluated} planes)`
                                           : `approx (${trimResult.planesEvaluated} planes)`,
