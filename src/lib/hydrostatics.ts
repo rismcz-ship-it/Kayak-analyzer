@@ -8,11 +8,11 @@
 
 import {
   applyPitchY,
-  applyRollX,
   computeBounds,
   computeVolumeAndCentroid,
   computeWaterlineBeamMm,
   computeWaterlineLengthMm,
+  isMeshUsableForHydrostatics,
   decimateMesh,
   DEFAULT_SOLVER_TRIANGLES,
   findMaxSubmergedSection,
@@ -161,8 +161,70 @@ export const RHO_KG_PER_M3 = 1000
 export const MM3_PER_KG = 1_000_000
 
 const EPS = 1e-9
-/** Quantisation for welding waterplane intersection points (0.001 mm). */
-const WELD_QUANT = 1000
+/**
+ * Spatial-hash cell size (mm) used to weld coincident contour points.
+ *
+ * The old scheme keyed points by `round(v * WELD_QUANT)` and required an
+ * EXACT string match. Two points that are coincident in space but land in
+ * different 0.001 mm buckets never merged, which shattered one waterplane
+ * contour into many open chains. Weld by actual distance instead, bucketed
+ * into cells several times coarser than the tolerance so a true match can
+ * only be in the point's own cell or an immediate neighbour.
+ */
+const WELD_TOL_MM = 1e-3
+const WELD_CELL_MM = 1e-2
+
+interface WeldNode {
+  x: number
+  y: number
+  /** Adjacent contour segments (as welded node indices). */
+  links: number[]
+}
+
+class WeldIndex {
+  private readonly buckets = new Map<string, number[]>()
+  readonly nodes: WeldNode[] = []
+
+  /**
+   * Return the index of the node coincident with (x, y) within WELD_TOL_MM,
+   * creating one if none exists. Call repeatedly with both endpoints of each
+   * intersection segment to build a shared, welded adjacency graph.
+   *
+   * The search covers the 3x3 cell neighbourhood, but a candidate is only
+   * accepted if it is the CLOSEST one found. Taking the first match instead
+   * makes the result depend on insertion order, so a long contour collapses
+   * into fewer nodes than a short one and coincident vertices land in
+   * different buckets -- which splits the waterplane into open chains.
+   */
+  add(x: number, y: number): number {
+    const cx = Math.floor(x / WELD_CELL_MM)
+    const cy = Math.floor(y / WELD_CELL_MM)
+    let best = -1
+    let bestD = WELD_TOL_MM
+    for (let dx = -1; dx <= 1; dx++) {
+      for (let dy = -1; dy <= 1; dy++) {
+        const list = this.buckets.get(`${cx + dx}|${cy + dy}`)
+        if (!list) continue
+        for (const idx of list) {
+          const n = this.nodes[idx]
+          const d = Math.max(Math.abs(n.x - x), Math.abs(n.y - y))
+          if (d <= bestD) {
+            bestD = d
+            best = idx
+          }
+        }
+      }
+    }
+    if (best >= 0) return best
+    const idx = this.nodes.length
+    this.nodes.push({ x, y, links: [] })
+    const key = `${cx}|${cy}`
+    const list = this.buckets.get(key)
+    if (list) list.push(idx)
+    else this.buckets.set(key, [idx])
+    return idx
+  }
+}
 
 function toPositions(mesh: MeshLike): Float32Array {
   return mesh instanceof Float32Array ? mesh : mesh.positions
@@ -194,10 +256,6 @@ interface XY {
   y: number
 }
 
-function weldKey(x: number, y: number): string {
-  return `${Math.round(x * WELD_QUANT)}|${Math.round(y * WELD_QUANT)}`
-}
-
 function lerp(a: number, b: number, t: number): number {
   return a + (b - a) * t
 }
@@ -207,8 +265,16 @@ export interface ClippedBelow {
   clipped: Float32Array
   /** Waterplane area (sum of cap-loop |areas|), mm^2. */
   waterplaneAreaMm2: number
-  /** Waterplane second moment of area about centerline (Y=0), mm^4. */
+  /** Waterplane second moment of area about the waterplane's own centroid, mm^4. */
   waterplaneIx: number
+  /**
+   * Number of distinct closed loops the waterplane contour resolved into.
+   * A watertight hull cut by a single plane must give exactly 1. More than
+   * one means the contour was fragmented (bad welding, or a genuinely
+   * multi-lobe waterplane), and the area/second-moment sums below are then
+   * not trustworthy.
+   */
+  waterplaneLoopCount: number
 }
 
 /**
@@ -243,7 +309,13 @@ export function clipBelowPlane(positions: Float32Array, h: number): ClippedBelow
     ax: number, ay: number, az: number,
     bx: number, by: number, bz: number,
   ): [number, number] => {
-    const t = (h - az) / (bz - az)
+    // Both endpoints can sit exactly in the cutting plane (a facet coplanar
+    // with the waterline, which happens routinely on a heeled hull). That
+    // makes bz - az zero and t = inf/NaN, and a single NaN node poisons the
+    // whole contour walk. Clamp t to the endpoints in that case.
+    const dz = bz - az
+    if (Math.abs(dz) < EPS) return [ax, ay]
+    const t = (h - az) / dz
     return [lerp(ax, bx, t), lerp(ay, by, t)]
   }
 
@@ -257,6 +329,24 @@ export function clipBelowPlane(positions: Float32Array, h: number): ClippedBelow
     const cx = positions[i + 6]
     const cy = positions[i + 7]
     const cz = positions[i + 8]
+
+    // Skip zero-area triangles outright. Mesh decimation can collapse a
+    // triangle's vertices onto one point; such a face has no volume and no
+    // usable waterplane crossing, and letting it through emits a zero-length
+    // contour segment that shatters the waterplane into open chains. They
+    // are ignored here rather than stripped from the mesh, which would tear
+    // holes in it and break watertightness.
+    const e1x = bx - ax
+    const e1y = by - ay
+    const e1z = bz - az
+    const e2x = cx - ax
+    const e2y = cy - ay
+    const e2z = cz - az
+    const nx = e1y * e2z - e1z * e2y
+    const ny = e1z * e2x - e1x * e2z
+    const nz = e1x * e2y - e1y * e2x
+    const areaMag = Math.hypot(nx, ny, nz)
+    if (areaMag < 1e-9) continue
 
     // Fast reject/accept on the triangle Z-range before per-vertex work.
     const triMin = Math.min(az, bz, cz)
@@ -328,31 +418,21 @@ export function clipBelowPlane(positions: Float32Array, h: number): ClippedBelow
   }
 
   let waterplaneAreaMm2 = 0
+  const loops: XY[][] = []
 
   if (segX1.length > 0) {
-    // Weld endpoints, dedupe segments, build adjacency for loop walking.
-    const coordOf = new Map<string, XY>()
-    const adj = new Map<string, string[]>()
-    const addAdj = (a: string, b: string) => {
-      const list = adj.get(a)
-      if (list) {
-        if (!list.includes(b)) list.push(b)
-      } else {
-        adj.set(a, [b])
-      }
-    }
+    // Weld endpoints by proximity, dedupe segments, build adjacency.
+    const weld = new WeldIndex()
     const seenSeg = new Set<string>()
     for (let s = 0; s < segX1.length; s++) {
-      const k1 = weldKey(segX1[s], segY1[s])
-      const k2 = weldKey(segX2[s], segY2[s])
-      if (k1 === k2) continue
-      const canon = k1 <= k2 ? `${k1}~${k2}` : `${k2}~${k1}`
+      const n1 = weld.add(segX1[s], segY1[s])
+      const n2 = weld.add(segX2[s], segY2[s])
+      if (n1 === n2) continue
+      const canon = n1 <= n2 ? `${n1}~${n2}` : `${n2}~${n1}`
       if (seenSeg.has(canon)) continue
       seenSeg.add(canon)
-      if (!coordOf.has(k1)) coordOf.set(k1, { x: segX1[s], y: segY1[s] })
-      if (!coordOf.has(k2)) coordOf.set(k2, { x: segX2[s], y: segY2[s] })
-      addAdj(k1, k2)
-      addAdj(k2, k1)
+      weld.nodes[n1].links.push(n2)
+      weld.nodes[n2].links.push(n1)
     }
 
     // Match cap winding to the input solid: outward cap normal is +Z when the
@@ -362,19 +442,18 @@ export function clipBelowPlane(positions: Float32Array, h: number): ClippedBelow
 
     // Walk every unvisited edge into ordered loops.
     const visited = new Set<string>()
-    const canonOf = (a: string, b: string) => (a <= b ? `${a}~${b}` : `${b}~${a}`)
-    const loops: XY[][] = []
+    const canonOf = (a: number, b: number) => (a <= b ? `${a}~${b}` : `${b}~${a}`)
     for (const seed of seenSeg) {
       if (visited.has(seed)) continue
       visited.add(seed)
-      const [sa, sb] = seed.split('~')
-      const loopKeys = [sa, sb]
+      const [sa, sb] = seed.split('~').map(Number)
+      const loopNodes = [sa, sb]
       let prev = sa
       let cur = sb
       for (let guard = 0; guard < seenSeg.size + 2; guard++) {
         if (cur === sa) break // closed
-        const nexts = adj.get(cur) ?? []
-        let nxt: string | null = null
+        const nexts = weld.nodes[cur].links
+        let nxt: number | null = null
         for (const n of nexts) {
           if (n === prev) continue
           if (!visited.has(canonOf(cur, n))) {
@@ -384,18 +463,20 @@ export function clipBelowPlane(positions: Float32Array, h: number): ClippedBelow
         }
         if (nxt === null) break // open chain / dead end
         visited.add(canonOf(cur, nxt))
-        loopKeys.push(nxt)
+        loopNodes.push(nxt)
         prev = cur
         cur = nxt
       }
-      if (loopKeys.length >= 3) {
+      if (loopNodes.length >= 3) {
+        // An unterminated walk is an open chain, not a waterplane contour.
+        // Capping it produces a phantom loop whose sliver area and noisy
+        // second moment corrupt the BM sum -- discard it instead.
+        if (loopNodes[loopNodes.length - 1] !== loopNodes[0]) continue
         const pts: XY[] = []
-        // Drop the duplicated closing key if the walk returned to start.
-        const closed = loopKeys[loopKeys.length - 1] === loopKeys[0]
-        const keys = closed ? loopKeys.slice(0, -1) : loopKeys
-        for (const k of keys) {
-          const p = coordOf.get(k)
-          if (p) pts.push(p)
+        const nodes = loopNodes.slice(0, -1) // drop the duplicated closing node
+        for (const idx of nodes) {
+          const n = weld.nodes[idx]
+          pts.push({ x: n.x, y: n.y })
         }
         if (pts.length >= 3) loops.push(pts)
       }
@@ -451,7 +532,7 @@ export function clipBelowPlane(positions: Float32Array, h: number): ClippedBelow
     }
   }
 
-  return { clipped: new Float32Array(out), waterplaneAreaMm2, waterplaneIx }
+  return { clipped: new Float32Array(out), waterplaneAreaMm2, waterplaneIx, waterplaneLoopCount: loops.length }
 }
 
 /**
@@ -487,18 +568,26 @@ export function find_draft_0trim(mesh: MeshLike, target_kg: number, KG?: number,
     throw new Error(`find_draft_0trim: target_kg must be > 0 (got ${target_kg})`)
   }
 
-  // Apply heel rotation (X-axis) if specified
+  // Apply heel rotation (X-axis) if specified.
+  //
+  // This function is the SINGLE owner of heel: `solve_trim` passes the angle
+  // in here rather than rolling the mesh itself. Rolling in both places
+  // composed the two rotations, so a requested 20 deg floated as 40 deg —
+  // and because the two used different pivots (the hull centre vs the origin)
+  // the result was not even a consistent 40 deg. The pivot is the hull's
+  // bounding-box centre, so it is independent of where the mesh sits in world Z.
   let workingPositions = positions
   if (heelRad && Math.abs(heelRad) > 1e-10) {
+    const pivot = computeBounds(positions)
     workingPositions = new Float32Array(positions.length)
     const cosH = Math.cos(heelRad)
     const sinH = Math.sin(heelRad)
     for (let i = 0; i < positions.length; i += 3) {
-      const y = positions[i + 1]
-      const z = positions[i + 2]
-      workingPositions[i] = positions[i]           // X unchanged
-      workingPositions[i + 1] = y * cosH - z * sinH  // Y rotated
-      workingPositions[i + 2] = y * sinH + z * cosH  // Z rotated
+      const y = positions[i + 1] - pivot.center.y
+      const z = positions[i + 2] - pivot.center.z
+      workingPositions[i] = positions[i]                 // X unchanged
+      workingPositions[i + 1] = y * cosH - z * sinH + pivot.center.y
+      workingPositions[i + 2] = y * sinH + z * cosH + pivot.center.z
     }
   }
 
@@ -732,8 +821,25 @@ export function solve_trim(
   if (positions.length === 0) throw new Error('solve_trim: empty mesh')
 
   // Decimate once for the entire trim sweep — keeps solver fast.
-    // Use decimated mesh for all hydrostatic evaluations; original mesh for display.
-    const solveMesh = decimateMesh(positions, DEFAULT_SOLVER_TRIANGLES)
+  //
+  // Decimation is only safe if it leaves the mesh watertight. `decimateMesh`
+  // snaps vertices to cell centroids, which collapses ~76% of triangles to
+  // zero area on a hull this size; those faces carry no volume but their
+  // edges still generate waterplane crossings that do not pair up, which
+  // shattered the waterplane contour into open chains and produced
+  // meaningless BM/GM at heel. Rather than patch holes downstream, fall back
+  // to the original mesh whenever the decimation is not clean. The original
+  // is only ~40k triangles, which the solver handles comfortably.
+  const decimated = decimateMesh(positions, DEFAULT_SOLVER_TRIANGLES)
+  const solveMesh = isMeshUsableForHydrostatics(decimated)
+    ? decimated
+    : positions
+  if (solveMesh !== decimated) {
+    console.warn(
+      `solve_trim: decimation produced an unusable mesh; ` +
+        `solving on the original ${(positions.length / 9) | 0} triangles instead.`,
+    )
+  }
 
     const bounds = computeBounds(solveMesh)
     const lengthX = bounds.size.x
@@ -781,8 +887,8 @@ export function solve_trim(
     for (let deg = -maxTrimDeg; deg <= maxTrimDeg + 1e-6; deg += coarseStepDeg) {
       const rad = (deg * Math.PI) / 180
       workingPositions.set(solveMesh)
-      // Apply heel first (roll about X), then trim (pitch about Y)
-      applyRollX(workingPositions, fixedHeelRad, bounds.center.y, bounds.center.z)
+      // Trim only. Heel is applied inside find_draft_0trim, which owns it —
+      // rolling here as well would apply the angle twice.
       applyPitchY(workingPositions, rad, targetLcgX, bounds.center.z)
 
       try {
@@ -817,8 +923,8 @@ export function solve_trim(
     for (let deg = fineStart; deg <= fineEnd + 1e-6; deg += fineStepDeg) {
       const rad = (deg * Math.PI) / 180
       workingPositions.set(solveMesh)
-      // Apply heel first (roll about X), then trim (pitch about Y)
-      applyRollX(workingPositions, fixedHeelRad, bounds.center.y, bounds.center.z)
+      // Trim only. Heel is applied inside find_draft_0trim, which owns it —
+      // rolling here as well would apply the angle twice.
       applyPitchY(workingPositions, rad, targetLcgX, bounds.center.z)
 
       try {

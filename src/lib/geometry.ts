@@ -979,11 +979,50 @@ export function checkWatertight(positions: Float32Array): WatertightResult {
 export const DEFAULT_SOLVER_TRIANGLES = 10000
 
 /**
+ * True if a mesh is sound enough to run hydrostatics on.
+ *
+ * Two things disqualify it:
+ *  - not watertight, so the clipped solid has an undefined volume, and
+ *  - a significant share of zero-area triangles, which contribute no volume
+ *    but still emit waterplane crossings that do not pair into a contour.
+ *
+ * `decimateMesh` snaps vertices to cell centroids, which collapses the
+ * majority of triangles on a hull this size, so its output usually fails
+ * here. Callers should fall back to the original mesh rather than solve on it.
+ */
+export function isMeshUsableForHydrostatics(positions: Float32Array): boolean {
+  if (positions.length === 0) return false
+  if (!checkWatertight(positions).watertight) return false
+  const triCount = positions.length / 9
+  let degenerate = 0
+  for (let i = 0; i < positions.length; i += 9) {
+    const ax = positions[i]
+    const ay = positions[i + 1]
+    const az = positions[i + 2]
+    const e1x = positions[i + 3] - ax
+    const e1y = positions[i + 4] - ay
+    const e1z = positions[i + 5] - az
+    const e2x = positions[i + 6] - ax
+    const e2y = positions[i + 7] - ay
+    const e2z = positions[i + 8] - az
+    const nx = e1y * e2z - e1z * e2y
+    const ny = e1z * e2x - e1x * e2z
+    const nz = e1x * e2y - e1y * e2x
+    if (Math.hypot(nx, ny, nz) < 1e-9) degenerate++
+  }
+  return degenerate / triCount < 0.01
+}
+
+/**
  * Decimate a mesh to approximately `targetTriangles` using spatial vertex clustering.
  * Groups vertices into a 3D grid and averages positions within each cell.
  * Preserves overall volume and shape well for hydrostatic calculations.
  * Uses a very coarse grid that forces strong merging for elongated hulls.
- * 
+ *
+ * NOTE: the result is usually NOT usable for hydrostatics — vertex snapping
+ * collapses most triangles. Check with {@link isMeshUsableForHydrostatics}
+ * before solving on it.
+ *
  * @param positions Flat interleaved xyz Float32Array (9 values per triangle)
  * @param targetTriangles Target number of triangles (default: 10000)
  * @returns Decimated mesh as Float32Array, or original if already small enough
