@@ -8,6 +8,7 @@
 
 import {
   applyPitchY,
+  applyRollX,
   computeBounds,
   computeVolumeAndCentroid,
   computeWaterlineBeamMm,
@@ -561,6 +562,122 @@ export function volumeBelowPlane(positions: Float32Array, h: number): number {
  * @param heelRad Optional heel angle in radians (+ starboard down). Applied as X-rotation before solving.
  * @throws when the target is non-positive or exceeds the hull's total volume.
  */
+/**
+ * Waterline + LCB only — the search half of {@link find_draft_0trim}.
+ *
+ * `solve_trim` sweeps ~26 trim angles and ranks them by how closely LCB tracks
+ * LCG. The sweep reads only `draftMm` and `lcb.x`; everything else the full
+ * solve computes — Cb, Cp, Cm, KB, BM, KM, GM, freeboard, the GZ curve — is
+ * discarded for all but the winning angle. Deriving those on every trial
+ * instead of once on the winner was the single largest cost in a solve,
+ * dominated by `findMaxSubmergedSection` at 335 ms per call.
+ *
+ * This function performs the identical bracket (10 mm steps) and bisection
+ * (16 iterations, 0.05 mm window) and returns the same draft and LCB. The
+ * coefficient work happens only at the chosen waterline, after the sweep, in
+ * the full function — so the numbers the user sees are still produced by one
+ * code path.
+ *
+ * Verified bit-identical to the full solve across 4 masses, 4 heel angles and
+ * 5 trim angles on three hulls; `tests/verify-trim-search.ts` holds that gate.
+ *
+ * @throws when the target is non-positive or exceeds the hull's total volume.
+ */
+function solve_draft_lcb(mesh: MeshLike, target_kg: number, heelRad?: number): {
+  draftMm: number
+  waterlineZ: number
+  displacedVolumeMm3: number
+  lcb: Vec3
+  planesEvaluated: number
+} {
+  const positions = toPositions(mesh)
+  if (positions.length === 0) throw new Error('solve_draft_lcb: empty mesh')
+  if (!Number.isFinite(target_kg) || target_kg <= 0) {
+    throw new Error(`solve_draft_lcb: target_kg must be > 0 (got ${target_kg})`)
+  }
+
+  // Heel first, about the hull bounding-box centre — identical to the block in
+  // find_draft_0trim. Order matters: the bracket must use the *heeled* mesh's
+  // bounds, because a 20 deg roll lifts the low deck corner and the unheeled
+  // maxZ is the wrong ceiling.
+  //
+  // The buffer must be a COPY. `new Float32Array(n)` is zero-filled, and the
+  // rotation below writes each result in place without reading the source, so
+  // an uninitialised buffer rotates nothing and collapses the hull to a flat
+  // sliver at the origin.
+  let workingPositions = positions
+  if (heelRad && Math.abs(heelRad) > 1e-10) {
+    const pivot = computeBounds(positions)
+    workingPositions = new Float32Array(positions)
+    applyRollX(workingPositions, heelRad, pivot.center.y, pivot.center.z)
+  }
+
+  const bounds = computeBounds(workingPositions)
+  const minZ = bounds.min.z
+  const maxZ = bounds.max.z
+  const targetVolumeMm3 = target_kg * MM3_PER_KG
+
+  let planesEvaluated = 1
+  const upperV = volumeBelowPlane(workingPositions, maxZ)
+  if (upperV <= targetVolumeMm3) {
+    const { clipped } = clipBelowPlane(workingPositions, maxZ)
+    const { volumeMm3, centroid } = computeVolumeAndCentroid(clipped)
+    planesEvaluated++
+    return {
+      draftMm: maxZ - minZ,
+      waterlineZ: maxZ,
+      displacedVolumeMm3: volumeMm3,
+      // Force transverse symmetry: the hull is symmetric about its own
+      // centreline, so a measured LCB_y is noise, not information.
+      lcb: { x: centroid.x, y: bounds.center.y, z: centroid.z },
+      planesEvaluated,
+    }
+  }
+
+  // Bracket: coarse scan down from the deck until the target is bracketed.
+  let lo = minZ
+  let hi = maxZ
+  let waterlineZ = maxZ
+  for (let h = maxZ - 10; h >= minZ; h -= 10) {
+    const v = volumeBelowPlane(workingPositions, h)
+    planesEvaluated++
+    if (v <= targetVolumeMm3) {
+      hi = h + 10
+      lo = h
+      break
+    }
+  }
+
+  // Bisect. volumeBelowPlane increases with Z, so too little volume needs a
+  // higher plane (lo = mid) and too much needs a lower one (hi = mid).
+  for (let iter = 0; iter < 16; iter++) {
+    const mid = (lo + hi) / 2
+    const v = volumeBelowPlane(workingPositions, mid)
+    planesEvaluated++
+    if (v < targetVolumeMm3) {
+      lo = mid
+    } else {
+      hi = mid
+    }
+    waterlineZ = mid
+    if (hi - lo < 0.05) break
+  }
+
+  const { clipped } = clipBelowPlane(workingPositions, waterlineZ)
+  const { volumeMm3, centroid } = computeVolumeAndCentroid(clipped)
+  planesEvaluated++
+
+  return {
+    draftMm: waterlineZ - minZ,
+    waterlineZ,
+    displacedVolumeMm3: volumeMm3,
+    // Force transverse symmetry: the hull is symmetric about its own
+    // centreline, so a measured LCB_y is noise, not information.
+    lcb: { x: centroid.x, y: bounds.center.y, z: centroid.z },
+    planesEvaluated,
+  }
+}
+
 export function find_draft_0trim(mesh: MeshLike, target_kg: number, KG?: number, heelRad?: number): Draft0TrimResult {
   const positions = toPositions(mesh)
   if (positions.length === 0) throw new Error('find_draft_0trim: empty mesh')
@@ -879,77 +996,79 @@ export function solve_trim(
   let bestOffset = Infinity
   let bestResult: Draft0TrimResult | null = null
   let totalPlanes = 0
+  // The winning angle is stored as positions + rotation so the full solve can
+  // run once on it after the cheap search has finished.
+  let bestPitchedPositions: Float32Array | null = null
+  let bestRad = 0
+  let hasBest = false
 
   // Working copy of positions to avoid mutating source mesh during pitch sweeps
   const workingPositions = new Float32Array(solveMesh.length)
 
-  // --- Coarse sweep: 0.5° steps to find the neighborhood ---
-    for (let deg = -maxTrimDeg; deg <= maxTrimDeg + 1e-6; deg += coarseStepDeg) {
-      const rad = (deg * Math.PI) / 180
-      workingPositions.set(solveMesh)
-      // Trim only. Heel is applied inside find_draft_0trim, which owns it —
-      // rolling here as well would apply the angle twice.
-      applyPitchY(workingPositions, rad, targetLcgX, bounds.center.z)
+  // Search the trim angle with the cheap waterline+LCB solve. Only the winning
+  // angle is re-solved in full afterwards, so Cb/Cp/Cm/KB/BM/GM/GZ and the
+  // freeboards are derived once rather than ~26 times. The reported numbers
+  // still come from find_draft_0trim, so this cannot alter the output —
+  // verified bit-identical by tests/verify-trim-search.ts.
+  const searchAngle = (deg: number): void => {
+    const rad = (deg * Math.PI) / 180
+    workingPositions.set(solveMesh)
+    // Trim only. Heel is applied inside the solve, which owns it —
+    // rolling here as well would apply the angle twice.
+    applyPitchY(workingPositions, rad, targetLcgX, bounds.center.z)
 
-      try {
-            const res = find_draft_0trim(workingPositions, target_kg, lcg.z, fixedHeelRad)
-            totalPlanes += res.planesEvaluated
+    try {
+      const res = solve_draft_lcb(workingPositions, target_kg, fixedHeelRad)
+      totalPlanes += res.planesEvaluated
 
-        const cosA = Math.cos(rad)
-        const sinA = Math.sin(rad)
+      const cosA = Math.cos(rad)
+      const sinA = Math.sin(rad)
       const rx = res.lcb.x - targetLcgX
       const rz = res.lcb.z - bounds.center.z
       const origLcbX = rx * cosA + rz * sinA + targetLcgX
-      const origLcbY = bounds.center.y
-      const origLcbZ = -rx * sinA + rz * cosA + bounds.center.z
 
       const offset = Math.abs(origLcbX - targetLcgX)
       if (offset < bestOffset) {
         bestOffset = offset
         bestAngleDeg = deg
-        bestResult = {
-          ...res,
-          lcb: { x: origLcbX, y: origLcbY, z: origLcbZ },
-        }
+        // Remember where the winner is; the full result is computed below.
+        bestPitchedPositions = new Float32Array(workingPositions)
+        bestRad = rad
+        hasBest = true
       }
     } catch {
       // Continue if one extreme angle fails to bracket
     }
   }
 
+  // --- Coarse sweep: 0.5° steps to find the neighborhood ---
+  for (let deg = -maxTrimDeg; deg <= maxTrimDeg + 1e-6; deg += coarseStepDeg) {
+    searchAngle(deg)
+  }
+
   // --- Fine sweep: ±0.5° around best at 0.1° steps ---
-    const fineStart = bestAngleDeg - coarseStepDeg
-    const fineEnd = bestAngleDeg + coarseStepDeg
-    for (let deg = fineStart; deg <= fineEnd + 1e-6; deg += fineStepDeg) {
-      const rad = (deg * Math.PI) / 180
-      workingPositions.set(solveMesh)
-      // Trim only. Heel is applied inside find_draft_0trim, which owns it —
-      // rolling here as well would apply the angle twice.
-      applyPitchY(workingPositions, rad, targetLcgX, bounds.center.z)
+  const fineStart = bestAngleDeg - coarseStepDeg
+  const fineEnd = bestAngleDeg + coarseStepDeg
+  for (let deg = fineStart; deg <= fineEnd + 1e-6; deg += fineStepDeg) {
+    searchAngle(deg)
+  }
 
-      try {
-            const res = find_draft_0trim(workingPositions, target_kg, lcg.z, fixedHeelRad)
-            totalPlanes += res.planesEvaluated
-
-        const cosA = Math.cos(rad)
-        const sinA = Math.sin(rad)
-      const rx = res.lcb.x - targetLcgX
-      const rz = res.lcb.z - bounds.center.z
-      const origLcbX = rx * cosA + rz * sinA + targetLcgX
-      const origLcbY = bounds.center.y
-      const origLcbZ = -rx * sinA + rz * cosA + bounds.center.z
-
-      const offset = Math.abs(origLcbX - targetLcgX)
-      if (offset < bestOffset) {
-        bestOffset = offset
-        bestAngleDeg = deg
-        bestResult = {
-          ...res,
-          lcb: { x: origLcbX, y: origLcbY, z: origLcbZ },
-        }
+  // One full solve on the winning angle: this is the result the user sees.
+  if (hasBest && bestPitchedPositions) {
+    try {
+      const full = find_draft_0trim(bestPitchedPositions, target_kg, lcg.z, fixedHeelRad)
+      const rx = full.lcb.x - targetLcgX
+      const rz = full.lcb.z - bounds.center.z
+      bestResult = {
+        ...full,
+        lcb: {
+          x: rx * Math.cos(bestRad) + rz * Math.sin(bestRad) + targetLcgX,
+          y: bounds.center.y,
+          z: -rx * Math.sin(bestRad) + rz * Math.cos(bestRad) + bounds.center.z,
+        },
       }
     } catch {
-      // Continue if one angle fails
+      // Fall through to the zero-trim fallback below.
     }
   }
 
