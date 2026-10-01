@@ -1005,12 +1005,32 @@ export function solve_trim(
 
     const targetLcgPercent = options?.targetLcgPercentFromBow ?? 52
   // Bow is at max X; stern is at min X
-  const targetLcgX = bowX - (targetLcgPercent / 100) * lengthX
-  const lcg: Vec3 = {
-    x: targetLcgX,
-    y: bounds.center.y,
-    z: bounds.min.z + 280, // Default KG 280mm above keel
-  }
+    const targetLcgX = bowX - (targetLcgPercent / 100) * lengthX
+    // KG is a HEIGHT above the keel, which is what find_draft_0trim expects — it
+    // computes GM = KM - KG. The LCG's world-Z is that same point expressed as an
+    // absolute coordinate, hence bounds.min.z + KG.
+    //
+    // This used to pass `lcg.z` — the ABSOLUTE height — as the KG argument. On any
+    // mesh whose keel is not at z = 0 that silently shortened KG by |min.z|. On
+    // the test hull (min.z = -162.5) the effective KG was 117.5 mm instead of
+    // 280, inflating every reported KM and GM by 162.5 mm: GM read 272.9 where
+    // the correct value is 110.4, which reads as a very stiff boat.
+    //
+    // Only GM was affected. KB, BM, KM, draft, trim, LCB, Cb/Cp/Cm and LWL/BWL are
+    // all independent of KG — it enters only through GM = KM - KG — so every other
+    // number the app reported was already correct.
+    //
+    // It survived because every test suite passed `undefined` for KG, which makes
+    // GM = 0, so GM was never asserted against ground truth anywhere. The fix is
+    // named so the two quantities cannot be confused again, and
+    // tests/verify-analytic.ts now checks GM against the box's closed-form
+    // KM - KG so a parameter defaulted away by every caller cannot hide a unit bug.
+    const KG_MM = 280
+    const lcg: Vec3 = {
+      x: targetLcgX,
+      y: bounds.center.y,
+      z: bounds.min.z + KG_MM, // Default KG 280mm above keel
+    }
 
   const maxTrimDeg = options?.maxTrimDeg ?? 3.5
   const fineStepDeg = options?.trimStepDeg ?? 0.1
@@ -1082,7 +1102,7 @@ export function solve_trim(
   // One full solve on the winning angle: this is the result the user sees.
   if (hasBest && bestPitchedPositions) {
     try {
-      const full = find_draft_0trim(bestPitchedPositions, target_kg, lcg.z, fixedHeelRad)
+      const full = find_draft_0trim(bestPitchedPositions, target_kg, KG_MM, fixedHeelRad)
       const rx = full.lcb.x - targetLcgX
       const rz = full.lcb.z - bounds.center.z
       bestResult = {
@@ -1099,7 +1119,7 @@ export function solve_trim(
   }
 
   if (!bestResult) {
-                    const fallback = find_draft_0trim(solveMesh, target_kg, lcg.z, fixedHeelRad)
+                    const fallback = find_draft_0trim(solveMesh, target_kg, KG_MM, fixedHeelRad)
                     bestResult = {
                       ...fallback,
                                 lcb: { ...fallback.lcb, y: bounds.center.y }, // Force centerline

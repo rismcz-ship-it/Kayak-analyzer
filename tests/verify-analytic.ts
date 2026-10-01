@@ -62,6 +62,30 @@ console.log('=== BOX 2000 x 600 x 300 mm ===')
   check('KB = draft/2', Math.abs(r.KB - r.draftMm / 2) < 1, `${r.KB} vs ${(r.draftMm / 2).toFixed(1)}`)
   const bmBox = (L * Math.pow(B, 3) / 12) / V
   check('BM = (L*B^3/12)/V', Math.abs(r.BM - bmBox) < 1, `${r.BM} vs ${bmBox.toFixed(1)} mm`)
+
+  // KG -> KM -> GM, asserted against closed form. This block exists because a
+  // unit bug once lived exactly here: solve_trim passed the LCG's ABSOLUTE z to
+  // find_draft_0trim's KG argument, which expects a height above the keel, so
+  // every reported GM was inflated by |min.z| (162.5 mm on the test hull). It
+  // survived because every suite passed `undefined` for KG, leaving GM = 0 —
+  // a parameter defaulted away by every caller is invisible to the tests. The
+  // box has an exact KB and BM, so KM - KG is exact ground truth here.
+  const KG = 100
+  const rKG = find_draft_0trim(box, 50, KG, 0)
+  const kmExpect = rKG.draftMm / 2 + bmBox
+  check('KM = KB + BM', Math.abs(rKG.KM - kmExpect) < 1, `${rKG.KM} vs ${kmExpect.toFixed(1)} mm`)
+  check('GM = KM - KG', Math.abs(rKG.GM - (kmExpect - KG)) < 1, `${rKG.GM} vs ${(kmExpect - KG).toFixed(1)} mm`)
+  // A second, very different KG must shift GM by exactly the KG change. This is
+  // what catches an absolute-vs-relative confusion regardless of the mesh origin.
+  const KG2 = 40
+  const rKG2 = find_draft_0trim(box, 50, KG2, 0)
+  check('GM shifts by dKG exactly', Math.abs(rKG2.GM - rKG.GM - (KG - KG2)) < 1, `${rKG2.GM} vs ${rKG.GM}, dKG = ${KG - KG2}`)
+  // No KG passed => GM is 0, not garbage. Pins the optional-argument contract.
+  const rNoKG = find_draft_0trim(box, 50, undefined, 0)
+  check('GM = 0 when KG omitted', rNoKG.GM === 0, `${rNoKG.GM} (KB/BM still computed: ${rNoKG.KB}/${rNoKG.BM})`)
+  // GM must be able to go negative (G above M) without clamping.
+  const KGhigh = kmExpect + 50
+  check('GM negative when G above M', Math.abs(find_draft_0trim(box, 50, KGhigh, 0).GM - (kmExpect - KGhigh)) < 1, `${find_draft_0trim(box, 50, KGhigh, 0).GM} mm`)
 }
 
 // ---------------------------------------------------------------- cylinder
