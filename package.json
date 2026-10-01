@@ -7,7 +7,9 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "typecheck": "tsc -b --noEmit"
+    "typecheck": "tsc -b --noEmit",
+    "test": "tsx tests/verify-analytic.ts && tsx tests/verify-box-identity.ts && tsx tests/verify-coefficients.ts && tsx tests/verify-decimation.ts && tsx tests/verify-heel-real.ts && tsx tests/verify-trim-search.ts",
+    "test:print": "tsx tests/test-auto-orient.ts && tsx tests/test-box.ts && tsx tests/test-solver.ts"
   },
   "dependencies": {
     "react": "^19.3.0",
@@ -22,6 +24,7 @@
     "@types/three": "^0.186.0",
     "@vitejs/plugin-react": "^6.1.1",
     "tailwindcss": "^4.3.3",
+    "tsx": "^4.23.15",
     "typescript": "^7.0.2",
     "vite": "^8.3.0"
   }
