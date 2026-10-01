@@ -7,25 +7,24 @@
     "model_hash": { "type": "string", "description": "SHA256 of the STL model used" },
     "targets": {
       "type": "object",
-      "required": ["weight_kg", "lcg_pct_lwl", "kg_mm"],
+      "required": ["weight_kg", "lcg_pct_lwl"],
       "properties": {
         "weight_kg": { "type": "number", "minimum": 0 },
         "lcg_pct_lwl": { "type": "number", "minimum": 0, "maximum": 100, "description": "LCG as % of LWL from bow" },
-        "kg_mm": { "type": "number", "minimum": 0, "description": "Vertical center of gravity above keel in mm" }
+        "kg_mm": { "type": "number", "minimum": 0, "description": "Vertical center of gravity above keel in mm. Optional only because the UI has no KG control yet — the solver currently assumes 280 mm, so a run that does not state its KG did not come from user input." }
       }
     },
     "results": {
       "type": "object",
-      "required": ["draft_mm", "trim_deg", "lwl_mm", "bwl_mm", "volume_liters", "lcb_xyz", "lcg_xyz", "waterline_polygon"],
+      "required": ["draft_mm", "trim_deg", "lwl_mm", "bwl_mm", "volume_liters", "lcb_xyz", "lcg_xyz"],
       "properties": {
         "draft_mm": { "type": "number" },
         "trim_deg": { "type": "number" },
-        "lwl_mm": { "type": "number", "description": "Length of waterline in mm" },
-        "bwl_mm": { "type": "number", "description": "Beam at waterline in mm" },
+        "lwl_mm": { "type": "number", "description": "Length of waterline in mm, measured at the waterline (not the bounding box)" },
+        "bwl_mm": { "type": "number", "description": "Beam at waterline in mm, measured at the waterline" },
         "volume_liters": { "type": "number", "description": "Displaced volume in liters" },
         "lcb_xyz": { "type": "array", "items": { "type": "number" }, "minItems": 3, "maxItems": 3, "description": "LCB in mm [x, y, z]" },
-        "lcg_xyz": { "type": "array", "items": { "type": "number" }, "minItems": 3, "maxItems": 3, "description": "LCG in mm [x, y, z]" },
-        "waterline_polygon": { "type": "array", "items": { "type": "array", "items": { "type": "number" } }, "description": "Waterline polygon points [x, y] in mm" }
+        "lcg_xyz": { "type": "array", "items": { "type": "number" }, "minItems": 3, "maxItems": 3, "description": "LCG in mm [x, y, z]" }
       }
     },
     "coefficients": {

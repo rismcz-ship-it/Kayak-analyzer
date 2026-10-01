@@ -18,7 +18,7 @@ Local web app for static kayak hydrostatics analysis.
 
 ## Workflow Rules & Seams
 1. **Git Control**: Do not commit blindly. Follow the user's workflow. There is no in-app event log yet — `HistoryManager` is referenced in older plans but does not exist in `src/`.
-2. **References & Schemas**: Event schemas live in `references/` (e.g. `kayak_analyzer_solver.json`). Do not invent new ad-hoc JSON formats. That schema is **ahead of the code and not yet implemented**: it requires `lwl_mm`, `bwl_mm` and `waterline_polygon`, which the solver computes internally and never returns, plus a target `kg_mm`, which the UI cannot supply because KG is hardcoded. Treat it as a target format, not a description of current output.
+2. **References & Schemas**: Event schemas live in `references/` (e.g. `kayak_analyzer_solver.json`). Do not invent new ad-hoc JSON formats. **The schema is a target format, not a description of current output** — nothing in `src/` emits it yet. Two fields are now reachable (`lwl_mm` and `bwl_mm` are returned by the solver as `LWL` and `BWL`), but `model_hash`, `phase`, `stations_csv_path` and the `coefficients` block have no implementation, and `kg_mm` is optional in the schema only because the UI has no KG control. `waterline_polygon` was removed from `required` — the clipper discards the contour after measuring its area and second moment, so the points are not available.
 3. **No External CAD Dependencies**: The core web viewer must run standalone without requiring Fusion 360 or FreeCAD to be open.
 4. **Pure frontend**: Do not introduce a server, API route, or Python dependency. If a feature seems to need one, solve it in the browser first.
 
