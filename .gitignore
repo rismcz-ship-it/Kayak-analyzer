@@ -29,3 +29,8 @@ check-mesh.ts
 uploads/
 *.stl
 !sample_data/*.stl
+# The regression suite needs this mesh. Six tests (test-auto-orient,
+# test-solver, verify-coefficients, verify-decimation, verify-heel-real,
+# verify-trim-search) cannot run at all without it, so it has to live in the
+# repo or a fresh clone verifies nothing.
+!tests/*.stl
