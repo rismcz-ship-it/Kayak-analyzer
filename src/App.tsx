@@ -315,6 +315,8 @@ export default function App() {
                                       {statRow('Displacement', `${fmt(trimResult.displacementKg)} kg`)}
                                       {statRow('Target', `${fmt(trimResult.targetKg)} kg`)}
                                       {statRow('Waterplane area', `${fmt(trimResult.waterplaneAreaMm2 / 1e6, 3)} m²`)}
+                                      {statRow('Waterline length (LWL)', `${fmt(trimResult.LWL)} mm`)}
+                                      {statRow('Waterline beam (BWL)', `${fmt(trimResult.BWL)} mm`)}
                                                                             {statRow('LCG X', `${fmt(trimResult.lcg.x)} mm`)}
                                                                             {statRow('LCB X', `${fmt(trimResult.lcb.x)} mm`)}
                                                                             {statRow('LCB–LCG offset', `${fmt(trimResult.lcbLcgOffsetMm)} mm`, true)}
