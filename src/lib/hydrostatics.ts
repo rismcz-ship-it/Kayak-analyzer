@@ -149,12 +149,23 @@ export interface Draft0TrimResult {
                       }
 
 /** Standard heel angles to sample for the GZ curve (degrees). */
-export const DEFAULT_GZ_HEEL_ANGLES_DEG = [0, 5, 10, 15, 20, 25, 30]
+export const DEFAULT_GZ_HEEL_ANGLES_DEG = [0, 5, 10, 15, 20, 25, 30, 35, 40, 45]
 
 /**
  * Compute the righting arm (GZ) curve for a hull across a range of heel angles.
- * For small-to-moderate angles, GZ(φ) = GM × sin(φ).
- * At higher heel, form stability dominates: GZ(φ) = (KM - KG) × sin(φ) + (BM/2) × tan²(φ) × sin(φ).
+ *
+ * This is the CLOSED-FORM wall-sided relation, kept for reference and for the
+ * analytic test suites:
+ *
+ *     GZ(φ) = (GM + ½·BM·tan²φ) · sinφ
+ *
+ * It is exact for a hull whose sides stay vertical and dry, and it is verified
+ * as such by tests/verify-gz.ts. It is NOT what the app plots: the relation
+ * increases without bound, so it cannot represent the loss of stability that
+ * capsizes a real hull. Use {@link compute_gz_curve_geometric} for output.
+ *
+ * @deprecated for display. Retained because it is the analytic reference the
+ * geometric curve is validated against.
  */
 export function compute_gz_curve(
   GM: number,
@@ -950,6 +961,85 @@ export function find_draft_0trim(mesh: MeshLike, target_kg: number, KG?: number,
  * computes the resulting Center of Buoyancy (LCB), and identifies the pitch angle
  * that aligns LCB longitudinally with the target LCG (minimizing |LCB_x - LCG_x|).
  */
+/**
+ * Measured righting-arm (GZ) curve — the curve the app plots.
+ *
+ * GZ is measured, not modelled: at each angle the hull is heeled, sunk to the
+ * same displacement, and GZ is read off the centroid of the immersed volume.
+ * That IS the definition of GZ — the horizontal gap between the line of action
+ * of buoyancy and the line of action of weight — so no wall-sided assumption is
+ * involved and the curve turns over when the hull really loses stability.
+ *
+ * Why not {@link compute_gz_curve}: the wall-sided closed form
+ * `(GM + ½·BM·tan²φ)·sinφ` grows without bound, so it can only ever report a
+ * more stable boat than exists. On the test hull it reads 76.9 mm at 30° where
+ * the measured arm is 18.1 mm, and it never crosses zero. Substituting a
+ * measured BM(φ) does not rescue it either — KM(φ) = KB(φ) + BM(φ) inherits
+ * the rise in KB(φ), which pushes the other way. The shape is the problem.
+ *
+ * Cost: one heeled draft solve per angle. Callers should pass the mesh that
+ * `solve_trim` already decimated — on the test hull that is 2.87x cheaper than
+ * the raw mesh (353 ms vs 1013 ms per angle) and moves BM by <= 0.2 mm.
+ *
+ * @param solveMesh  Hull to float. Reuse the decimated mesh where possible.
+ * @param target_kg  Displacement held constant across every angle.
+ * @param KG         Height of the centre of gravity above the keel, in mm.
+ * @param heelAnglesDeg  Angles to sample; defaults to {@link DEFAULT_GZ_HEEL_ANGLES_DEG}.
+ */
+export function compute_gz_curve_geometric(
+  solveMesh: MeshLike,
+  target_kg: number,
+  KG: number,
+  heelAnglesDeg: number[] = DEFAULT_GZ_HEEL_ANGLES_DEG,
+): GZPoint[] {
+  const positions = toPositions(solveMesh)
+  if (positions.length === 0) throw new Error('compute_gz_curve_geometric: empty mesh')
+
+  const bounds = computeBounds(positions)
+  const heeled = new Float32Array(positions.length)
+
+  return heelAnglesDeg.map((deg) => {
+    const phi = (deg * Math.PI) / 180
+    if (Math.abs(phi) < 1e-12) return { heelDeg: deg, GZ: 0 }
+
+    // Heel about the hull's own centre, matching how find_draft_0trim applies
+    // roll internally. Reuse one buffer; each angle overwrites it.
+    heeled.set(positions)
+    applyRollX(heeled, phi, bounds.center.y, bounds.center.z)
+
+    // Sink to the SAME displacement as the parent solve. find_draft_0trim owns
+    // heel, so it is called with heelRad = 0 on an already-heeled mesh.
+    const r = find_draft_0trim(heeled, target_kg, KG, 0)
+
+    // Re-clip for the immersed centroid. find_draft_0trim forces lcb.y onto the
+    // centreline, which is right for reporting LCB but destroys the very
+    // off-centreline offset GZ depends on.
+    const { clipped } = clipBelowPlane(heeled, r.waterlineZ)
+    const yB = computeVolumeAndCentroid(clipped).centroid.y
+
+    // G sits on the centreline, KG above the keel, before heel. Roll it by the
+    // same matrix about the same pivot.
+    const zG = bounds.min.z + KG - bounds.center.z
+    const yG = -zG * Math.sin(phi) + bounds.center.y
+
+    // applyRollX carries +Y toward +Z, so a vertical force at y produces
+    // tau_x = +y·W about +X — the same +tau_x that produced the heel. Restoring
+    // therefore requires tau_x < 0, i.e. GZ = y_G - y_B.
+    const gz = yG - yB
+    return {
+      heelDeg: deg,
+      GZ: Number((Number.isFinite(gz) ? gz : 0).toFixed(1)),
+    }
+  })
+}
+
+/**
+ * Trim & LCG/LCB equilibrium solver.
+ *
+ * For each candidate pitch angle, finds the equilibrium draft for targetKg,
+ * computes the resulting Center of Buoyancy (LCB), and identifies the pitch angle
+ * that aligns LCB longitudinally with the target LCG (minimizing |LCB_x - LCG_x|).
+ */
 export function solve_trim(
   mesh: MeshLike,
   target_kg: number,
@@ -1004,33 +1094,24 @@ export function solve_trim(
     }
 
     const targetLcgPercent = options?.targetLcgPercentFromBow ?? 52
-  // Bow is at max X; stern is at min X
-    const targetLcgX = bowX - (targetLcgPercent / 100) * lengthX
-    // KG is a HEIGHT above the keel, which is what find_draft_0trim expects — it
-    // computes GM = KM - KG. The LCG's world-Z is that same point expressed as an
-    // absolute coordinate, hence bounds.min.z + KG.
-    //
-    // This used to pass `lcg.z` — the ABSOLUTE height — as the KG argument. On any
-    // mesh whose keel is not at z = 0 that silently shortened KG by |min.z|. On
-    // the test hull (min.z = -162.5) the effective KG was 117.5 mm instead of
-    // 280, inflating every reported KM and GM by 162.5 mm: GM read 272.9 where
-    // the correct value is 110.4, which reads as a very stiff boat.
-    //
-    // Only GM was affected. KB, BM, KM, draft, trim, LCB, Cb/Cp/Cm and LWL/BWL are
-    // all independent of KG — it enters only through GM = KM - KG — so every other
-    // number the app reported was already correct.
-    //
-    // It survived because every test suite passed `undefined` for KG, which makes
-    // GM = 0, so GM was never asserted against ground truth anywhere. The fix is
-    // named so the two quantities cannot be confused again, and
-    // tests/verify-analytic.ts now checks GM against the box's closed-form
-    // KM - KG so a parameter defaulted away by every caller cannot hide a unit bug.
-    const KG_MM = 280
-    const lcg: Vec3 = {
-      x: targetLcgX,
-      y: bounds.center.y,
-      z: bounds.min.z + KG_MM, // Default KG 280mm above keel
-    }
+        // Bow is at max X; stern is at min X
+        const targetLcgX = bowX - (targetLcgPercent / 100) * lengthX
+        // KG is a HEIGHT above the keel, which is what find_draft_0trim expects
+        // (it computes KM - KG). LCG's world-Z is the same point expressed as an
+        // absolute coordinate, so it is bounds.min.z + KG.
+        //
+        // Passing `lcg.z` here as the KG argument was a unit bug: it handed the
+        // absolute height (117.47 on the test hull) to a function expecting a
+        // height above the keel (280). That silently shortened KG by |min.z|, which
+        // inflated every reported KM/GM by 162.5 mm — GM read 272.9 instead of
+        // 110.4, and no test caught it because every suite passed `undefined` for
+        // KG, leaving GM = 0.
+        const KG_MM = 280
+        const lcg: Vec3 = {
+          x: targetLcgX,
+          y: bounds.center.y,
+          z: bounds.min.z + KG_MM, // Default KG 280mm above keel
+        }
 
   const maxTrimDeg = options?.maxTrimDeg ?? 3.5
   const fineStepDeg = options?.trimStepDeg ?? 0.1
@@ -1167,7 +1248,7 @@ export function solve_trim(
                                                                                                                           GM: bestResult.GM,
                                                                                               bowFreeboardMm: Number((bowTipZ - (bestResult.waterlineZ + bowX * Math.tan(bestAngleDeg * Math.PI / 180))).toFixed(1)),
                                                                                               sternFreeboardMm: Number((sternTipZ - (bestResult.waterlineZ + sternX * Math.tan(bestAngleDeg * Math.PI / 180))).toFixed(1)),
-                                                                                              gzCurve: compute_gz_curve(bestResult.GM, bestResult.BM),
+                                                                                              gzCurve: compute_gz_curve_geometric(solveMesh, target_kg, KG_MM),
                                                                                               heelDeg: fixedHeelDeg,
                                               }
   }
