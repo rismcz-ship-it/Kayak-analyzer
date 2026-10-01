@@ -19,7 +19,7 @@ for gating a change. Use `verify-*` for that.
 npm test
 ```
 
-Runs all six in order and stops at the first failure.
+Runs all seven in order and stops at the first failure.
 
 | File | Validates |
 |------|-----------|
@@ -27,6 +27,7 @@ Runs all six in order and stops at the first failure.
 | `verify-box-identity.ts` | Box identity — BM = I/V, KB = draft/2, section clipping against the waterline |
 | `verify-coefficients.ts` | Real-hull Cb in range, displacement closes on the target mass |
 | `verify-decimation.ts` | QEM decimation is watertight, hits its triangle target, holds volume; plus an analytic subdivided cube |
+| `verify-gz.ts` | GZ curve: wall-sided closed form, the same box measured through the geometry path, sign convention, and real hull vs plotted curve |
 | `verify-heel-real.ts` | Real hull: draft rises and BM falls monotonically with heel |
 | `verify-trim-search.ts` | The cheap trim search returns exactly the same draft and LCB as the full solve — 240 cases over 3 hulls, 4 masses, 4 heel angles, 5 trim angles |
 

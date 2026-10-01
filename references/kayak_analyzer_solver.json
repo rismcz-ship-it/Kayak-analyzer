@@ -24,7 +24,12 @@
         "bwl_mm": { "type": "number", "description": "Beam at waterline in mm, measured at the waterline" },
         "volume_liters": { "type": "number", "description": "Displaced volume in liters" },
         "lcb_xyz": { "type": "array", "items": { "type": "number" }, "minItems": 3, "maxItems": 3, "description": "LCB in mm [x, y, z]" },
-        "lcg_xyz": { "type": "array", "items": { "type": "number" }, "minItems": 3, "maxItems": 3, "description": "LCG in mm [x, y, z]" }
+        "lcg_xyz": { "type": "array", "items": { "type": "number" }, "minItems": 3, "maxItems": 3, "description": "LCG in mm [x, y, z]" },
+        "waterline_polygon": {
+          "type": "array",
+          "items": { "type": "array", "items": { "type": "number" } },
+          "description": "Waterline polygon points [x, y] in mm. NOT currently emitted: clipBelowPlane walks the contour to get its area and second moment, then discards the points. Returning them means changing the clipper's return type."
+        }
       }
     },
     "coefficients": {

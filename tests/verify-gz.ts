@@ -1,0 +1,402 @@
+/**
+ * Righting-arm (GZ) curve verification.
+ *
+ * compute_gz_curve() is the ONLY stability curve the app plots, and until now
+ * no test asserted a single GZ value. This suite pins it against two
+ * independent grounds:
+ *
+ *   1. CLOSED FORM. A wall-sided rectangular box has an exactly integrable GZ.
+ *      Integrating the immersed parallelogram gives
+ *          y_B = BM tan(phi) cos(phi) + (d/2 + BM tan^2(phi)/2) sin(phi)
+ *          GZ  = y_B - KG sin(phi)
+ *      which is a DIFFERENT algebraic arrangement from the app's
+ *      (GM + BM tan^2/2) sin(phi). Agreement is therefore evidence, not
+ *      restatement. It also settles the KM/KG sign convention, because
+ *      expanding y_B - KG sin(phi) yields (KM - KG) sin(phi) + ... exactly.
+ *
+ *   2. THE PRODUCTION GEOMETRY PATH. The same box is meshed, heeled with
+ *      applyRollX, sunk with find_draft_0trim, and its GZ read straight off
+ *      the submerged centroid via clipBelowPlane + computeVolumeAndCentroid.
+ *      No formula is involved: GZ is the horizontal gap between the line of
+ *      action of buoyancy and the line of action of weight, by definition.
+ *      This proves the closed form in (1) is the real GZ of a real hull.
+ *
+ * On the REAL hull the curve is measured the same way and compared with the
+ * app's. Agreement holds near upright and then diverges, because
+ * compute_gz_curve() never re-solves the hull at heel. That divergence is a
+ * MODEL LIMIT, not a coding error, and it is quantified and reported at the
+ * end rather than asserted away. See the "KNOWN LIMIT" section.
+ *
+ * Run: npx tsx tests/verify-gz.ts
+ */
+import { STLLoader } from 'three/addons/loaders/STLLoader.js'
+import { readFileSync } from 'fs'
+import {
+  applyRollX,
+  autoOrientToZUp,
+  centerToOrigin,
+  computeBounds,
+  computeVolumeAndCentroid,
+} from '../src/lib/geometry.js'
+import {
+  clipBelowPlane,
+  compute_gz_curve,
+  DEFAULT_GZ_HEEL_ANGLES_DEG,
+  find_draft_0trim,
+} from '../src/lib/hydrostatics.js'
+
+let fails = 0
+const check = (label: string, ok: boolean, detail: string) => {
+  if (!ok) fails++
+  console.log(`  ${label.padEnd(38)} ${detail}  ${ok ? 'ok' : '<<< FAIL'}`)
+}
+
+/** Relative tolerance helper: pass when |got-want| <= max(absTol, relTol*|want|). */
+const close = (got: number, want: number, absTol: number, relTol: number) =>
+  Math.abs(got - want) <= Math.max(absTol, relTol * Math.abs(want))
+
+/** Closed-form GZ for a wall-sided box, from the immersed-parallelogram integral. */
+function boxGzClosedForm(B: number, d: number, KG: number, phiDeg: number): number {
+  const phi = (phiDeg * Math.PI) / 180
+  const BM = (B * B) / (12 * d) // waterplane I / V for a box
+  const yBar = BM * Math.tan(phi) // centroid of the immersed region, hull frame
+  const zBar = d / 2 + 0.5 * BM * Math.tan(phi) ** 2
+  return yBar * Math.cos(phi) + zBar * Math.sin(phi) - KG * Math.sin(phi)
+}
+
+/**
+ * Largest heel at which a box's immersed region is still a full parallelogram,
+ * i.e. the waterline stays between keel and deck across the whole beam:
+ *   d - (B/2) tan(phi) >= 0   and   d + (B/2) tan(phi) <= T
+ * Beyond this the hull is no longer wall-sided and every wall-sided GZ
+ * relation — including the app's — is an extrapolation.
+ */
+function wallSidedLimitDeg(B: number, T: number, d: number): number {
+  const a1 = Math.atan2(2 * d, B)
+  const a2 = Math.atan2(2 * (T - d), B)
+  return (Math.min(a1, a2) * 180) / Math.PI
+}
+
+/** Axis-aligned box mesh centred on the origin: keel at z = -T/2. */
+function boxMesh(L: number, B: number, T: number): Float32Array {
+  const hx = L / 2
+  const hy = B / 2
+  const hz = T / 2
+  const corner = (i: number): [number, number, number] => [
+    i & 4 ? hx : -hx,
+    i & 2 ? hy : -hy,
+    i & 1 ? hz : -hz,
+  ]
+  const faces: [number, number, number, number][] = [
+    [0, 2, 3, 1],
+    [4, 5, 7, 6],
+    [0, 1, 5, 4],
+    [2, 6, 7, 3],
+    [0, 4, 6, 2],
+    [1, 3, 7, 5],
+  ]
+  const v: number[] = []
+  for (const [a, b, c, d] of faces) {
+    v.push(...corner(a), ...corner(b), ...corner(c))
+    v.push(...corner(a), ...corner(c), ...corner(d))
+  }
+  return new Float32Array(v)
+}
+
+/**
+ * GZ of an arbitrary hull, measured geometrically: heel the mesh, sink it to
+ * the target displacement, then take the horizontal gap between G and the
+ * centroid of the submerged volume.
+ *
+ * Sign convention: applyRollX's matrix is y' = y cos(phi) - z sin(phi), which
+ * carries +Y toward +Z, i.e. it lowers the -Y side for phi > 0. A vertical
+ * force at y then produces tau_x = +y*W about +X, and that same +tau_x is what
+ * produced the heel, so a RESTORING arm requires tau_x < 0, i.e. y < 0.
+ * Restoring GZ is therefore y_G - y_B, positive = righting the hull back.
+ */
+function geometricGz(
+  base: Float32Array,
+  targetKg: number,
+  KG: number,
+  heelDeg: number,
+  keelZ: number,
+): { gz: number; BM: number; Awp: number; draft: number } {
+  const phi = (heelDeg * Math.PI) / 180
+  const bounds = computeBounds(base)
+  const mesh = new Float32Array(base)
+  applyRollX(mesh, phi, bounds.center.y, bounds.center.z)
+
+  const r = find_draft_0trim(mesh, targetKg, KG, 0)
+  // find_draft_0trim overwrites lcb.y with the centreline; re-clip to recover
+  // the true off-centreline centroid, which is the whole point of the measurement.
+  const { clipped } = clipBelowPlane(mesh, r.waterlineZ)
+  const yB = computeVolumeAndCentroid(clipped).centroid.y
+
+  // G before heel sits on the centreline, KG above the keel; roll it by the
+  // same matrix, about the same pivot.
+  const zG = keelZ + KG - bounds.center.z
+  const yG = -zG * Math.sin(phi) + bounds.center.y
+
+  return { gz: yG - yB, BM: r.BM, Awp: r.waterplaneAreaMm2, draft: r.draftMm }
+}
+
+// ---------------------------------------------------------------------------
+console.log('=== 1. closed form vs compute_gz_curve, wall-sided box ===')
+// A genuinely wall-sided box: depth exceeds ~0.58 * beam so the deck edge stays
+// dry past 33 deg, which is above the app's 30 deg plotting limit. KG at
+// mid-depth keeps GM comfortably positive.
+{
+  const L = 2000
+  const B = 600
+  const T = 400
+  const d = 200 // half submerged, so freeboard exists at every angle
+  const KG = 200
+  const V = L * B * d
+  const kg = V / 1e6
+  const BM = (B * B) / (12 * d)
+  const KB = d / 2
+  const KM = KB + BM
+  const GM = KM - KG
+  const limit = wallSidedLimitDeg(B, T, d)
+
+  console.log(
+    `  box ${L}x${B}x${T} mm, draft ${d}, KG ${KG}: ` +
+      `KB=${KB} BM=${BM} KM=${KM} GM=${GM}`,
+  )
+  console.log(`  wall-sided validity limit: ${limit.toFixed(2)} deg`)
+  check('wall-sided past the 30 deg plot limit', limit > 30, `${limit.toFixed(2)} deg > 30 deg`)
+  check('GM positive', GM > 0, `GM = ${GM.toFixed(2)} mm`)
+
+  // The solver must recover the box's own hydrostatics before GZ means anything.
+  const r = find_draft_0trim(boxMesh(L, B, T), kg, KG, 0)
+  check('solver draft = analytic draft', close(r.draftMm, d, 0.5, 1e-4), `${r.draftMm.toFixed(2)} vs ${d} mm`)
+  check('solver BM = B^2/(12d)', close(r.BM, BM, 0.5, 1e-4), `${r.BM.toFixed(1)} vs ${BM.toFixed(1)} mm`)
+  check('solver KB = d/2', close(r.KB, KB, 0.5, 1e-3), `${r.KB.toFixed(1)} vs ${KB} mm`)
+  check('solver GM = KM - KG', close(r.GM, GM, 0.5, 1e-3), `${r.GM.toFixed(1)} vs ${GM.toFixed(1)} mm`)
+
+  const curve = compute_gz_curve(GM, BM)
+  check('curve length matches DEFAULT angles', curve.length === DEFAULT_GZ_HEEL_ANGLES_DEG.length, `${curve.length} points`)
+
+  for (const p of curve) {
+    const want = boxGzClosedForm(B, d, KG, p.heelDeg)
+    check(
+      `GZ @ ${String(p.heelDeg).padStart(2)}deg = closed form`,
+      close(p.GZ, want, 0.051, 1e-9), // 0.051 mm: the curve rounds to 0.1 mm
+      `${p.GZ} vs ${want.toFixed(4)} mm`,
+    )
+  }
+
+  // The KM/KG arrangement from the standard relation must reproduce it too,
+  // which is what pins the sign convention (suspected item 2).
+  for (const deg of [5, 15, 30]) {
+    const phi = (deg * Math.PI) / 180
+    const viaKM = (KM - KG) * Math.sin(phi) + 0.5 * BM * Math.tan(phi) ** 2 * Math.sin(phi)
+    const viaApp = compute_gz_curve(GM, BM, [deg])[0].GZ
+    check(`KM-KG form agrees @ ${deg}deg`, close(viaKM, viaApp, 0.051, 1e-9), `${viaKM.toFixed(4)} vs ${viaApp}`)
+  }
+
+  // GZ must be zero upright and rise monotonically while righting.
+  check('GZ(0) = 0', curve[0].GZ === 0, `${curve[0].GZ} mm`)
+  let mono = true
+  for (let i = 1; i < curve.length; i++) if (curve[i].GZ <= curve[i - 1].GZ) mono = false
+  check('GZ rises monotonically 0->30deg', mono, curve.map((p) => p.GZ).join(', '))
+
+  // KG must enter ONLY through GM, shifting the curve by exactly dKG*sin(phi).
+  const shifted = compute_gz_curve(GM - 10, BM)
+  let kgPure = true
+  for (let i = 0; i < curve.length; i++) {
+    const phi = (curve[i].heelDeg * Math.PI) / 180
+    if (!close(shifted[i].GZ, curve[i].GZ - 10 * Math.sin(phi), 0.11, 1e-9)) kgPure = false
+  }
+  check('KG shifts GZ by exactly dKG*sin(phi)', kgPure, '10 mm KG step over the whole curve')
+}
+
+// ---------------------------------------------------------------------------
+console.log('\n=== 2. same box through the production geometry path ===')
+// Heel the real mesh, sink it, read GZ off the submerged centroid. No formula.
+{
+  const L = 2000
+  const B = 600
+  const T = 400
+  const d = 200
+  const KG = 200
+  const kg = (L * B * d) / 1e6
+  const BM = (B * B) / (12 * d)
+  const GM = d / 2 + BM - KG
+  const mesh = boxMesh(L, B, T)
+  const keelZ = -T / 2
+  const limit = wallSidedLimitDeg(B, T, d)
+
+  const curve = compute_gz_curve(GM, BM)
+  console.log('  heel   measured GZ   curve GZ    diff     closed form')
+  for (const p of curve) {
+    const m = geometricGz(mesh, kg, KG, p.heelDeg, keelZ)
+    const want = boxGzClosedForm(B, d, KG, p.heelDeg)
+    console.log(
+      `  ${String(p.heelDeg).padStart(3)}°  ${m.gz.toFixed(4).padStart(11)} ` +
+        `${p.GZ.toFixed(1).padStart(9)} ${(m.gz - p.GZ).toFixed(4).padStart(9)} ` +
+        `${want.toFixed(4).padStart(12)}`,
+    )
+    check(
+      `measured GZ = curve @ ${String(p.heelDeg).padStart(2)}deg`,
+      close(m.gz, p.GZ, 0.06, 1e-3),
+      `${m.gz.toFixed(4)} vs ${p.GZ} mm`,
+    )
+  }
+
+  // The measurement and the closed form are two unrelated routes; they must
+  // still agree, and the tolerance is what bounds solver numeric error.
+  for (const p of curve) {
+    const m = geometricGz(mesh, kg, KG, p.heelDeg, keelZ)
+    check(
+      `measured GZ = closed form @ ${String(p.heelDeg).padStart(2)}deg`,
+      close(m.gz, boxGzClosedForm(B, d, KG, p.heelDeg), 0.06, 1e-3),
+      `diff ${(m.gz - boxGzClosedForm(B, d, KG, p.heelDeg)).toFixed(5)} mm`,
+    )
+  }
+
+  // Just past the validity limit the two routes must DIVERGE. If they did not,
+  // the divergence would be a solver artefact rather than a model limit.
+  const just = limit + 1
+  const mJust = geometricGz(mesh, kg, KG, just, keelZ)
+  const fJust = boxGzClosedForm(B, d, KG, just)
+  const appJust = compute_gz_curve(GM, BM, [just])[0].GZ
+  check(
+    'closed form stops matching geometry past the limit',
+    !close(mJust.gz, appJust, 0.06, 1e-3),
+    `at ${just.toFixed(2)}deg: measured ${mJust.gz.toFixed(2)} vs curve ${appJust}`,
+  )
+  console.log(`    (limit ${limit.toFixed(2)}deg, probe ${just.toFixed(2)}deg, ` +
+    `closed form there ${fJust.toFixed(2)} mm — both are extrapolations)`)
+}
+
+// ---------------------------------------------------------------------------
+console.log('\n=== 3. sign convention ===')
+{
+  const B = 600
+  const d = 200
+  const KG = 200
+  const BM = (B * B) / (12 * d)
+  const GM = d / 2 + BM - KG
+
+  // A hull with G above M must predict NEGATIVE GZ at every small angle —
+  // the formula has to be able to express capsize, not just stability.
+  const KGhigh = d / 2 + BM + 60 // 60 mm above the metacentre
+  const GMneg = d / 2 + BM - KGhigh
+  const neg = compute_gz_curve(GMneg, BM, [5, 10])
+  check('negative GM gives negative GZ', neg.every((p) => p.GZ < 0), `${neg.map((p) => p.GZ).join(', ')} mm`)
+  check('negative GM curve equals closed form', close(neg[0].GZ, boxGzClosedForm(B, d, KGhigh, 5), 0.051, 1e-9), `${neg[0].GZ}`)
+
+  // Zero GM must flatten the curve onto the pure form-stability term only.
+  const zero = compute_gz_curve(0, BM, [10, 30])
+  check('GM = 0 leaves only the BM term', close(zero[0].GZ, 0.5 * BM * Math.tan(10 * Math.PI / 180) ** 2 * Math.sin(10 * Math.PI / 180), 0.051, 1e-9), `${zero[0].GZ} mm`)
+
+  // Curve must be odd in heel: negative angles mirror the positive ones.
+  const pos = compute_gz_curve(GM, BM, [15])
+  const negA = compute_gz_curve(GM, BM, [-15])
+  check('GZ is odd in heel', close(pos[0].GZ, -negA[0].GZ, 0.051, 1e-9), `${pos[0].GZ} vs ${negA[0].GZ}`)
+
+  // GM = 0 and BM = 0 must both collapse to zero rather than NaN.
+  const degenerate = compute_gz_curve(0, 0, [0, 30])
+  check('GM=BM=0 gives a flat zero curve', degenerate.every((p) => p.GZ === 0), `${degenerate.map((p) => p.GZ).join(', ')}`)
+  check('curve output is finite everywhere', compute_gz_curve(GM, BM, [0, 15, 30, 45, 60, 89]).every((p) => Number.isFinite(p.GZ)), 'up to 89 deg')
+}
+
+// ---------------------------------------------------------------------------
+console.log('\n=== 4. real hull: measured GZ vs the plotted curve ===')
+const STL = new URL('./test-kayak.stl', import.meta.url)
+const base = new Float32Array(
+  new STLLoader()
+    .parse(readFileSync(STL).buffer as ArrayBuffer)
+    .getAttribute('position').array as Float32Array,
+)
+autoOrientToZUp(base)
+centerToOrigin(base)
+{
+  const MASS_KG = 75
+  const KG = 280 // the app's hardcoded KG
+  const keelZ = computeBounds(base).min.z
+  const upright = find_draft_0trim(base, MASS_KG, KG, 0)
+  const GM = upright.GM
+  const BM = upright.BM
+  const curve = compute_gz_curve(GM, BM)
+
+  console.log(`  upright: draft ${upright.draftMm.toFixed(2)} mm, GM ${GM}, BM ${BM}`)
+  console.log('  heel   measured GZ   GM*sin    curve GZ   curve err    BM(phi)  BM/BM0')
+  const measured: { heel: number; gz: number }[] = []
+
+  for (const p of curve) {
+    const m = geometricGz(base, MASS_KG, KG, p.heelDeg, keelZ)
+    measured.push({ heel: p.heelDeg, gz: m.gz })
+    const err = m.gz !== 0 ? ((p.GZ - m.gz) / Math.abs(m.gz)) * 100 : Number.NaN
+    console.log(
+      `  ${String(p.heelDeg).padStart(3)}°  ${m.gz.toFixed(3).padStart(11)} ` +
+        `${(GM * Math.sin((p.heelDeg * Math.PI) / 180)).toFixed(2).padStart(9)} ` +
+        `${p.GZ.toFixed(1).padStart(9)} ${err.toFixed(1).padStart(9)}% ` +
+        `${m.BM.toFixed(1).padStart(8)} ${(m.BM / BM).toFixed(4).padStart(7)}`,
+    )
+  }
+
+  // Every measured point up to 20 deg must be positive: this hull is stiff in
+  // that range, so a negative or non-monotonic arm there would mean the
+  // measurement itself had broken.
+  const upTo20 = measured.filter((m) => m.heel <= 20)
+  check('measured GZ positive to 20 deg', upTo20.every((m) => m.gz > 0), `${upTo20.map((m) => m.gz.toFixed(2)).join(', ')}`)
+
+  // Near upright the curve must track the measured arm. This is the assertion
+  // that would catch a sign flip, a wrong GM or a wrong BM entering the curve.
+  // DEFAULT_GZ_HEEL_ANGLES_DEG only samples from 5 deg up, so 1 and 2 deg are
+  // requested explicitly.
+  for (const deg of [1, 2, 5]) {
+    const m = geometricGz(base, MASS_KG, KG, deg, keelZ)
+    const c = compute_gz_curve(GM, BM, [deg])[0].GZ
+    check(
+      `curve tracks measured GZ @ ${deg}deg`,
+      close(c, m.gz, 0.06, 0.05),
+      `${c} vs ${m.gz.toFixed(3)} mm`,
+    )
+  }
+
+  // dGZ/dphi at upright must be GM — the definition of GM.
+  const h = 0.25
+  const slope =
+    (geometricGz(base, MASS_KG, KG, h, keelZ).gz - geometricGz(base, MASS_KG, KG, -h, keelZ).gz) /
+    ((2 * h * Math.PI) / 180)
+  check('dGZ/dphi at upright = GM', close(slope, GM, 0.2, 1e-3), `${slope.toFixed(3)} vs ${GM} mm/rad`)
+
+  // The hull is symmetric about Y=0, so measured GZ must be odd in heel.
+  const sym = [5, 20, 30].map((d) => {
+    const a = geometricGz(base, MASS_KG, KG, d, keelZ).gz
+    const b = geometricGz(base, MASS_KG, KG, -d, keelZ).gz
+    return Math.abs(a + b)
+  })
+  check('measured GZ is odd in heel', Math.max(...sym) < 0.1, `worst |GZ(+) + GZ(-)| = ${Math.max(...sym).toFixed(4)} mm`)
+
+  // KNOWN LIMIT — reported, not asserted. compute_gz_curve() holds BM at its
+  // upright value and never re-solves the hull, so it cannot see the waterplane
+  // shrinking (BM/BM0 above) or the deck edge immersing. The measured arm peaks
+  // and returns to zero; the plotted arm grows without bound.
+  console.log('\n  --- KNOWN LIMIT: wall-sided extrapolation past small heel ---')
+  console.log('  heel   measured GZ   curve GZ   ratio     BM(phi)  Awp/Awp0  draft')
+  let zeroAngle = Number.NaN
+  for (const heel of [0, 10, 20, 25, 30, 35, 40, 45, 50, 60]) {
+    const m = geometricGz(base, MASS_KG, KG, heel, keelZ)
+    const c = compute_gz_curve(GM, BM, [heel])[0].GZ
+    if (Number.isNaN(zeroAngle) && heel > 0 && m.gz <= 0) zeroAngle = heel
+    console.log(
+      `  ${String(heel).padStart(3)}°  ${m.gz.toFixed(2).padStart(11)} ${c.toFixed(1).padStart(9)} ` +
+        `${(c / m.gz).toFixed(2).padStart(8)}x ${m.BM.toFixed(1).padStart(8)} ` +
+        `${(m.Awp / upright.waterplaneAreaMm2).toFixed(4).padStart(9)} ${m.draft.toFixed(1).padStart(7)}`,
+    )
+  }
+  console.log(
+    `  measured arm vanishes near ${zeroAngle} deg; DEFAULT_GZ_HEEL_ANGLES_DEG stops at ` +
+      `${DEFAULT_GZ_HEEL_ANGLES_DEG[DEFAULT_GZ_HEEL_ANGLES_DEG.length - 1]} deg,`,
+  )
+  console.log('  so the plotted curve never shows the loss of stability it is meant to warn about.')
+  console.log('  Extending the axis past 45 deg would; extending the FORMULA would not help,')
+  console.log('  because the wall-sided assumption is what fails, not its algebra.')
+}
+
+console.log(fails === 0 ? '\nALL GZ CHECKS PASS' : `\n${fails} CHECK(S) FAILED`)
+process.exit(fails === 0 ? 0 : 1)

@@ -8,7 +8,7 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "typecheck": "tsc -b --noEmit",
-    "test": "tsx tests/verify-analytic.ts && tsx tests/verify-box-identity.ts && tsx tests/verify-coefficients.ts && tsx tests/verify-decimation.ts && tsx tests/verify-heel-real.ts && tsx tests/verify-trim-search.ts",
+    "test": "tsx tests/verify-analytic.ts && tsx tests/verify-box-identity.ts && tsx tests/verify-coefficients.ts && tsx tests/verify-decimation.ts && tsx tests/verify-gz.ts && tsx tests/verify-heel-real.ts && tsx tests/verify-trim-search.ts",
     "test:print": "tsx tests/test-auto-orient.ts && tsx tests/test-box.ts && tsx tests/test-solver.ts"
   },
   "dependencies": {
