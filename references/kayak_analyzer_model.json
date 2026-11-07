@@ -6,7 +6,11 @@
   "properties": {
     "file_name": { "type": "string", "description": "Original STL filename" },
     "file_hash": { "type": "string", "description": "SHA256 of file content for deduplication" },
-    "volume_liters": { "type": "number", "minimum": 0, "description": "Enclosed volume in liters (Bearboat reference)" },
+    "volume_liters": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Enclosed volume in liters (Bearboat reference)"
+    },
     "bbox_mm": {
       "type": "object",
       "required": ["length", "beam", "draft"],

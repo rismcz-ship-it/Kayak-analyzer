@@ -17,15 +17,15 @@
  *
  * Run: npx tsx tests/verify-heel-real.ts
  */
+
+import { readFileSync } from 'node:fs'
 import { STLLoader } from 'three/addons/loaders/STLLoader.js'
 import { autoOrientToZUp, centerToOrigin } from '../src/lib/geometry.js'
 import { find_draft_0trim, solve_trim } from '../src/lib/hydrostatics.js'
-import { readFileSync } from 'fs'
 
 const STL = new URL('./test-kayak.stl', import.meta.url)
-const raw = new STLLoader()
-  .parse(readFileSync(STL).buffer as ArrayBuffer)
-  .getAttribute('position').array as Float32Array
+const raw = new STLLoader().parse(readFileSync(STL).buffer as ArrayBuffer).getAttribute('position')
+  .array as Float32Array
 
 const mesh = new Float32Array(raw)
 autoOrientToZUp(mesh)
@@ -77,7 +77,11 @@ for (let i = 1; i < direct.length; i++) {
 console.log('\n--- every solve converged, waterplane non-empty ---')
 for (const r of direct) {
   check(r.draft > 0, `heel ${r.heel}° produced a real draft`, `got ${r.draft}`)
-  check(Number.isFinite(r.BM) && r.BM > 0, `heel ${r.heel}° BM is finite and positive`, `got ${r.BM}`)
+  check(
+    Number.isFinite(r.BM) && r.BM > 0,
+    `heel ${r.heel}° BM is finite and positive`,
+    `got ${r.BM}`,
+  )
   check(Number.isFinite(r.GM), `heel ${r.heel}° GM is finite`, `got ${r.GM}`)
 }
 
@@ -95,7 +99,11 @@ for (const heel of [0, 10, 20, 30]) {
   )
   check(r.converged, `solve_trim converged at ${heel}° heel`)
   check(r.draftMm > 0, `solve_trim produced a real draft at ${heel}°`, `got ${r.draftMm}`)
-  check(Number.isFinite(r.BM) && r.BM > 0, `solve_trim BM finite and positive at ${heel}°`, `got ${r.BM}`)
+  check(
+    Number.isFinite(r.BM) && r.BM > 0,
+    `solve_trim BM finite and positive at ${heel}°`,
+    `got ${r.BM}`,
+  )
   // Heel must actually reach the solver. A constant result across every angle
   // is the signature of the angle being dropped somewhere upstream.
   check(

@@ -13,20 +13,21 @@
  *
  * Run: npx tsx tests/verify-trim-search.ts
  */
+
+import { readFileSync, statSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { STLLoader } from 'three/addons/loaders/STLLoader.js'
 import {
+  applyPitchY,
   autoOrientToZUp,
   centerToOrigin,
   computeBounds,
   computeVolumeAndCentroid,
-  decimateMesh,
   DEFAULT_SOLVER_TRIANGLES,
-  applyPitchY,
+  decimateMesh,
   type Vec3,
 } from '../src/lib/geometry.js'
 import { clipBelowPlane, find_draft_0trim, volumeBelowPlane } from '../src/lib/hydrostatics.js'
-import { readFileSync, statSync } from 'fs'
-import { fileURLToPath } from 'url'
 
 const MM3_PER_KG = 1_000_000
 
@@ -149,8 +150,16 @@ const HULLS: HullSpec[] = [
     paths: [fileURLToPath(new URL('./test-kayak.stl', import.meta.url))],
     masses: [55, 65, 75, 90],
   },
-  { label: 'Body56.stl', paths: ['C:/Users/Richard Malán/Downloads/Body56.stl'], masses: [55, 65, 75, 90] },
-  { label: 'Kayak v2.stl', paths: ['C:/Users/Richard Malán/Downloads/Kayak v2.stl'], masses: [55, 65, 75, 90] },
+  {
+    label: 'Body56.stl',
+    paths: ['C:/Users/Richard Malán/Downloads/Body56.stl'],
+    masses: [55, 65, 75, 90],
+  },
+  {
+    label: 'Kayak v2.stl',
+    paths: ['C:/Users/Richard Malán/Downloads/Kayak v2.stl'],
+    masses: [55, 65, 75, 90],
+  },
   {
     label: 'kayak model bow.stl',
     paths: ['C:/Users/Richard Malán/Downloads/kayak model bow.stl'],
@@ -169,7 +178,7 @@ const HEELS_DEG = [0, 10, 20, 30]
 const TRIMS_DEG = [-3, -1.5, 0, 1.5, 3]
 
 let totalCases = 0
-let skipped: string[] = []
+const skipped: string[] = []
 
 for (const spec of HULLS) {
   let positions: Float32Array | null = null

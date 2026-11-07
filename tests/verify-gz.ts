@@ -29,17 +29,18 @@
  *
  * Run: npx tsx tests/verify-gz.ts
  */
+
+import { readFileSync } from 'node:fs'
 import { STLLoader } from 'three/addons/loaders/STLLoader.js'
-import { readFileSync } from 'fs'
 import {
   applyRollX,
   autoOrientToZUp,
   centerToOrigin,
   computeBounds,
   computeVolumeAndCentroid,
+  DEFAULT_SOLVER_TRIANGLES,
   decimateMesh,
   isMeshUsableForHydrostatics,
-  DEFAULT_SOLVER_TRIANGLES,
 } from '../src/lib/geometry.js'
 import {
   clipBelowPlane,
@@ -168,8 +169,7 @@ console.log('=== 1. closed form vs compute_gz_curve, wall-sided box ===')
   const limit = wallSidedLimitDeg(B, T, d)
 
   console.log(
-    `  box ${L}x${B}x${T} mm, draft ${d}, KG ${KG}: ` +
-      `KB=${KB} BM=${BM} KM=${KM} GM=${GM}`,
+    `  box ${L}x${B}x${T} mm, draft ${d}, KG ${KG}: ` + `KB=${KB} BM=${BM} KM=${KM} GM=${GM}`,
   )
   console.log(`  wall-sided validity limit: ${limit.toFixed(2)} deg`)
   check('wall-sided past the 30 deg plot limit', limit > 30, `${limit.toFixed(2)} deg > 30 deg`)
@@ -177,13 +177,29 @@ console.log('=== 1. closed form vs compute_gz_curve, wall-sided box ===')
 
   // The solver must recover the box's own hydrostatics before GZ means anything.
   const r = find_draft_0trim(boxMesh(L, B, T), kg, KG, 0)
-  check('solver draft = analytic draft', close(r.draftMm, d, 0.5, 1e-4), `${r.draftMm.toFixed(2)} vs ${d} mm`)
-  check('solver BM = B^2/(12d)', close(r.BM, BM, 0.5, 1e-4), `${r.BM.toFixed(1)} vs ${BM.toFixed(1)} mm`)
+  check(
+    'solver draft = analytic draft',
+    close(r.draftMm, d, 0.5, 1e-4),
+    `${r.draftMm.toFixed(2)} vs ${d} mm`,
+  )
+  check(
+    'solver BM = B^2/(12d)',
+    close(r.BM, BM, 0.5, 1e-4),
+    `${r.BM.toFixed(1)} vs ${BM.toFixed(1)} mm`,
+  )
   check('solver KB = d/2', close(r.KB, KB, 0.5, 1e-3), `${r.KB.toFixed(1)} vs ${KB} mm`)
-  check('solver GM = KM - KG', close(r.GM, GM, 0.5, 1e-3), `${r.GM.toFixed(1)} vs ${GM.toFixed(1)} mm`)
+  check(
+    'solver GM = KM - KG',
+    close(r.GM, GM, 0.5, 1e-3),
+    `${r.GM.toFixed(1)} vs ${GM.toFixed(1)} mm`,
+  )
 
   const curve = compute_gz_curve(GM, BM)
-  check('curve length matches DEFAULT angles', curve.length === DEFAULT_GZ_HEEL_ANGLES_DEG.length, `${curve.length} points`)
+  check(
+    'curve length matches DEFAULT angles',
+    curve.length === DEFAULT_GZ_HEEL_ANGLES_DEG.length,
+    `${curve.length} points`,
+  )
 
   for (const p of curve) {
     const want = boxGzClosedForm(B, d, KG, p.heelDeg)
@@ -200,7 +216,11 @@ console.log('=== 1. closed form vs compute_gz_curve, wall-sided box ===')
     const phi = (deg * Math.PI) / 180
     const viaKM = (KM - KG) * Math.sin(phi) + 0.5 * BM * Math.tan(phi) ** 2 * Math.sin(phi)
     const viaApp = compute_gz_curve(GM, BM, [deg])[0].GZ
-    check(`KM-KG form agrees @ ${deg}deg`, close(viaKM, viaApp, 0.051, 1e-9), `${viaKM.toFixed(4)} vs ${viaApp}`)
+    check(
+      `KM-KG form agrees @ ${deg}deg`,
+      close(viaKM, viaApp, 0.051, 1e-9),
+      `${viaKM.toFixed(4)} vs ${viaApp}`,
+    )
   }
 
   // GZ must be zero upright and rise monotonically while righting.
@@ -236,7 +256,9 @@ console.log('\n=== 2. same box through the production geometry path ===')
   const limit = wallSidedLimitDeg(B, T, d)
 
   const curve = compute_gz_curve(GM, BM)
-  console.log(`  heel   measured GZ   closed form   diff     (wall-sided limit ${limit.toFixed(1)} deg)`)
+  console.log(
+    `  heel   measured GZ   closed form   diff     (wall-sided limit ${limit.toFixed(1)} deg)`,
+  )
   for (const p of curve) {
     const m = geometricGz(mesh, kg, KG, p.heelDeg, keelZ)
     const want = boxGzClosedForm(B, d, KG, p.heelDeg)
@@ -293,8 +315,10 @@ console.log('\n=== 2. same box through the production geometry path ===')
     !close(mJust.gz, appJust, 0.06, 1e-3),
     `at ${just.toFixed(2)}deg: measured ${mJust.gz.toFixed(2)} vs curve ${appJust}`,
   )
-  console.log(`    (limit ${limit.toFixed(2)}deg, probe ${just.toFixed(2)}deg, ` +
-    `closed form there ${fJust.toFixed(2)} mm — both are extrapolations)`)
+  console.log(
+    `    (limit ${limit.toFixed(2)}deg, probe ${just.toFixed(2)}deg, ` +
+      `closed form there ${fJust.toFixed(2)} mm — both are extrapolations)`,
+  )
 }
 
 // ---------------------------------------------------------------------------
@@ -311,31 +335,59 @@ console.log('\n=== 3. sign convention ===')
   const KGhigh = d / 2 + BM + 60 // 60 mm above the metacentre
   const GMneg = d / 2 + BM - KGhigh
   const neg = compute_gz_curve(GMneg, BM, [5, 10])
-  check('negative GM gives negative GZ', neg.every((p) => p.GZ < 0), `${neg.map((p) => p.GZ).join(', ')} mm`)
-  check('negative GM curve equals closed form', close(neg[0].GZ, boxGzClosedForm(B, d, KGhigh, 5), 0.051, 1e-9), `${neg[0].GZ}`)
+  check(
+    'negative GM gives negative GZ',
+    neg.every((p) => p.GZ < 0),
+    `${neg.map((p) => p.GZ).join(', ')} mm`,
+  )
+  check(
+    'negative GM curve equals closed form',
+    close(neg[0].GZ, boxGzClosedForm(B, d, KGhigh, 5), 0.051, 1e-9),
+    `${neg[0].GZ}`,
+  )
 
   // Zero GM must flatten the curve onto the pure form-stability term only.
   const zero = compute_gz_curve(0, BM, [10, 30])
-  check('GM = 0 leaves only the BM term', close(zero[0].GZ, 0.5 * BM * Math.tan(10 * Math.PI / 180) ** 2 * Math.sin(10 * Math.PI / 180), 0.051, 1e-9), `${zero[0].GZ} mm`)
+  check(
+    'GM = 0 leaves only the BM term',
+    close(
+      zero[0].GZ,
+      0.5 * BM * Math.tan((10 * Math.PI) / 180) ** 2 * Math.sin((10 * Math.PI) / 180),
+      0.051,
+      1e-9,
+    ),
+    `${zero[0].GZ} mm`,
+  )
 
   // Curve must be odd in heel: negative angles mirror the positive ones.
   const pos = compute_gz_curve(GM, BM, [15])
   const negA = compute_gz_curve(GM, BM, [-15])
-  check('GZ is odd in heel', close(pos[0].GZ, -negA[0].GZ, 0.051, 1e-9), `${pos[0].GZ} vs ${negA[0].GZ}`)
+  check(
+    'GZ is odd in heel',
+    close(pos[0].GZ, -negA[0].GZ, 0.051, 1e-9),
+    `${pos[0].GZ} vs ${negA[0].GZ}`,
+  )
 
   // GM = 0 and BM = 0 must both collapse to zero rather than NaN.
   const degenerate = compute_gz_curve(0, 0, [0, 30])
-  check('GM=BM=0 gives a flat zero curve', degenerate.every((p) => p.GZ === 0), `${degenerate.map((p) => p.GZ).join(', ')}`)
-  check('curve output is finite everywhere', compute_gz_curve(GM, BM, [0, 15, 30, 45, 60, 89]).every((p) => Number.isFinite(p.GZ)), 'up to 89 deg')
+  check(
+    'GM=BM=0 gives a flat zero curve',
+    degenerate.every((p) => p.GZ === 0),
+    `${degenerate.map((p) => p.GZ).join(', ')}`,
+  )
+  check(
+    'curve output is finite everywhere',
+    compute_gz_curve(GM, BM, [0, 15, 30, 45, 60, 89]).every((p) => Number.isFinite(p.GZ)),
+    'up to 89 deg',
+  )
 }
 
 // ---------------------------------------------------------------------------
 console.log('\n=== 4. real hull: measured GZ vs the plotted curve ===')
 const STL = new URL('./test-kayak.stl', import.meta.url)
 const base = new Float32Array(
-  new STLLoader()
-    .parse(readFileSync(STL).buffer as ArrayBuffer)
-    .getAttribute('position').array as Float32Array,
+  new STLLoader().parse(readFileSync(STL).buffer as ArrayBuffer).getAttribute('position')
+    .array as Float32Array,
 )
 autoOrientToZUp(base)
 centerToOrigin(base)
@@ -358,7 +410,8 @@ const solveMeshForCurve = isMeshUsableForHydrostatics(decimated) ? decimated : b
 
   for (const p of curve) {
     const m = geometricGz(base, MASS_KG, KG, p.heelDeg, keelZ)
-    const shippedHere = compute_gz_curve_geometric(solveMeshForCurve, MASS_KG, KG, [p.heelDeg])[0].GZ
+    const shippedHere = compute_gz_curve_geometric(solveMeshForCurve, MASS_KG, KG, [p.heelDeg])[0]
+      .GZ
     measured.push({ heel: p.heelDeg, gz: m.gz })
     console.log(
       `  ${String(p.heelDeg).padStart(3)}°  ${m.gz.toFixed(3).padStart(11)} ` +
@@ -371,7 +424,11 @@ const solveMeshForCurve = isMeshUsableForHydrostatics(decimated) ? decimated : b
   // that range, so a negative or non-monotonic arm there would mean the
   // measurement itself had broken.
   const upTo20 = measured.filter((m) => m.heel <= 20)
-  check('measured GZ positive to 20 deg', upTo20.every((m) => m.gz > 0), `${upTo20.map((m) => m.gz.toFixed(2)).join(', ')}`)
+  check(
+    'measured GZ positive to 20 deg',
+    upTo20.every((m) => m.gz > 0),
+    `${upTo20.map((m) => m.gz.toFixed(2)).join(', ')}`,
+  )
 
   // Near upright the curve must track the measured arm. This is the assertion
   // that would catch a sign flip, a wrong GM or a wrong BM entering the curve.
@@ -392,7 +449,11 @@ const solveMeshForCurve = isMeshUsableForHydrostatics(decimated) ? decimated : b
   const slope =
     (geometricGz(base, MASS_KG, KG, h, keelZ).gz - geometricGz(base, MASS_KG, KG, -h, keelZ).gz) /
     ((2 * h * Math.PI) / 180)
-  check('dGZ/dphi at upright = GM', close(slope, GM, 0.2, 1e-3), `${slope.toFixed(3)} vs ${GM} mm/rad`)
+  check(
+    'dGZ/dphi at upright = GM',
+    close(slope, GM, 0.2, 1e-3),
+    `${slope.toFixed(3)} vs ${GM} mm/rad`,
+  )
 
   // solve_trim passes KG to find_draft_0trim, which treats it as a HEIGHT above
   // the keel. It used to pass `lcg.z` — an ABSOLUTE z — so on a mesh whose keel
@@ -406,7 +467,11 @@ const solveMeshForCurve = isMeshUsableForHydrostatics(decimated) ? decimated : b
   // across trims would assert a difference that is not a bug.
   const solved = solve_trim(base, MASS_KG)
   const trimmedUpright = find_draft_0trim(base, MASS_KG, KG, 0)
-  check('solve_trim GM = KM - KG', close(solved.GM, solved.KM - KG, 0.2, 1e-6), `${solved.GM} vs ${solved.KM} - ${KG} = ${(solved.KM - KG).toFixed(1)}`)
+  check(
+    'solve_trim GM = KM - KG',
+    close(solved.GM, solved.KM - KG, 0.2, 1e-6),
+    `${solved.GM} vs ${solved.KM} - ${KG} = ${(solved.KM - KG).toFixed(1)}`,
+  )
 
   // solve_trim must RETURN the geometric curve, not merely expose the function.
   // Asserting compute_gz_curve_geometric on its own is not enough: reverting
@@ -419,7 +484,7 @@ const solveMeshForCurve = isMeshUsableForHydrostatics(decimated) ? decimated : b
   )
   check(
     'solve_trim gzCurve is not the closed form',
-    solved.gzCurve.some((p, i) => p.GZ !== compute_gz_curve(solved.GM, solved.BM, [p.heelDeg])[0].GZ),
+    solved.gzCurve.some((p) => p.GZ !== compute_gz_curve(solved.GM, solved.BM, [p.heelDeg])[0].GZ),
     'differs from (GM, BM) closed form at >= 1 angle',
   )
   check(
@@ -428,11 +493,19 @@ const solveMeshForCurve = isMeshUsableForHydrostatics(decimated) ? decimated : b
       solved.gzCurve[solved.gzCurve.length - 1].heelDeg >= 45,
     `${solved.gzCurve.length} points, last ${solved.gzCurve[solved.gzCurve.length - 1].heelDeg} deg`,
   )
-  check('solve_trim KM is finite and plausible', solved.KM > 0 && solved.KM < 800, `${solved.KM} mm`)
+  check(
+    'solve_trim KM is finite and plausible',
+    solved.KM > 0 && solved.KM < 800,
+    `${solved.KM} mm`,
+  )
   check('solve_trim GM is positive at this load', solved.GM > 0, `${solved.GM} mm`)
   // The old bug inflated GM by |min.z| = 162.5 mm on this hull. GM must stay in
   // the neighbourhood of KB + BM - KG, nowhere near that inflated value.
-  check('solve_trim GM is not inflated by |min.z|', solved.GM < trimmedUpright.GM + 20, `${solved.GM} vs upright ${trimmedUpright.GM} (+|min.z| would be ${(trimmedUpright.GM + Math.abs(keelZ)).toFixed(1)})`)
+  check(
+    'solve_trim GM is not inflated by |min.z|',
+    solved.GM < trimmedUpright.GM + 20,
+    `${solved.GM} vs upright ${trimmedUpright.GM} (+|min.z| would be ${(trimmedUpright.GM + Math.abs(keelZ)).toFixed(1)})`,
+  )
 
   // The hull is symmetric about Y=0, so measured GZ must be odd in heel.
   const sym = [5, 20, 30].map((d) => {
@@ -440,20 +513,26 @@ const solveMeshForCurve = isMeshUsableForHydrostatics(decimated) ? decimated : b
     const b = geometricGz(base, MASS_KG, KG, -d, keelZ).gz
     return Math.abs(a + b)
   })
-  check('measured GZ is odd in heel', Math.max(...sym) < 0.1, `worst |GZ(+) + GZ(-)| = ${Math.max(...sym).toFixed(4)} mm`)
+  check(
+    'measured GZ is odd in heel',
+    Math.max(...sym) < 0.1,
+    `worst |GZ(+) + GZ(-)| = ${Math.max(...sym).toFixed(4)} mm`,
+  )
 
   // The SHIPPED curve. compute_gz_curve_geometric is what solve_trim now
   // returns, so these assertions cover the number the chart actually draws.
   const shipped = compute_gz_curve_geometric(solveMeshForCurve, MASS_KG, KG)
-  const at = (deg: number) => shipped.find((p) => p.heelDeg === deg)!.GZ
+  const at = (deg: number) => {
+    const p = shipped.find((q) => q.heelDeg === deg)
+    if (!p) throw new Error(`compute_gz_curve_geometric did not return heel angle ${deg}`)
+    return p.GZ
+  }
   const lastAngle = DEFAULT_GZ_HEEL_ANGLES_DEG[DEFAULT_GZ_HEEL_ANGLES_DEG.length - 1]
 
   console.log('\n  --- the curve the app plots (compute_gz_curve_geometric) ---')
   console.log('  heel   measured GZ   shipped GZ   closed form   BM(phi)  BM/BM0')
   for (const heel of DEFAULT_GZ_HEEL_ANGLES_DEG) {
-    const m = heel === 0
-      ? { gz: 0, BM: upright.BM }
-      : geometricGz(base, MASS_KG, KG, heel, keelZ)
+    const m = heel === 0 ? { gz: 0, BM: upright.BM } : geometricGz(base, MASS_KG, KG, heel, keelZ)
     console.log(
       `  ${String(heel).padStart(3)}°  ${m.gz.toFixed(2).padStart(11)} ${at(heel).toFixed(1).padStart(11)} ` +
         `${compute_gz_curve(GM, BM, [heel])[0].GZ.toFixed(1).padStart(12)} ` +
@@ -477,15 +556,31 @@ const solveMeshForCurve = isMeshUsableForHydrostatics(decimated) ? decimated : b
   // It must turn over. The closed form cannot produce this, so this assertion
   // is what fails first if anyone reverts to it.
   const peak = shipped.reduce((a, b) => (b.GZ > a.GZ ? b : a), shipped[0])
-  check('shipped GZ has an interior peak', peak.heelDeg > 0 && peak.heelDeg < lastAngle, `peak ${peak.GZ} mm at ${peak.heelDeg} deg`)
+  check(
+    'shipped GZ has an interior peak',
+    peak.heelDeg > 0 && peak.heelDeg < lastAngle,
+    `peak ${peak.GZ} mm at ${peak.heelDeg} deg`,
+  )
   check('GZ falls past the peak', at(lastAngle) < peak.GZ, `${at(lastAngle)} vs peak ${peak.GZ}`)
-  check('GZ is non-positive by the last angle', at(lastAngle) <= 0, `${at(lastAngle)} mm at ${lastAngle} deg`)
+  check(
+    'GZ is non-positive by the last angle',
+    at(lastAngle) <= 0,
+    `${at(lastAngle)} mm at ${lastAngle} deg`,
+  )
 
   // A curve that only ever climbs is the bug this change exists to remove.
-  check('shipped GZ is NOT monotonic', shipped.some((p, i) => i > 0 && p.GZ < shipped[i - 1].GZ), 'has a falling branch')
+  check(
+    'shipped GZ is NOT monotonic',
+    shipped.some((p, i) => i > 0 && p.GZ < shipped[i - 1].GZ),
+    'has a falling branch',
+  )
 
   // The axis must reach past the vanishing angle or the chart cannot show it.
-  check('axis extends past the vanishing angle', lastAngle >= 45, `last plotted angle ${lastAngle} deg`)
+  check(
+    'axis extends past the vanishing angle',
+    lastAngle >= 45,
+    `last plotted angle ${lastAngle} deg`,
+  )
 
   check('shipped GZ(0) = 0', at(0) === 0, `${at(0)}`)
   // Oddness is asserted on a SYMMETRIC hull, where it must hold exactly, rather
@@ -495,8 +590,16 @@ const solveMeshForCurve = isMeshUsableForHydrostatics(decimated) ? decimated : b
   const symBox = boxMesh(2000, 600, 400)
   const symPos = compute_gz_curve_geometric(symBox, 60, 200, [15])[0].GZ
   const symNeg = compute_gz_curve_geometric(symBox, 60, 200, [-15])[0].GZ
-  check('shipped GZ odd in heel (symmetric hull)', close(symPos, -symNeg, 0.051, 1e-9), `${symPos} vs ${symNeg}`)
-  check('shipped GZ finite everywhere', shipped.every((p) => Number.isFinite(p.GZ)), `${DEFAULT_GZ_HEEL_ANGLES_DEG.length} points`)
+  check(
+    'shipped GZ odd in heel (symmetric hull)',
+    close(symPos, -symNeg, 0.051, 1e-9),
+    `${symPos} vs ${symNeg}`,
+  )
+  check(
+    'shipped GZ finite everywhere',
+    shipped.every((p) => Number.isFinite(p.GZ)),
+    `${DEFAULT_GZ_HEEL_ANGLES_DEG.length} points`,
+  )
 }
 
 console.log(fails === 0 ? '\nALL GZ CHECKS PASS' : `\n${fails} CHECK(S) FAILED`)

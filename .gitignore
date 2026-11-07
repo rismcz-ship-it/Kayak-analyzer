@@ -1,6 +1,9 @@
 # Hermes agent internals (not part of school project)
 .hermes/
 
+# Superpowers plan workspaces (inline-execution scratch, likes .gitkeep-free)
+.superpowers/
+
 # Node / Vite
 node_modules/
 dist/
@@ -29,8 +32,6 @@ check-mesh.ts
 uploads/
 *.stl
 !sample_data/*.stl
-# The regression suite needs this mesh. Six tests (test-auto-orient,
-# test-solver, verify-coefficients, verify-decimation, verify-heel-real,
-# verify-trim-search) cannot run at all without it, so it has to live in the
-# repo or a fresh clone verifies nothing.
+# The verification suites need this mesh — without it they abort at import.
+# It has to live in the repo or a fresh clone verifies nothing.
 !tests/*.stl

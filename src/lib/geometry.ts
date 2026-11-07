@@ -233,12 +233,7 @@ export function applyPitchY(
  * Positive phi = starboard (right) down.
  * Det = +1 (proper rotation), preserving winding / normals / volume.
  */
-export function applyRollX(
-  positions: Float32Array,
-  phiRad: number,
-  pivotY = 0,
-  pivotZ = 0,
-): void {
+export function applyRollX(positions: Float32Array, phiRad: number, pivotY = 0, pivotZ = 0): void {
   if (Math.abs(phiRad) < 1e-12) return
   const c = Math.cos(phiRad)
   const s = Math.sin(phiRad)
@@ -297,13 +292,10 @@ export function autoOrientToZUp(positions: Float32Array): string {
 
   const oriented = computeBounds(positions)
   let centroidZ = 0
-  let centroidX = 0
   const vertCount = positions.length / 3
   for (let i = 0; i < positions.length; i += 3) {
-    centroidX += positions[i]
     centroidZ += positions[i + 2]
   }
-  centroidX /= vertCount
   centroidZ /= vertCount
 
   if (centroidZ < oriented.center.z) {
@@ -368,10 +360,7 @@ export function computeVolumeMm3(positions: Float32Array): number {
     const cx = positions[i + 6]
     const cy = positions[i + 7]
     const cz = positions[i + 8]
-    sum +=
-      ax * (by * cz - bz * cy) +
-      ay * (bz * cx - bx * cz) +
-      az * (bx * cy - by * cx)
+    sum += ax * (by * cz - bz * cy) + ay * (bz * cx - bx * cz) + az * (bx * cy - by * cx)
   }
   return Math.abs(sum) / 6
 }
@@ -403,10 +392,7 @@ export function computeVolumeAndCentroid(positions: Float32Array): VolumeCentroi
     const cz = positions[i + 8]
 
     // 6 * signed tetrahedron volume
-    const v6 =
-      ax * (by * cz - bz * cy) +
-      ay * (bz * cx - bx * cz) +
-      az * (bx * cy - by * cx)
+    const v6 = ax * (by * cz - bz * cy) + ay * (bz * cx - bx * cz) + az * (bx * cy - by * cx)
 
     vSigned += v6 / 6
 
@@ -503,466 +489,485 @@ export function checkWatertight(positions: Float32Array): WatertightResult {
   }
 
   return {
-      watertight: open === 0,
-      closedEdgeCount: closed,
-      openEdgeCount: open,
-      degenerateEdgeCount: degenerate,
+    watertight: open === 0,
+    closedEdgeCount: closed,
+    openEdgeCount: open,
+    degenerateEdgeCount: degenerate,
+  }
+}
+
+/**
+ * Area (mm²) of the hull's cross-section in the plane X = xCut.
+ *
+ * Slices every triangle with the plane and integrates the resulting closed
+ * (Y,Z) contour with the shoelace formula. Integration is taken about the
+ * section's OWN centroid, not the Z=0 plane: a hull centred on the origin has
+ * sections spanning negative Z, and measuring from Z=0 under-counts them (it
+ * produced Cm > 1, which is impossible for a real hull).
+ *
+ * @param positions Flat interleaved xyz Float32Array
+ * @param xCut X coordinate of the section plane
+ * @returns Cross-section area in mm², or 0 when the plane misses the hull
+ */
+export function computeSectionAreaMm2(positions: Float32Array, xCut: number): number {
+  const cy: number[] = []
+  const cz: number[] = []
+
+  for (let i = 0; i < positions.length; i += 9) {
+    const vx = [positions[i], positions[i + 3], positions[i + 6]]
+    const vy = [positions[i + 1], positions[i + 4], positions[i + 7]]
+    const vz = [positions[i + 2], positions[i + 5], positions[i + 8]]
+
+    for (let e = 0; e < 3; e++) {
+      const a = e
+      const c = (e + 1) % 3
+      const fa = vx[a] - xCut
+      const fc = vx[c] - xCut
+      const faNeg = fa <= 0
+      const fcNeg = fc <= 0
+      // Only true crossings; vertices exactly on the plane are counted by
+      // neither side and would double-count a shared edge endpoint.
+      if (faNeg === fcNeg) continue
+      const t = fa / (fa - fc)
+      cy.push(vy[a] + t * (vy[c] - vy[a]))
+      cz.push(vz[a] + t * (vz[c] - vz[a]))
     }
   }
 
-  /**
-   * Area (mm²) of the hull's cross-section in the plane X = xCut.
-   *
-   * Slices every triangle with the plane and integrates the resulting closed
-   * (Y,Z) contour with the shoelace formula. Integration is taken about the
-   * section's OWN centroid, not the Z=0 plane: a hull centred on the origin has
-   * sections spanning negative Z, and measuring from Z=0 under-counts them (it
-   * produced Cm > 1, which is impossible for a real hull).
-   *
-   * @param positions Flat interleaved xyz Float32Array
-   * @param xCut X coordinate of the section plane
-   * @returns Cross-section area in mm², or 0 when the plane misses the hull
-   */
-  export function computeSectionAreaMm2(positions: Float32Array, xCut: number): number {
-    const cy: number[] = []
-    const cz: number[] = []
+  if (cy.length < 3) return 0
 
-    for (let i = 0; i < positions.length; i += 9) {
-      const vx = [positions[i], positions[i + 3], positions[i + 6]]
-      const vy = [positions[i + 1], positions[i + 4], positions[i + 7]]
-      const vz = [positions[i + 2], positions[i + 5], positions[i + 8]]
+  // Order the contour by angle about its centroid so the shoelace sum traces
+  // the section once instead of hopping between unrelated boundary pieces.
+  let meanY = 0
+  let meanZ = 0
+  for (let k = 0; k < cy.length; k++) {
+    meanY += cy[k]
+    meanZ += cz[k]
+  }
+  meanY /= cy.length
+  meanZ /= cz.length
 
-      for (let e = 0; e < 3; e++) {
-        const a = e
-        const c = (e + 1) % 3
-        const fa = vx[a] - xCut
-        const fc = vx[c] - xCut
-        // Only true crossings; vertices exactly on the plane are counted by
-        // neither side and would double-count a shared edge endpoint.
-        if ((fa <= 0) === (fc <= 0)) continue
-        const t = fa / (fa - fc)
-        cy.push(vy[a] + t * (vy[c] - vy[a]))
-        cz.push(vz[a] + t * (vz[c] - vz[a]))
-      }
+  const order = Array.from({ length: cy.length }, (_, k) => k).sort(
+    (p, q) => Math.atan2(cz[p] - meanZ, cy[p] - meanY) - Math.atan2(cz[q] - meanZ, cy[q] - meanY),
+  )
+
+  let area2 = 0
+  for (let k = 0; k < order.length; k++) {
+    const p = order[k]
+    const q = order[(k + 1) % order.length]
+    area2 += cy[p] * cz[q] - cy[q] * cz[p]
+  }
+  return Math.abs(area2 / 2)
+}
+
+/**
+ * Area (mm²) of the hull's cross-section in the plane X = xCut, measured only
+ * BELOW the horizontal plane z = h.
+ *
+ * Slices the mesh at X = xCut, then clips that closed (Y,Z) contour against
+ * the waterline and integrates the submerged part with the shoelace formula.
+ * The integration origin is the section's OWN centroid, not Z=0: a hull
+ * centred on the origin spans negative Z, and measuring from Z=0 under-counts
+ * it.
+ *
+ * The clip closes the polygon with a chord along z = h. Without that chord
+ * the waterline edge is missing and the area collapses (a box measured 0 mm²
+ * at half draft).
+ *
+ * The submerged clip is what Cp and Cm are defined on. A keel-to-deck section
+ * area is not comparable with a submerged draft and makes Cm exceed 1.
+ *
+ * @param positions Flat interleaved xyz Float32Array
+ * @param xCut X coordinate of the section plane
+ * @param h Waterline height (absolute Z in mesh coordinates)
+ * @returns Submerged cross-section area in mm², or 0 when the plane misses
+ */
+export function computeSubmergedSectionAreaMm2(
+  positions: Float32Array,
+  xCut: number,
+  h: number,
+): number {
+  // --- pass 1: build the section contour graph in (Y, Z) ---
+  const coordOf = new Map<string, [number, number]>()
+  const adj = new Map<string, string[]>()
+  const QUANT = 1000
+
+  const keyOf = (y: number, z: number) => `${Math.round(y * QUANT)}|${Math.round(z * QUANT)}`
+
+  const link = (a: string, b: string) => {
+    if (a === b) return
+    const la = adj.get(a)
+    if (la) {
+      if (!la.includes(b)) la.push(b)
+    } else {
+      adj.set(a, [b])
     }
-
-    if (cy.length < 3) return 0
-
-    // Order the contour by angle about its centroid so the shoelace sum traces
-    // the section once instead of hopping between unrelated boundary pieces.
-    let meanY = 0
-    let meanZ = 0
-    for (let k = 0; k < cy.length; k++) {
-      meanY += cy[k]
-      meanZ += cz[k]
+    const lb = adj.get(b)
+    if (lb) {
+      if (!lb.includes(a)) lb.push(a)
+    } else {
+      adj.set(b, [a])
     }
-    meanY /= cy.length
-    meanZ /= cz.length
-
-    const order = Array.from({ length: cy.length }, (_, k) => k).sort(
-      (p, q) => Math.atan2(cz[p] - meanZ, cy[p] - meanY) - Math.atan2(cz[q] - meanZ, cy[q] - meanY),
-    )
-
-    let area2 = 0
-    for (let k = 0; k < order.length; k++) {
-      const p = order[k]
-      const q = order[(k + 1) % order.length]
-      area2 += cy[p] * cz[q] - cy[q] * cz[p]
-    }
-    return Math.abs(area2 / 2)
   }
 
-  /**
-   * Area (mm²) of the hull's cross-section in the plane X = xCut, measured only
-   * BELOW the horizontal plane z = h.
-   *
-   * Slices the mesh at X = xCut, then clips that closed (Y,Z) contour against
-   * the waterline and integrates the submerged part with the shoelace formula.
-   * The integration origin is the section's OWN centroid, not Z=0: a hull
-   * centred on the origin spans negative Z, and measuring from Z=0 under-counts
-   * it.
-   *
-   * The clip closes the polygon with a chord along z = h. Without that chord
-   * the waterline edge is missing and the area collapses (a box measured 0 mm²
-   * at half draft).
-   *
-   * The submerged clip is what Cp and Cm are defined on. A keel-to-deck section
-   * area is not comparable with a submerged draft and makes Cm exceed 1.
-   *
-   * @param positions Flat interleaved xyz Float32Array
-   * @param xCut X coordinate of the section plane
-   * @param h Waterline height (absolute Z in mesh coordinates)
-   * @returns Submerged cross-section area in mm², or 0 when the plane misses
-   */
-  export function computeSubmergedSectionAreaMm2(
-    positions: Float32Array,
-    xCut: number,
-    h: number,
-  ): number {
-    // --- pass 1: build the section contour graph in (Y, Z) ---
-    const coordOf = new Map<string, [number, number]>()
-    const adj = new Map<string, string[]>()
-    const QUANT = 1000
+  for (let i = 0; i < positions.length; i += 9) {
+    const vx = [positions[i], positions[i + 3], positions[i + 6]]
+    const vy = [positions[i + 1], positions[i + 4], positions[i + 7]]
+    const vz = [positions[i + 2], positions[i + 5], positions[i + 8]]
 
-    const keyOf = (y: number, z: number) => `${Math.round(y * QUANT)}|${Math.round(z * QUANT)}`
-
-    const link = (a: string, b: string) => {
-      if (a === b) return
-      const la = adj.get(a)
-      if (la) {
-        if (!la.includes(b)) la.push(b)
-      } else {
-        adj.set(a, [b])
-      }
-      const lb = adj.get(b)
-      if (lb) {
-        if (!lb.includes(a)) lb.push(a)
-      } else {
-        adj.set(b, [a])
-      }
+    const here: string[] = []
+    for (let e = 0; e < 3; e++) {
+      const a = e
+      const c = (e + 1) % 3
+      const fa = vx[a] - xCut
+      const fc = vx[c] - xCut
+      const faNeg = fa <= 0
+      const fcNeg = fc <= 0
+      if (faNeg === fcNeg) continue
+      const t = fa / (fa - fc)
+      const y = vy[a] + t * (vy[c] - vy[a])
+      const z = vz[a] + t * (vz[c] - vz[a])
+      const k = keyOf(y, z)
+      if (!coordOf.has(k)) coordOf.set(k, [y, z])
+      if (!here.includes(k)) here.push(k)
     }
+    // A triangle cut by the plane contributes a segment between its two
+    // crossing points; that segment is an edge of the section contour.
+    if (here.length === 2) link(here[0], here[1])
+  }
 
-    for (let i = 0; i < positions.length; i += 9) {
-      const vx = [positions[i], positions[i + 3], positions[i + 6]]
-      const vy = [positions[i + 1], positions[i + 4], positions[i + 7]]
-      const vz = [positions[i + 2], positions[i + 5], positions[i + 8]]
+  // --- pass 2: walk the graph into loops, clip each to z <= h, integrate ---
+  const visitedEdge = new Set<string>()
+  const canon = (a: string, b: string) => (a <= b ? `${a}~${b}` : `${b}~${a}`)
+  // Every key walked here was inserted into coordOf in pass 1, so a cache miss
+  // means an invariant bug. Fail loudly instead of force-casting on lookup.
+  const coordsOf = (k: string): [number, number] => {
+    const c = coordOf.get(k)
+    if (!c) throw new Error(`section contour invariant broken: unknown vertex key ${k}`)
+    return c
+  }
+  let total = 0
 
-      const here: string[] = []
+  for (const seed of adj.keys()) {
+    const seedNeighbours = adj.get(seed) ?? []
+    if (seedNeighbours.length === 0) continue
+
+    for (const first of seedNeighbours) {
+      if (visitedEdge.has(canon(seed, first))) continue
+
+      // Trace one loop from seed through first.
+      const loop: [number, number][] = []
+      let prev = seed
+      let cur = first
+      loop.push(coordsOf(seed))
+      loop.push(coordsOf(cur))
+      visitedEdge.add(canon(seed, cur))
+
+      for (let guard = 0; guard < coordOf.size + 2; guard++) {
+        if (cur === seed) break
+        const nexts = (adj.get(cur) ?? []).filter((n) => {
+          if (n === prev) return false
+          if (n === seed) return false
+          return !visitedEdge.has(canon(cur, n))
+        })
+        if (nexts.length === 0) break
+        const n = nexts[0]
+        visitedEdge.add(canon(cur, n))
+        prev = cur
+        cur = n
+        loop.push(coordsOf(cur))
+      }
+      if (loop.length < 3) continue
+
+      // Clip the loop polygon to z <= h (Sutherland-Hodgman, one half-plane).
+      const clipped: [number, number][] = []
+      const EPS = 1e-7
+      for (let k = 0; k < loop.length; k++) {
+        const p = loop[k]
+        const q = loop[(k + 1) % loop.length]
+        const pIn = p[1] <= h + EPS
+        const qIn = q[1] <= h + EPS
+        if (pIn) clipped.push(p)
+        if (pIn !== qIn) {
+          const t = (h - p[1]) / (q[1] - p[1])
+          clipped.push([p[0] + t * (q[0] - p[0]), h])
+        }
+      }
+      if (clipped.length < 3) continue
+
+      // Shoelace about the clipped polygon's own centroid.
+      let meanY = 0
+      let meanZ = 0
+      for (const q of clipped) {
+        meanY += q[0]
+        meanZ += q[1]
+      }
+      meanY /= clipped.length
+      meanZ /= clipped.length
+
+      const ordered = [...clipped].sort(
+        (p, q) => Math.atan2(p[1] - meanZ, p[0] - meanY) - Math.atan2(q[1] - meanZ, q[0] - meanY),
+      )
+
+      let area2 = 0
+      for (let k = 0; k < ordered.length; k++) {
+        const p = ordered[k]
+        const q = ordered[(k + 1) % ordered.length]
+        area2 += (p[0] - meanY) * (q[1] - meanZ) - (q[0] - meanY) * (p[1] - meanZ)
+      }
+      total += Math.abs(area2 / 2)
+    }
+  }
+
+  return total
+}
+
+/**
+ * Compute the midship cross-section area (Am) at X = centerX.
+ * Thin wrapper over {@link computeSectionAreaMm2} — kept for existing callers.
+ *
+ * @param positions Flat interleaved xyz Float32Array
+ * @param centerX X coordinate of the midship plane (usually bounds.center.x)
+ * @returns Midship section area in mm²
+ */
+export function computeMidshipAreaMm2(positions: Float32Array, centerX: number): number {
+  return computeSectionAreaMm2(positions, centerX)
+}
+
+/**
+ * Compute midship cross-section properties at X = centerX.
+ * Returns area, beam (max Y extent), and draft (max Z extent) at that station.
+ *
+ * Area comes from {@link computeSectionAreaMm2}; the extents come from the
+ * raw intersection points, which the shoelace integration does not expose.
+ *
+ * @param positions Flat interleaved xyz Float32Array
+ * @param centerX X coordinate of the midship plane
+ * @returns { areaMm2, beamMm, draftMm }
+ */
+export function computeMidshipSection(
+  positions: Float32Array,
+  centerX: number,
+): { areaMm2: number; beamMm: number; draftMm: number } {
+  let minY = Infinity
+  let maxY = -Infinity
+  let minZ = Infinity
+  let maxZ = -Infinity
+  let hasIntersection = false
+
+  for (let i = 0; i < positions.length; i += 9) {
+    const vx = [positions[i], positions[i + 3], positions[i + 6]]
+    const vy = [positions[i + 1], positions[i + 4], positions[i + 7]]
+    const vz = [positions[i + 2], positions[i + 5], positions[i + 8]]
+
+    for (let e = 0; e < 3; e++) {
+      const a = e
+      const c = (e + 1) % 3
+      const fa = vx[a] - centerX
+      const fc = vx[c] - centerX
+      const faNeg = fa <= 0
+      const fcNeg = fc <= 0
+      if (faNeg === fcNeg) continue
+      const t = fa / (fa - fc)
+      const y = vy[a] + t * (vy[c] - vy[a])
+      const z = vz[a] + t * (vz[c] - vz[a])
+      hasIntersection = true
+      minY = Math.min(minY, y)
+      maxY = Math.max(maxY, y)
+      minZ = Math.min(minZ, z)
+      maxZ = Math.max(maxZ, z)
+    }
+  }
+
+  if (!hasIntersection) {
+    return { areaMm2: 0, beamMm: 0, draftMm: 0 }
+  }
+
+  return {
+    areaMm2: computeSectionAreaMm2(positions, centerX),
+    beamMm: maxY - minY,
+    draftMm: maxZ - minZ,
+  }
+}
+
+/**
+ * Maximum beam of the waterline (BWL) in mm: the widest Y extent of the
+ * hull's intersection with the plane z = h.
+ *
+ * BWL is the MAXIMUM waterline width, not the mean (Aw / LWL). The mean
+ * understates it for a fine-ended hull, which inflates Cb.
+ *
+ * @param positions Flat interleaved xyz Float32Array
+ * @param h Waterline height (absolute Z in mesh coordinates)
+ * @returns Waterline beam in mm, or 0 when the plane misses the hull
+ */
+export function computeWaterlineBeamMm(positions: Float32Array, h: number): number {
+  let minY = Infinity
+  let maxY = -Infinity
+  let found = false
+
+  for (let i = 0; i < positions.length; i += 9) {
+    const vz = [positions[i + 2], positions[i + 5], positions[i + 8]]
+    const vy = [positions[i + 1], positions[i + 4], positions[i + 7]]
+
+    for (let e = 0; e < 3; e++) {
+      const a = e
+      const c = (e + 1) % 3
+      const fa = vz[a] - h
+      const fc = vz[c] - h
+      const faNeg = fa <= 0
+      const fcNeg = fc <= 0
+      if (faNeg === fcNeg) continue
+      const t = fa / (fa - fc)
+      const y = vy[a] + t * (vy[c] - vy[a])
+      found = true
+      if (y < minY) minY = y
+      if (y > maxY) maxY = y
+    }
+  }
+
+  return found ? maxY - minY : 0
+}
+
+/**
+ * Length of the waterline (LWL) in mm: the X extent of the hull's
+ * intersection with the horizontal plane z = h.
+ *
+ * This is NOT the bounding-box length. A hull at 65 kg floats with its
+ * bow and stern clear of the water, so the waterline is shorter than LOA —
+ * using LOA overstates the length every form coefficient is built on.
+ *
+ * @param positions Flat interleaved xyz Float32Array
+ * @param h Waterline height (absolute Z in mesh coordinates)
+ * @returns Waterline length in mm, or 0 when the plane misses the hull
+ */
+export function computeWaterlineLengthMm(positions: Float32Array, h: number): number {
+  let minX = Infinity
+  let maxX = -Infinity
+  let found = false
+
+  for (let i = 0; i < positions.length; i += 9) {
+    const vz = [positions[i + 2], positions[i + 5], positions[i + 8]]
+    const vx = [positions[i], positions[i + 3], positions[i + 6]]
+
+    for (let e = 0; e < 3; e++) {
+      const a = e
+      const c = (e + 1) % 3
+      const fa = vz[a] - h
+      const fc = vz[c] - h
+      const faNeg = fa <= 0
+      const fcNeg = fc <= 0
+      if (faNeg === fcNeg) continue
+      const t = fa / (fa - fc)
+      const x = vx[a] + t * (vx[c] - vx[a])
+      found = true
+      if (x < minX) minX = x
+      if (x > maxX) maxX = x
+    }
+  }
+
+  return found ? maxX - minX : 0
+}
+
+/**
+ * Maximum submerged cross-section (Am) and the rectangle it must fit in.
+ *
+ * Cm = Am / (beam at that station x submerged depth at that station). The
+ * denominator has to come from the SAME station as the numerator: pairing a
+ * section's area with the waterplane's mean beam and the global draft gives
+ * a rectangle the section does not fit inside, which is how Cm ends up above
+ * 1. Tracking the station's own lowest point also keeps Cm <= 1 by
+ * construction, because the section is contained in that rectangle.
+ *
+ * @param positions Flat interleaved xyz Float32Array
+ * @param minX Minimum X coordinate
+ * @param maxX Maximum X coordinate
+ * @param h Waterline height (absolute Z in mesh coordinates)
+ * @param numSamples Number of stations to sample (default: 50)
+ */
+export function findMaxSubmergedSection(
+  positions: Float32Array,
+  minX: number,
+  maxX: number,
+  h: number,
+  numSamples: number = 50,
+): { areaMm2: number; beamMm: number; depthMm: number; x: number } {
+  let best = { areaMm2: 0, beamMm: 0, depthMm: 0, x: minX }
+
+  for (let i = 0; i <= numSamples; i++) {
+    const x = minX + (maxX - minX) * (i / numSamples)
+    const area = computeSubmergedSectionAreaMm2(positions, x, h)
+    if (area <= best.areaMm2) continue
+
+    let minY = Infinity
+    let maxY = -Infinity
+    let minZ = Infinity
+    for (let k = 0; k < positions.length; k += 9) {
+      const vx = [positions[k], positions[k + 3], positions[k + 6]]
+      const vy = [positions[k + 1], positions[k + 4], positions[k + 7]]
+      const vz = [positions[k + 2], positions[k + 5], positions[k + 8]]
       for (let e = 0; e < 3; e++) {
         const a = e
         const c = (e + 1) % 3
-        const fa = vx[a] - xCut
-        const fc = vx[c] - xCut
-        if ((fa <= 0) === (fc <= 0)) continue
+        const fa = vx[a] - x
+        const fc = vx[c] - x
+        const faNeg = fa <= 0
+        const fcNeg = fc <= 0
+        if (faNeg === fcNeg) continue
         const t = fa / (fa - fc)
         const y = vy[a] + t * (vy[c] - vy[a])
         const z = vz[a] + t * (vz[c] - vz[a])
-        const k = keyOf(y, z)
-        if (!coordOf.has(k)) coordOf.set(k, [y, z])
-        if (!here.includes(k)) here.push(k)
-      }
-      // A triangle cut by the plane contributes a segment between its two
-      // crossing points; that segment is an edge of the section contour.
-      if (here.length === 2) link(here[0], here[1])
-    }
-
-    // --- pass 2: walk the graph into loops, clip each to z <= h, integrate ---
-    const visitedEdge = new Set<string>()
-    const canon = (a: string, b: string) => (a <= b ? `${a}~${b}` : `${b}~${a}`)
-    let total = 0
-
-    for (const seed of adj.keys()) {
-      const seedNeighbours = adj.get(seed) ?? []
-      if (seedNeighbours.length === 0) continue
-
-      for (const first of seedNeighbours) {
-        if (visitedEdge.has(canon(seed, first))) continue
-
-        // Trace one loop from seed through first.
-        const loop: [number, number][] = []
-        let prev = seed
-        let cur = first
-        loop.push(coordOf.get(seed)!)
-        loop.push(coordOf.get(cur)!)
-        visitedEdge.add(canon(seed, cur))
-
-        for (let guard = 0; guard < coordOf.size + 2; guard++) {
-          if (cur === seed) break
-          const nexts = (adj.get(cur) ?? []).filter((n) => {
-            if (n === prev) return false
-            if (n === seed) return false
-            return !visitedEdge.has(canon(cur, n))
-          })
-          if (nexts.length === 0) break
-          const n = nexts[0]
-          visitedEdge.add(canon(cur, n))
-          prev = cur
-          cur = n
-          loop.push(coordOf.get(cur)!)
-        }
-        if (loop.length < 3) continue
-
-        // Clip the loop polygon to z <= h (Sutherland-Hodgman, one half-plane).
-        const clipped: [number, number][] = []
-        const EPS = 1e-7
-        for (let k = 0; k < loop.length; k++) {
-          const p = loop[k]
-          const q = loop[(k + 1) % loop.length]
-          const pIn = p[1] <= h + EPS
-          const qIn = q[1] <= h + EPS
-          if (pIn) clipped.push(p)
-          if (pIn !== qIn) {
-            const t = (h - p[1]) / (q[1] - p[1])
-            clipped.push([p[0] + t * (q[0] - p[0]), h])
-          }
-        }
-        if (clipped.length < 3) continue
-
-        // Shoelace about the clipped polygon's own centroid.
-        let meanY = 0
-        let meanZ = 0
-        for (const q of clipped) {
-          meanY += q[0]
-          meanZ += q[1]
-        }
-        meanY /= clipped.length
-        meanZ /= clipped.length
-
-        const ordered = [...clipped].sort(
-          (p, q) => Math.atan2(p[1] - meanZ, p[0] - meanY) - Math.atan2(q[1] - meanZ, q[0] - meanY),
-        )
-
-        let area2 = 0
-        for (let k = 0; k < ordered.length; k++) {
-          const p = ordered[k]
-          const q = ordered[(k + 1) % ordered.length]
-          area2 += (p[0] - meanY) * (q[1] - meanZ) - (q[0] - meanY) * (p[1] - meanZ)
-        }
-        total += Math.abs(area2 / 2)
+        if (z > h) continue
+        if (y < minY) minY = y
+        if (y > maxY) maxY = y
+        if (z < minZ) minZ = z
       }
     }
 
-    return total
+    best = {
+      areaMm2: area,
+      beamMm: maxY - minY,
+      depthMm: h - minZ,
+      x,
+    }
   }
 
-  /**
-   * Compute the midship cross-section area (Am) at X = centerX.
-   * Thin wrapper over {@link computeSectionAreaMm2} — kept for existing callers.
-   *
-   * @param positions Flat interleaved xyz Float32Array
-   * @param centerX X coordinate of the midship plane (usually bounds.center.x)
-   * @returns Midship section area in mm²
-   */
-  export function computeMidshipAreaMm2(positions: Float32Array, centerX: number): number {
-    return computeSectionAreaMm2(positions, centerX)
+  return best
+}
+
+/**
+ * Find the maximum SUBMERGED cross-section area (Am) along the X axis.
+ * This is the standard definition for Cp = V / (Am × LWL) and
+ * Cm = Am / (BWL × draft) — both are defined on the underwater section,
+ * so `h` (the waterline) is required.
+ *
+ * @param positions Flat interleaved xyz Float32Array
+ * @param minX Minimum X coordinate
+ * @param maxX Maximum X coordinate
+ * @param h Waterline height (absolute Z in mesh coordinates)
+ * @param numSamples Number of cross-sections to sample (default: 50)
+ * @returns Maximum submerged cross-section area in mm²
+ */
+export function findMaxCrossSectionArea(
+  positions: Float32Array,
+  minX: number,
+  maxX: number,
+  h: number,
+  numSamples: number = 50,
+): number {
+  let maxArea = 0
+
+  for (let i = 0; i <= numSamples; i++) {
+    const x = minX + (maxX - minX) * (i / numSamples)
+    const area = computeSubmergedSectionAreaMm2(positions, x, h)
+    if (area > maxArea) maxArea = area
   }
 
-      /**
-       * Compute midship cross-section properties at X = centerX.
-       * Returns area, beam (max Y extent), and draft (max Z extent) at that station.
-       *
-       * Area comes from {@link computeSectionAreaMm2}; the extents come from the
-       * raw intersection points, which the shoelace integration does not expose.
-       *
-       * @param positions Flat interleaved xyz Float32Array
-       * @param centerX X coordinate of the midship plane
-       * @returns { areaMm2, beamMm, draftMm }
-       */
-      export function computeMidshipSection(
-        positions: Float32Array,
-        centerX: number
-      ): { areaMm2: number; beamMm: number; draftMm: number } {
-        let minY = Infinity
-        let maxY = -Infinity
-        let minZ = Infinity
-        let maxZ = -Infinity
-        let hasIntersection = false
+  return maxArea
+}
 
-        for (let i = 0; i < positions.length; i += 9) {
-          const vx = [positions[i], positions[i + 3], positions[i + 6]]
-          const vy = [positions[i + 1], positions[i + 4], positions[i + 7]]
-          const vz = [positions[i + 2], positions[i + 5], positions[i + 8]]
-
-          for (let e = 0; e < 3; e++) {
-            const a = e
-            const c = (e + 1) % 3
-            const fa = vx[a] - centerX
-            const fc = vx[c] - centerX
-            if ((fa <= 0) === (fc <= 0)) continue
-            const t = fa / (fa - fc)
-            const y = vy[a] + t * (vy[c] - vy[a])
-            const z = vz[a] + t * (vz[c] - vz[a])
-            hasIntersection = true
-            minY = Math.min(minY, y)
-            maxY = Math.max(maxY, y)
-            minZ = Math.min(minZ, z)
-            maxZ = Math.max(maxZ, z)
-          }
-        }
-
-        if (!hasIntersection) {
-          return { areaMm2: 0, beamMm: 0, draftMm: 0 }
-        }
-
-        return {
-          areaMm2: computeSectionAreaMm2(positions, centerX),
-          beamMm: maxY - minY,
-          draftMm: maxZ - minZ,
-        }
-      }
-
-      /**
-       * Maximum beam of the waterline (BWL) in mm: the widest Y extent of the
-       * hull's intersection with the plane z = h.
-       *
-       * BWL is the MAXIMUM waterline width, not the mean (Aw / LWL). The mean
-       * understates it for a fine-ended hull, which inflates Cb.
-       *
-       * @param positions Flat interleaved xyz Float32Array
-       * @param h Waterline height (absolute Z in mesh coordinates)
-       * @returns Waterline beam in mm, or 0 when the plane misses the hull
-       */
-      export function computeWaterlineBeamMm(positions: Float32Array, h: number): number {
-        let minY = Infinity
-        let maxY = -Infinity
-        let found = false
-
-        for (let i = 0; i < positions.length; i += 9) {
-          const vz = [positions[i + 2], positions[i + 5], positions[i + 8]]
-          const vy = [positions[i + 1], positions[i + 4], positions[i + 7]]
-
-          for (let e = 0; e < 3; e++) {
-            const a = e
-            const c = (e + 1) % 3
-            const fa = vz[a] - h
-            const fc = vz[c] - h
-            if ((fa <= 0) === (fc <= 0)) continue
-            const t = fa / (fa - fc)
-            const y = vy[a] + t * (vy[c] - vy[a])
-            found = true
-            if (y < minY) minY = y
-            if (y > maxY) maxY = y
-          }
-        }
-
-        return found ? maxY - minY : 0
-      }
-
-      /**
-       * Length of the waterline (LWL) in mm: the X extent of the hull's
-       * intersection with the horizontal plane z = h.
-       *
-       * This is NOT the bounding-box length. A hull at 65 kg floats with its
-       * bow and stern clear of the water, so the waterline is shorter than LOA —
-       * using LOA overstates the length every form coefficient is built on.
-       *
-       * @param positions Flat interleaved xyz Float32Array
-       * @param h Waterline height (absolute Z in mesh coordinates)
-       * @returns Waterline length in mm, or 0 when the plane misses the hull
-       */
-      export function computeWaterlineLengthMm(positions: Float32Array, h: number): number {
-        let minX = Infinity
-        let maxX = -Infinity
-        let found = false
-
-        for (let i = 0; i < positions.length; i += 9) {
-          const vz = [positions[i + 2], positions[i + 5], positions[i + 8]]
-          const vx = [positions[i], positions[i + 3], positions[i + 6]]
-
-          for (let e = 0; e < 3; e++) {
-            const a = e
-            const c = (e + 1) % 3
-            const fa = vz[a] - h
-            const fc = vz[c] - h
-            if ((fa <= 0) === (fc <= 0)) continue
-            const t = fa / (fa - fc)
-            const x = vx[a] + t * (vx[c] - vx[a])
-            found = true
-            if (x < minX) minX = x
-            if (x > maxX) maxX = x
-          }
-        }
-
-        return found ? maxX - minX : 0
-      }
-
-      /**
-       * Maximum submerged cross-section (Am) and the rectangle it must fit in.
-       *
-       * Cm = Am / (beam at that station x submerged depth at that station). The
-       * denominator has to come from the SAME station as the numerator: pairing a
-       * section's area with the waterplane's mean beam and the global draft gives
-       * a rectangle the section does not fit inside, which is how Cm ends up above
-       * 1. Tracking the station's own lowest point also keeps Cm <= 1 by
-       * construction, because the section is contained in that rectangle.
-       *
-       * @param positions Flat interleaved xyz Float32Array
-       * @param minX Minimum X coordinate
-       * @param maxX Maximum X coordinate
-       * @param h Waterline height (absolute Z in mesh coordinates)
-       * @param numSamples Number of stations to sample (default: 50)
-       */
-      export function findMaxSubmergedSection(
-        positions: Float32Array,
-        minX: number,
-        maxX: number,
-        h: number,
-        numSamples: number = 50,
-      ): { areaMm2: number; beamMm: number; depthMm: number; x: number } {
-        let best = { areaMm2: 0, beamMm: 0, depthMm: 0, x: minX }
-
-        for (let i = 0; i <= numSamples; i++) {
-          const x = minX + (maxX - minX) * (i / numSamples)
-          const area = computeSubmergedSectionAreaMm2(positions, x, h)
-          if (area <= best.areaMm2) continue
-
-          let minY = Infinity
-          let maxY = -Infinity
-          let minZ = Infinity
-          for (let k = 0; k < positions.length; k += 9) {
-            const vx = [positions[k], positions[k + 3], positions[k + 6]]
-            const vy = [positions[k + 1], positions[k + 4], positions[k + 7]]
-            const vz = [positions[k + 2], positions[k + 5], positions[k + 8]]
-            for (let e = 0; e < 3; e++) {
-              const a = e
-              const c = (e + 1) % 3
-              const fa = vx[a] - x
-              const fc = vx[c] - x
-              if ((fa <= 0) === (fc <= 0)) continue
-              const t = fa / (fa - fc)
-              const y = vy[a] + t * (vy[c] - vy[a])
-              const z = vz[a] + t * (vz[c] - vz[a])
-              if (z > h) continue
-              if (y < minY) minY = y
-              if (y > maxY) maxY = y
-              if (z < minZ) minZ = z
-            }
-          }
-
-          best = {
-            areaMm2: area,
-            beamMm: maxY - minY,
-            depthMm: h - minZ,
-            x,
-          }
-        }
-
-        return best
-      }
-
-      /**
-       * Find the maximum SUBMERGED cross-section area (Am) along the X axis.
-       * This is the standard definition for Cp = V / (Am × LWL) and
-       * Cm = Am / (BWL × draft) — both are defined on the underwater section,
-       * so `h` (the waterline) is required.
-       *
-       * @param positions Flat interleaved xyz Float32Array
-       * @param minX Minimum X coordinate
-       * @param maxX Maximum X coordinate
-       * @param h Waterline height (absolute Z in mesh coordinates)
-       * @param numSamples Number of cross-sections to sample (default: 50)
-       * @returns Maximum submerged cross-section area in mm²
-       */
-      export function findMaxCrossSectionArea(
-        positions: Float32Array,
-        minX: number,
-        maxX: number,
-        h: number,
-        numSamples: number = 50
-      ): number {
-        let maxArea = 0
-
-        for (let i = 0; i <= numSamples; i++) {
-          const x = minX + (maxX - minX) * (i / numSamples)
-          const area = computeSubmergedSectionAreaMm2(positions, x, h)
-          if (area > maxArea) maxArea = area
-        }
-
-        return maxArea
-      }
-
-      /** One-stop analysis prep for a later hydrostatics pass. */
-      export function analyzeMesh(positions: Float32Array): MeshStats {
+/** One-stop analysis prep for a later hydrostatics pass. */
+export function analyzeMesh(positions: Float32Array): MeshStats {
   const bounds = computeBounds(positions)
   const volumeMm3 = computeVolumeMm3(positions)
   return {
@@ -1284,7 +1289,7 @@ function linkConditionOk(
   faceAlive: Uint8Array,
   indices: Uint32Array,
   u: number,
-  v: number
+  v: number,
 ): boolean {
   // The link condition (Borisov–Huang–Wang): the collapse u->v is
   // topologically safe exactly when
@@ -1360,13 +1365,17 @@ function optimalPosition(q: Float64Array, o: number): [number, number, number] |
   const b2 = -q[o + 8]
   const b3 = -q[o + 9]
 
-  const det = a11 * (a22 * a33 - a23 * a23) - a12 * (a12 * a33 - a23 * a13) + a13 * (a12 * a23 - a22 * a13)
+  const det =
+    a11 * (a22 * a33 - a23 * a23) - a12 * (a12 * a33 - a23 * a13) + a13 * (a12 * a23 - a22 * a13)
   if (!Number.isFinite(det) || Math.abs(det) < 1e-12) return null
 
   const inv = 1 / det
-  const x = inv * (b1 * (a22 * a33 - a23 * a23) - a12 * (b2 * a33 - a23 * b3) + a13 * (b2 * a23 - a22 * b3))
-  const y = inv * (a11 * (b2 * a33 - a23 * b3) - b1 * (a12 * a33 - a23 * a13) + a13 * (a12 * b3 - b2 * a13))
-  const z = inv * (a11 * (a22 * b3 - b2 * a23) - a12 * (a12 * b3 - b2 * a13) + b1 * (a12 * a23 - a22 * a13))
+  const x =
+    inv * (b1 * (a22 * a33 - a23 * a23) - a12 * (b2 * a33 - a23 * b3) + a13 * (b2 * a23 - a22 * b3))
+  const y =
+    inv * (a11 * (b2 * a33 - a23 * b3) - b1 * (a12 * a33 - a23 * a13) + a13 * (a12 * b3 - b2 * a13))
+  const z =
+    inv * (a11 * (a22 * b3 - b2 * a23) - a12 * (a12 * b3 - b2 * a13) + b1 * (a12 * a23 - a22 * a13))
 
   if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) return null
   return [x, y, z]
@@ -1380,7 +1389,7 @@ function sharesFace(
   faceAlive: Uint8Array,
   indices: Uint32Array,
   u: number,
-  v: number
+  v: number,
 ): boolean {
   for (const f of vertFaces[u]) {
     if (!faceAlive[f]) continue
@@ -1424,7 +1433,7 @@ function sharesFace(
 export function decimateMesh(
   positions: Float32Array,
   targetTriangles: number = DEFAULT_SOLVER_TRIANGLES,
-  qualityFactor = 1e6
+  qualityFactor = 1e6,
 ): Float32Array {
   const triCount = positions.length / 9
   if (triCount <= targetTriangles) return positions // already small enough
@@ -1475,7 +1484,11 @@ export function decimateMesh(
     const mz = (pos[u * 3 + 2] + pos[v * 3 + 2]) / 2
     const opt = optimalPosition(merged, 0)
     if (!opt) return [mx, my, mz]
-    const maxTravel = Math.hypot(pos[u * 3] - pos[v * 3], pos[u * 3 + 1] - pos[v * 3 + 1], pos[u * 3 + 2] - pos[v * 3 + 2])
+    const maxTravel = Math.hypot(
+      pos[u * 3] - pos[v * 3],
+      pos[u * 3 + 1] - pos[v * 3 + 1],
+      pos[u * 3 + 2] - pos[v * 3 + 2],
+    )
     if (Math.hypot(opt[0] - mx, opt[1] - my, opt[2] - mz) > maxTravel) return [mx, my, mz]
     return opt
   }
@@ -1533,7 +1546,7 @@ export function decimateMesh(
     // Keep u's incident list from growing without bound.
     if (++sinceCompact > 512) {
       sinceCompact = 0
-      vertFaces[u] = vertFaces[u].filter(f => faceAlive[f])
+      vertFaces[u] = vertFaces[u].filter((f) => faceAlive[f])
     }
 
     for (const f of vertFaces[u]) {

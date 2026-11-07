@@ -1,0 +1,4 @@
+# Git EOL policy: everything text goes LF in the repo AND the worktree.
+# The index is already LF; this keeps fresh checkouts LF so `biome check`
+# (which writes LF) stays green instead of churning CRLF on every clone.
+* text=auto eol=lf

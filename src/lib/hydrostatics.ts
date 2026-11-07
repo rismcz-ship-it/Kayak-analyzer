@@ -13,10 +13,10 @@ import {
   computeVolumeAndCentroid,
   computeWaterlineBeamMm,
   computeWaterlineLengthMm,
-  isMeshUsableForHydrostatics,
-  decimateMesh,
   DEFAULT_SOLVER_TRIANGLES,
+  decimateMesh,
   findMaxSubmergedSection,
+  isMeshUsableForHydrostatics,
   type Vec3,
 } from './geometry'
 
@@ -49,7 +49,7 @@ export interface Draft0TrimResult {
   /** True when the bracket + verification volume closed on the target. */
   converged: boolean
   /** Block coefficient: Cb = V / (LWL × BWL × draft) */
-    Cb: number
+  Cb: number
   /**
    * Waterline length in mm, measured at the waterline. This is NOT the
    * bounding-box length: bow and stern sit clear of the water at any sane
@@ -59,36 +59,36 @@ export interface Draft0TrimResult {
   LWL: number
   /** Beam at the waterline in mm, measured the same way. Denominator of Cb and Cm. */
   BWL: number
-    /** Midship section area at the waterline, mm^2. */
-    midshipAreaMm2: number
-    /** Prismatic coefficient: Cp = V / (Am × LWL) */
-    Cp: number
-    /** Midship coefficient: Cm = Am / (BWL × draft) */
-      Cm: number
-      /** Keel to Buoyancy center (KB = LCB_z - keel_z) in mm */
-        KB: number
-        /** Metacentric radius (BM = Iₜ / V) in mm */
-        BM: number
-        /** Keel to Metacenter (KM = KB + BM) in mm */
-          KM: number
-          /** Metacentric height (GM = KM - KG) in mm */
-                    GM: number
-                    /** Bow freeboard: vertical distance from waterline to bow tip (+ = bow above water) */
-                    bowFreeboardMm: number
-                    /** Stern freeboard: vertical distance from waterline to stern tip (+ = stern above water) */
-                                        sternFreeboardMm: number
-                                        /** Heel angle applied during solve (radians → degrees for consistency) */
-                                        heelDeg: number
-                                        }
+  /** Midship section area at the waterline, mm^2. */
+  midshipAreaMm2: number
+  /** Prismatic coefficient: Cp = V / (Am × LWL) */
+  Cp: number
+  /** Midship coefficient: Cm = Am / (BWL × draft) */
+  Cm: number
+  /** Keel to Buoyancy center (KB = LCB_z - keel_z) in mm */
+  KB: number
+  /** Metacentric radius (BM = Iₜ / V) in mm */
+  BM: number
+  /** Keel to Metacenter (KM = KB + BM) in mm */
+  KM: number
+  /** Metacentric height (GM = KM - KG) in mm */
+  GM: number
+  /** Bow freeboard: vertical distance from waterline to bow tip (+ = bow above water) */
+  bowFreeboardMm: number
+  /** Stern freeboard: vertical distance from waterline to stern tip (+ = stern above water) */
+  sternFreeboardMm: number
+  /** Heel angle applied during solve (radians → degrees for consistency) */
+  heelDeg: number
+}
 
-          export interface GZPoint {
-          /** Heel angle in degrees (+ = starboard/right heel) */
-          heelDeg: number
-          /** Righting arm in mm */
-          GZ: number
-          }
+export interface GZPoint {
+  /** Heel angle in degrees (+ = starboard/right heel) */
+  heelDeg: number
+  /** Righting arm in mm */
+  GZ: number
+}
 
-          export interface TrimSolveResult {
+export interface TrimSolveResult {
   /** Equilibrium trim angle in degrees (+ = bow up, - = bow down). */
   trimDeg: number
   /** Equilibrium draft at hull center (above keel) in mm. */
@@ -103,10 +103,10 @@ export interface Draft0TrimResult {
   /** Center of Buoyancy in hull coordinates. */
   lcb: Vec3
   /** Target Center of Gravity in hull coordinates. */
-      lcg: Vec3
-      /** Rotation pivot used by solver (X, Y, Z). Matches applyPitchY pivot. */
-      pivot: { x: number; y: number; z: number }
-      /** Longitudinal offset between LCB and LCG (|LCB_x - LCG_x|) in mm. */
+  lcg: Vec3
+  /** Rotation pivot used by solver (X, Y, Z). Matches applyPitchY pivot. */
+  pivot: { x: number; y: number; z: number }
+  /** Longitudinal offset between LCB and LCG (|LCB_x - LCG_x|) in mm. */
   lcbLcgOffsetMm: number
   /** Waterplane area in mm^2. */
   waterplaneAreaMm2: number
@@ -114,7 +114,7 @@ export interface Draft0TrimResult {
   planesEvaluated: number
   converged: boolean
   /** Block coefficient: Cb = V / (LWL × BWL × draft) */
-    Cb: number
+  Cb: number
   /**
    * Waterline length in mm, measured at the waterline. This is NOT the
    * bounding-box length: bow and stern sit clear of the water at any sane
@@ -124,29 +124,29 @@ export interface Draft0TrimResult {
   LWL: number
   /** Beam at the waterline in mm, measured the same way. Denominator of Cb and Cm. */
   BWL: number
-    /** Midship section area at the waterline, mm^2. */
-    midshipAreaMm2: number
-    /** Prismatic coefficient: Cp = V / (Am × LWL) */
-    Cp: number
-    /** Midship coefficient: Cm = Am / (BWL × draft) */
-      Cm: number
-      /** Keel to Buoyancy center (KB = LCB_z - keel_z) in mm */
-        KB: number
-        /** Metacentric radius (BM = Iₜ / V) in mm */
-        BM: number
-        /** Keel to Metacenter (KM = KB + BM) in mm */
-        KM: number
-        /** Metacentric height (GM = KM - KG) in mm */
-        GM: number
-        /** Righting arm curve points at standard heel angles (0°, 5°, 10°, 15°, 20°, 25°, 30°) */
-                        gzCurve: GZPoint[]
-                        /** Bow freeboard: vertical distance from waterline to bow tip (+ = bow above water) */
-                        bowFreeboardMm: number
-                        /** Stern freeboard: vertical distance from waterline to stern tip (+ = stern above water) */
-                        sternFreeboardMm: number
-                        /** Fixed heel angle used in solver (degrees). + = starboard down. */
-                        heelDeg: number
-                      }
+  /** Midship section area at the waterline, mm^2. */
+  midshipAreaMm2: number
+  /** Prismatic coefficient: Cp = V / (Am × LWL) */
+  Cp: number
+  /** Midship coefficient: Cm = Am / (BWL × draft) */
+  Cm: number
+  /** Keel to Buoyancy center (KB = LCB_z - keel_z) in mm */
+  KB: number
+  /** Metacentric radius (BM = Iₜ / V) in mm */
+  BM: number
+  /** Keel to Metacenter (KM = KB + BM) in mm */
+  KM: number
+  /** Metacentric height (GM = KM - KG) in mm */
+  GM: number
+  /** Righting arm curve points at standard heel angles (0°, 5°, 10°, 15°, 20°, 25°, 30°) */
+  gzCurve: GZPoint[]
+  /** Bow freeboard: vertical distance from waterline to bow tip (+ = bow above water) */
+  bowFreeboardMm: number
+  /** Stern freeboard: vertical distance from waterline to stern tip (+ = stern above water) */
+  sternFreeboardMm: number
+  /** Fixed heel angle used in solver (degrees). + = starboard down. */
+  heelDeg: number
+}
 
 /** Standard heel angles to sample for the GZ curve (degrees). */
 export const DEFAULT_GZ_HEEL_ANGLES_DEG = [0, 5, 10, 15, 20, 25, 30, 35, 40, 45]
@@ -273,10 +273,7 @@ function signedVolumeMm3(positions: ArrayLike<number>): number {
     const cx = positions[i + 6]
     const cy = positions[i + 7]
     const cz = positions[i + 8]
-    sum +=
-      ax * (by * cz - bz * cy) +
-      ay * (bz * cx - bx * cz) +
-      az * (bx * cy - by * cx)
+    sum += ax * (by * cz - bz * cy) + ay * (bz * cx - bx * cz) + az * (bx * cy - by * cx)
   }
   return sum / 6
 }
@@ -327,17 +324,27 @@ export function clipBelowPlane(positions: Float32Array, h: number): ClippedBelow
   let waterplaneIx = 0
 
   const pushTri = (
-    ax: number, ay: number, az: number,
-    bx: number, by: number, bz: number,
-    cx: number, cy: number, cz: number,
+    ax: number,
+    ay: number,
+    az: number,
+    bx: number,
+    by: number,
+    bz: number,
+    cx: number,
+    cy: number,
+    cz: number,
   ) => {
     out.push(ax, ay, az, bx, by, bz, cx, cy, cz)
   }
 
   // Intersection of edge p->q with the plane z=h (caller guarantees straddle).
   const ix = (
-    ax: number, ay: number, az: number,
-    bx: number, by: number, bz: number,
+    ax: number,
+    ay: number,
+    az: number,
+    bx: number,
+    by: number,
+    bz: number,
   ): [number, number] => {
     // Both endpoints can sit exactly in the cutting plane (a facet coplanar
     // with the waterline, which happens routinely on a heeled hull). That
@@ -513,43 +520,43 @@ export function clipBelowPlane(positions: Float32Array, h: number): ClippedBelow
     }
 
     for (const pts of loops) {
-          let signedArea = 0
-          let Ix = 0 // second moment of area about the X axis through Y=0
-          for (let k = 0; k < pts.length; k++) {
-            const p = pts[k]
-            const q = pts[(k + 1) % pts.length]
-            const cross = p.x * q.y - q.x * p.y
-            signedArea += cross
-            // I contribution for this edge: (y₁² + y₁y₂ + y₂²) * (x₁y₂ - x₂y₁) / 12
-            Ix += (p.y * p.y + p.y * q.y + q.y * q.y) * cross
-          }
-          signedArea /= 2
-          if (Math.abs(signedArea) < 1e-9) continue
-          const A = Math.abs(signedArea)
+      let signedArea = 0
+      let Ix = 0 // second moment of area about the X axis through Y=0
+      for (let k = 0; k < pts.length; k++) {
+        const p = pts[k]
+        const q = pts[(k + 1) % pts.length]
+        const cross = p.x * q.y - q.x * p.y
+        signedArea += cross
+        // I contribution for this edge: (y₁² + y₁y₂ + y₂²) * (x₁y₂ - x₂y₁) / 12
+        Ix += (p.y * p.y + p.y * q.y + q.y * q.y) * cross
+      }
+      signedArea /= 2
+      if (Math.abs(signedArea) < 1e-9) continue
+      const A = Math.abs(signedArea)
 
-          // Shoelace area centroid. Needed for the parallel-axis correction
-          // below AND for the cap fan, so it must be computed before either.
-          let mcx = 0
-          let mcy = 0
-          for (let k = 0; k < pts.length; k++) {
-            const p = pts[k]
-            const q = pts[(k + 1) % pts.length]
-            const cross = p.x * q.y - q.x * p.y
-            mcx += (p.x + q.x) * cross
-            mcy += (p.y + q.y) * cross
-          }
-          const sixA = 6 * signedArea
-          const cx = sixA !== 0 ? mcx / sixA : 0
-          const cy = sixA !== 0 ? mcy / sixA : 0
+      // Shoelace area centroid. Needed for the parallel-axis correction
+      // below AND for the cap fan, so it must be computed before either.
+      let mcx = 0
+      let mcy = 0
+      for (let k = 0; k < pts.length; k++) {
+        const p = pts[k]
+        const q = pts[(k + 1) % pts.length]
+        const cross = p.x * q.y - q.x * p.y
+        mcx += (p.x + q.x) * cross
+        mcy += (p.y + q.y) * cross
+      }
+      const sixA = 6 * signedArea
+      const cx = sixA !== 0 ? mcx / sixA : 0
+      const cy = sixA !== 0 ? mcy / sixA : 0
 
-          waterplaneAreaMm2 += A
-          // Parallel axis theorem: I(Y=0) = I_c + A·y_c², so the centroidal
-          // second moment is I(Y=0) − A·y_c². Without this the value carries a
-          // spurious A·y_c² term whenever the waterplane sits off the
-          // centreline — i.e. at heel, or on an asymmetric hull.
-          // The shoelace cross product flips sign with the loop's winding, so
-          // abs() each loop's Ix; the correction term is already unsigned.
-          waterplaneIx += Math.max(0, Math.abs(Ix) / 12 - A * cy * cy)
+      waterplaneAreaMm2 += A
+      // Parallel axis theorem: I(Y=0) = I_c + A·y_c², so the centroidal
+      // second moment is I(Y=0) − A·y_c². Without this the value carries a
+      // spurious A·y_c² term whenever the waterplane sits off the
+      // centreline — i.e. at heel, or on an asymmetric hull.
+      // The shoelace cross product flips sign with the loop's winding, so
+      // abs() each loop's Ix; the correction term is already unsigned.
+      waterplaneIx += Math.max(0, Math.abs(Ix) / 12 - A * cy * cy)
       // Fan needs CCW order for a +Z (outward) cap, CW for inward.
       const wantCCW = outward
       const isCCW = signedArea > 0
@@ -562,7 +569,12 @@ export function clipBelowPlane(positions: Float32Array, h: number): ClippedBelow
     }
   }
 
-  return { clipped: new Float32Array(out), waterplaneAreaMm2, waterplaneIx, waterplaneLoopCount: loops.length }
+  return {
+    clipped: new Float32Array(out),
+    waterplaneAreaMm2,
+    waterplaneIx,
+    waterplaneLoopCount: loops.length,
+  }
 }
 
 /**
@@ -612,7 +624,11 @@ export function volumeBelowPlane(positions: Float32Array, h: number): number {
  *
  * @throws when the target is non-positive or exceeds the hull's total volume.
  */
-function solve_draft_lcb(mesh: MeshLike, target_kg: number, heelRad?: number): {
+function solve_draft_lcb(
+  mesh: MeshLike,
+  target_kg: number,
+  heelRad?: number,
+): {
   draftMm: number
   waterlineZ: number
   displacedVolumeMm3: number
@@ -707,7 +723,12 @@ function solve_draft_lcb(mesh: MeshLike, target_kg: number, heelRad?: number): {
   }
 }
 
-export function find_draft_0trim(mesh: MeshLike, target_kg: number, KG?: number, heelRad?: number): Draft0TrimResult {
+export function find_draft_0trim(
+  mesh: MeshLike,
+  target_kg: number,
+  KG?: number,
+  heelRad?: number,
+): Draft0TrimResult {
   const positions = toPositions(mesh)
   if (positions.length === 0) throw new Error('find_draft_0trim: empty mesh')
   if (!Number.isFinite(target_kg) || target_kg <= 0) {
@@ -731,7 +752,7 @@ export function find_draft_0trim(mesh: MeshLike, target_kg: number, KG?: number,
     for (let i = 0; i < positions.length; i += 3) {
       const y = positions[i + 1] - pivot.center.y
       const z = positions[i + 2] - pivot.center.z
-      workingPositions[i] = positions[i]                 // X unchanged
+      workingPositions[i] = positions[i] // X unchanged
       workingPositions[i + 1] = y * cosH - z * sinH + pivot.center.y
       workingPositions[i + 2] = y * sinH + z * cosH + pivot.center.z
     }
@@ -751,206 +772,222 @@ export function find_draft_0trim(mesh: MeshLike, target_kg: number, KG?: number,
   }
 
   const stepMm = 1
-    let planesEvaluated = 0
+  let planesEvaluated = 0
 
-    // Volume at the deck plane (h = maxZ) is the total hull volume.
-    const upperH = maxZ
-    const upperV = volumeBelowPlane(workingPositions, upperH)
+  // Volume at the deck plane (h = maxZ) is the total hull volume.
+  const upperH = maxZ
+  const upperV = volumeBelowPlane(workingPositions, upperH)
+  planesEvaluated++
+
+  // Degenerate case: target equals total volume — floating at the deck edge.
+  if (upperV <= targetVolumeMm3) {
+    const { clipped, waterplaneAreaMm2, waterplaneIx } = clipBelowPlane(workingPositions, upperH)
+    const { centroid: lcb } = computeVolumeAndCentroid(clipped)
+    const draftMm = maxZ - minZ
+    const LWL = computeWaterlineLengthMm(workingPositions, upperH) || bounds.size.x
+    const BWL = computeWaterlineBeamMm(workingPositions, upperH) || bounds.size.y
+    const boxVolumeMm3 = LWL * BWL * draftMm
+    const Cb = boxVolumeMm3 > 0 ? upperV / boxVolumeMm3 : 0
+    // Max submerged section + the rectangle it fits in (station-matched)
+    const maxSection = findMaxSubmergedSection(workingPositions, bounds.min.x, bounds.max.x, upperH)
+    const midshipAreaMm2 = maxSection.areaMm2
+    const Cp = midshipAreaMm2 > 0 && LWL > 0 ? upperV / (midshipAreaMm2 * LWL) : 0
+    // Cm = Am / (beam at that station x depth at that station)
+    const cmRect = maxSection.beamMm * maxSection.depthMm
+    const Cm = cmRect > 0 ? midshipAreaMm2 / cmRect : 0
+    // Keel to Buoyancy center: KB = LCB_z - keel_z
+    const KB = lcb.z - minZ
+    // Metacentric radius: BM = Iₜ / V
+    const BM = waterplaneIx > 0 ? waterplaneIx / upperV : 0
+    // Keel to Metacenter: KM = KB + BM
+    const KM = KB + BM
+    // Metacentric height: GM = KM - KG (if KG provided)
+    const GM = typeof KG === 'number' ? KM - KG : 0
+    // Freeboard at bow/stern: find actual bow/stern tip Z from mesh vertices (zero trim)
+    let bowX = -Infinity
+    let sternX = Infinity
+    let bowZ = 0
+    let sternZ = 0
+    for (let i = 0; i < workingPositions.length; i += 9) {
+      for (const vx of [i, i + 3, i + 6]) {
+        const x = workingPositions[vx]
+        const z = workingPositions[vx + 2]
+        if (x > bowX) {
+          bowX = x
+          bowZ = z
+        }
+        if (x < sternX) {
+          sternX = x
+          sternZ = z
+        }
+      }
+    }
+    const waterlineAtBow = maxZ - bowX * Math.tan(0)
+    const waterlineAtStern = maxZ - sternX * Math.tan(0)
+    const bowFreeboardMm = bowZ - waterlineAtBow
+    const sternFreeboardMm = sternZ - waterlineAtStern
+    return {
+      draftMm,
+      waterlineZ: maxZ,
+      displacedVolumeMm3: upperV,
+      displacementKg: upperV / MM3_PER_KG,
+      targetKg: target_kg,
+      lcb,
+      waterplaneAreaMm2,
+      stepMm,
+      planesEvaluated,
+      converged: Math.abs(upperV - targetVolumeMm3) / targetVolumeMm3 < 1e-6,
+      Cb: Number(Cb.toFixed(4)),
+      /** Waterline length in mm, measured at the waterline (not the bounding box). */
+      LWL: Number(LWL.toFixed(1)),
+      /** Beam at the waterline in mm. */
+      BWL: Number(BWL.toFixed(1)),
+      midshipAreaMm2: Number(midshipAreaMm2.toFixed(1)),
+      Cp: Number(Cp.toFixed(4)),
+      Cm: Number(Cm.toFixed(4)),
+      KB: Number(KB.toFixed(1)),
+      BM: Number(BM.toFixed(1)),
+      KM: Number(KM.toFixed(1)),
+      GM: Number(GM.toFixed(1)),
+      bowFreeboardMm: Number(bowFreeboardMm.toFixed(1)),
+      sternFreeboardMm: Number(sternFreeboardMm.toFixed(1)),
+      heelDeg: heelRad ? (heelRad * 180) / Math.PI : 0,
+    }
+  }
+
+  // Binary search: find waterline Z so volumeBelowPlane(workingPositions, Z) ≈ target.
+  // V(h) decreases monotonically as h drops from maxZ to minZ, so bisection
+  // converges quickly. Bracket phase steps down in 10 mm increments, then bisects.
+  let lo = minZ
+  let hi = upperH
+  let waterlineZ = upperH
+
+  // Bracket: coarse scan to narrow the range to a 10mm window.
+  for (let h = maxZ - 10; h >= minZ; h -= 10) {
+    const v = volumeBelowPlane(workingPositions, h)
     planesEvaluated++
+    if (v <= targetVolumeMm3) {
+      hi = h + 10 // upper bound (just above the crossing)
+      lo = h // lower bound (just below)
+      break
+    }
+    waterlineZ = h // keep stepping; still above target
+  }
 
-    // Degenerate case: target equals total volume — floating at the deck edge.
-                if (upperV <= targetVolumeMm3) {
-                  const { clipped, waterplaneAreaMm2, waterplaneIx } = clipBelowPlane(workingPositions, upperH)
-                  const { centroid: lcb } = computeVolumeAndCentroid(clipped)
-                                            const draftMm = maxZ - minZ
-                                            const LWL = computeWaterlineLengthMm(workingPositions, upperH) || bounds.size.x
-                                            const BWL = computeWaterlineBeamMm(workingPositions, upperH) || bounds.size.y
-                                            const boxVolumeMm3 = LWL * BWL * draftMm
-                                            const Cb = boxVolumeMm3 > 0 ? upperV / boxVolumeMm3 : 0
-                                            // Max submerged section + the rectangle it fits in (station-matched)
-                                            const maxSection = findMaxSubmergedSection(workingPositions, bounds.min.x, bounds.max.x, upperH)
-                                            const midshipAreaMm2 = maxSection.areaMm2
-                                            const Cp = (midshipAreaMm2 > 0 && LWL > 0) ? upperV / (midshipAreaMm2 * LWL) : 0
-                                            // Cm = Am / (beam at that station x depth at that station)
-                                            const cmRect = maxSection.beamMm * maxSection.depthMm
-                                            const Cm = cmRect > 0 ? midshipAreaMm2 / cmRect : 0
-                                            // Keel to Buoyancy center: KB = LCB_z - keel_z
-                                                                                                                                const KB = lcb.z - minZ
-                                                                                                                                                                          // Metacentric radius: BM = Iₜ / V
-                                                                                                                                                                          const BM = waterplaneIx > 0 ? waterplaneIx / upperV : 0
-                                                                                                                                                                          // Keel to Metacenter: KM = KB + BM
-                                                                                                                                                                                                                                                                                                        const KM = KB + BM
-                                                                                                                                                                                                                                                                                                        // Metacentric height: GM = KM - KG (if KG provided)
-                                                                                                                                                                                                                                                                                                        const GM = (typeof KG === 'number') ? KM - KG : 0
-                                                                                                                                                                                                                                                                                                        // Freeboard at bow/stern: find actual bow/stern tip Z from mesh vertices (zero trim)
-                                                                                                                                                                                                                                                                                                        let bowX = -Infinity
-                                                                                                                                                                                                                                                                                                        let sternX = Infinity
-                                                                                                                                                                                                                                                                                                        let bowZ = 0
-                                                                                                                                                                                                                                                                                                        let sternZ = 0
-                                                                                                                                                                                                                                                                                                        for (let i = 0; i < workingPositions.length; i += 9) {
-                                                                                                                                                                                                                                                                                                            for (const vx of [i, i + 3, i + 6]) {
-                                                                                                                                                                                                                                                                                                                const x = workingPositions[vx]
-                                                                                                                                                                                                                                                                                                                const z = workingPositions[vx + 2]
-                                                                                                                                                                                                                                                                                                                if (x > bowX) { bowX = x; bowZ = z }
-                                                                                                                                                                                                                                                                                                                if (x < sternX) { sternX = x; sternZ = z }
-                                                                                                                                                                                                                                                                                                            }
-                                                                                                                                                                                                                                                                                                        }
-                                                                                                                                                                                                                                                                                                        const waterlineAtBow = maxZ - bowX * Math.tan(0)
-                                                                                                                                                                                                                                                                                                        const waterlineAtStern = maxZ - sternX * Math.tan(0)
-                                                                                                                                                                                                                                                                                                        const bowFreeboardMm = bowZ - waterlineAtBow
-                                                                                                                                                                                                                                                                                                        const sternFreeboardMm = sternZ - waterlineAtStern
-                                                                                                                                                                                                                                                                                                        return {
-                                                                                                                                                                            draftMm,
-                                                                                                                                                                            waterlineZ: maxZ,
-                                                                                                                                                                            displacedVolumeMm3: upperV,
-                                                                                                                                                                            displacementKg: upperV / MM3_PER_KG,
-                                                                                                                                                                            targetKg: target_kg,
-                                                                                                                                                                            lcb,
-                                                                                                                                                                            waterplaneAreaMm2,
-                                                                                                                                                                            stepMm,
-                                                                                                                                                                          planesEvaluated,
-                                                                                                                                                                          converged: Math.abs(upperV - targetVolumeMm3) / targetVolumeMm3 < 1e-6,
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        Cb: Number(Cb.toFixed(4)),
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        /** Waterline length in mm, measured at the waterline (not the bounding box). */
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        LWL: Number(LWL.toFixed(1)),
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        /** Beam at the waterline in mm. */
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        BWL: Number(BWL.toFixed(1)),
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        midshipAreaMm2: Number(midshipAreaMm2.toFixed(1)),
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        Cp: Number(Cp.toFixed(4)),
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        Cm: Number(Cm.toFixed(4)),
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        KB: Number(KB.toFixed(1)),
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        BM: Number(BM.toFixed(1)),
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        KM: Number(KM.toFixed(1)),
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        GM: Number(GM.toFixed(1)),
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                bowFreeboardMm: Number(bowFreeboardMm.toFixed(1)),
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                sternFreeboardMm: Number(sternFreeboardMm.toFixed(1)),
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                heelDeg: heelRad ? (heelRad * 180 / Math.PI) : 0,
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              }
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      }
+  // Bisect to sub-millimetre precision.
+  // Note: volumeBelowPlane increases with higher Z (more of hull is submerged below plane).
+  // So if v < targetVolume, we need higher Z (lo = mid).
+  // If v > targetVolume, we need lower Z (hi = mid).
+  for (let iter = 0; iter < 16; iter++) {
+    const mid = (lo + hi) / 2
+    const v = volumeBelowPlane(workingPositions, mid)
+    planesEvaluated++
+    if (v < targetVolumeMm3) {
+      lo = mid
+    } else {
+      hi = mid
+    }
+    waterlineZ = mid
+    if (hi - lo < 0.05) break // sub-mm convergence (0.05 mm window)
+  }
 
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                // Binary search: find waterline Z so volumeBelowPlane(workingPositions, Z) ≈ target.
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  // V(h) decreases monotonically as h drops from maxZ to minZ, so bisection
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  // converges quickly. Bracket phase steps down in 10 mm increments, then bisects.
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  let lo = minZ
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  let hi = upperH
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  let waterlineZ = upperH
+  // Verification pass: clip exactly at the interpolated waterline so the
+  // returned displacement is a measured mesh volume, not the interpolation.
+  const { clipped, waterplaneAreaMm2, waterplaneIx } = clipBelowPlane(workingPositions, waterlineZ)
+  const { volumeMm3: verifiedVolumeMm3, centroid: lcb } = computeVolumeAndCentroid(clipped)
+  planesEvaluated += 1
 
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  // Bracket: coarse scan to narrow the range to a 10mm window.
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  for (let h = maxZ - 10; h >= minZ; h -= 10) {
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    const v = volumeBelowPlane(workingPositions, h)
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    planesEvaluated++
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    if (v <= targetVolumeMm3) {
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      hi = h + 10 // upper bound (just above the crossing)
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      lo = h     // lower bound (just below)
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      break
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    }
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    waterlineZ = h // keep stepping; still above target
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  }
+  // Force transverse symmetry: LCB Y = hull centerline
+  const boundsForLcb = computeBounds(workingPositions)
+  lcb.y = boundsForLcb.center.y
 
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                // Bisect to sub-millimetre precision.
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  // Note: volumeBelowPlane increases with higher Z (more of hull is submerged below plane).
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  // So if v < targetVolume, we need higher Z (lo = mid).
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  // If v > targetVolume, we need lower Z (hi = mid).
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  for (let iter = 0; iter < 16; iter++) {
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    const mid = (lo + hi) / 2
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    const v = volumeBelowPlane(workingPositions, mid)
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    planesEvaluated++
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    if (v < targetVolumeMm3) {
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      lo = mid
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    } else {
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      hi = mid
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    }
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    waterlineZ = mid
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    if (hi - lo < 0.05) break // sub-mm convergence (0.05 mm window)
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  }
+  const displacementKg = verifiedVolumeMm3 / MM3_PER_KG
+  const relErr = Math.abs(verifiedVolumeMm3 - targetVolumeMm3) / targetVolumeMm3
 
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                // Verification pass: clip exactly at the interpolated waterline so the
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  // returned displacement is a measured mesh volume, not the interpolation.
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  const { clipped, waterplaneAreaMm2, waterplaneIx } = clipBelowPlane(workingPositions, waterlineZ)
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    const { volumeMm3: verifiedVolumeMm3, centroid: lcb } =
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      computeVolumeAndCentroid(clipped)
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    planesEvaluated += 1
-
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    // Force transverse symmetry: LCB Y = hull centerline
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    const boundsForLcb = computeBounds(workingPositions)
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    lcb.y = boundsForLcb.center.y
-
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    const displacementKg = verifiedVolumeMm3 / MM3_PER_KG
-        const relErr = Math.abs(verifiedVolumeMm3 - targetVolumeMm3) / targetVolumeMm3
-
-        // Compute Block Coefficient (Cb): Cb = V / (LWL × BWL × draft)
-              // LWL: length of the ACTUAL waterline (x-extent at waterlineZ).
-              //      Using the bounding box here overstates the length — the bow
-              //      and stern sit clear of the water at any sane load.
-              // BWL: mean waterline beam = waterplane area / LWL
-              // draft: draft above keel
-              const draftMm = waterlineZ - minZ
-              const LWL = computeWaterlineLengthMm(workingPositions, waterlineZ) || bounds.size.x
-              const BWL = computeWaterlineBeamMm(workingPositions, waterlineZ) || bounds.size.y
-              const boxVolumeMm3 = LWL * BWL * draftMm
-              const Cb = boxVolumeMm3 > 0 ? verifiedVolumeMm3 / boxVolumeMm3 : 0
-              // Midship section area and Prismatic Coefficient
-                                                            // Max SUBMERGED section + the rectangle it fits in.
-                                                            // Cm's denominator must come from the same station as
-                                                            // the numerator, or Cm exceeds 1 (physically impossible).
-                                                            const maxSection = findMaxSubmergedSection(workingPositions, bounds.min.x, bounds.max.x, waterlineZ)
-                                                            const midshipAreaMm2 = maxSection.areaMm2
-                                      const Cp = (midshipAreaMm2 > 0 && LWL > 0) ? verifiedVolumeMm3 / (midshipAreaMm2 * LWL) : 0
-                                      // Midship coefficient: Am / (station beam x station depth)
-                                      const cmRect = maxSection.beamMm * maxSection.depthMm
-                                      const Cm = cmRect > 0 ? midshipAreaMm2 / cmRect : 0
-                                      // Keel to Buoyancy center: KB = LCB_z - keel_z
-                                                                            const KB = lcb.z - minZ
-                                                                                                                  // Metacentric radius: BM = Iₜ / V
-                                                                                                                                                        const BM = waterplaneIx > 0 ? waterplaneIx / verifiedVolumeMm3 : 0
-                                                                                                                                                        // Keel to Metacenter: KM = KB + BM
-                                                                                                                                                                                                                                    const KM = KB + BM
-                                                                                                                                                                                                                                    // Metacentric height: GM = KM - KG (if KG provided)
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                        const GM = (typeof KG === 'number') ? KM - KG : 0
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                        // Freeboard at bow/stern: find actual bow/stern tip Z from mesh vertices (zero trim)
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                let bowX = -Infinity
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                let sternX = Infinity
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                let bowZ = 0
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                let sternZ = 0
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                for (let i = 0; i < workingPositions.length; i += 9) {
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    for (const vx of [i, i + 3, i + 6]) {
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        const x = workingPositions[vx]
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        const z = workingPositions[vx + 2]
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        if (x > bowX) { bowX = x; bowZ = z }
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        if (x < sternX) { sternX = x; sternZ = z }
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    }
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                }
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                        const waterlineAtBow = waterlineZ - bowX * Math.tan(0)
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                        const waterlineAtStern = waterlineZ - sternX * Math.tan(0)
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                        const bowFreeboardMm = bowZ - waterlineAtBow
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                        const sternFreeboardMm = sternZ - waterlineAtStern
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                        return {
-                                                                                                                                                          draftMm,
-                                                                                                                                                          waterlineZ,
-                                                                                                                                                          displacedVolumeMm3: verifiedVolumeMm3,
-                                                                                                                                                          displacementKg,
-                                                                                                                                                          targetKg: target_kg,
-                                                                                                                                                          lcb,
-                                                                                                                                                          waterplaneAreaMm2,
-                                                                                                                                                          stepMm,
-                                                                                                                                                          planesEvaluated,
-                                                                                                                                                          converged: relErr < 0.01,
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                              Cb: Number(Cb.toFixed(4)),
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        /** Waterline length in mm, measured at the waterline (not the bounding box). */
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        LWL: Number(LWL.toFixed(1)),
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        /** Beam at the waterline in mm. */
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        BWL: Number(BWL.toFixed(1)),
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                              midshipAreaMm2: Number(midshipAreaMm2.toFixed(1)),
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                              Cp: Number(Cp.toFixed(4)),
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                              Cm: Number(Cm.toFixed(4)),
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                              KB: Number(KB.toFixed(1)),
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                              BM: Number(BM.toFixed(1)),
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                              KM: Number(KM.toFixed(1)),
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                              GM: Number(GM.toFixed(1)),
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      bowFreeboardMm: Number(bowFreeboardMm.toFixed(1)),
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      sternFreeboardMm: Number(sternFreeboardMm.toFixed(1)),
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      heelDeg: heelRad ? (heelRad * 180 / Math.PI) : 0,
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    }
+  // Compute Block Coefficient (Cb): Cb = V / (LWL × BWL × draft)
+  // LWL: length of the ACTUAL waterline (x-extent at waterlineZ).
+  //      Using the bounding box here overstates the length — the bow
+  //      and stern sit clear of the water at any sane load.
+  // BWL: mean waterline beam = waterplane area / LWL
+  // draft: draft above keel
+  const draftMm = waterlineZ - minZ
+  const LWL = computeWaterlineLengthMm(workingPositions, waterlineZ) || bounds.size.x
+  const BWL = computeWaterlineBeamMm(workingPositions, waterlineZ) || bounds.size.y
+  const boxVolumeMm3 = LWL * BWL * draftMm
+  const Cb = boxVolumeMm3 > 0 ? verifiedVolumeMm3 / boxVolumeMm3 : 0
+  // Midship section area and Prismatic Coefficient
+  // Max SUBMERGED section + the rectangle it fits in.
+  // Cm's denominator must come from the same station as
+  // the numerator, or Cm exceeds 1 (physically impossible).
+  const maxSection = findMaxSubmergedSection(
+    workingPositions,
+    bounds.min.x,
+    bounds.max.x,
+    waterlineZ,
+  )
+  const midshipAreaMm2 = maxSection.areaMm2
+  const Cp = midshipAreaMm2 > 0 && LWL > 0 ? verifiedVolumeMm3 / (midshipAreaMm2 * LWL) : 0
+  // Midship coefficient: Am / (station beam x station depth)
+  const cmRect = maxSection.beamMm * maxSection.depthMm
+  const Cm = cmRect > 0 ? midshipAreaMm2 / cmRect : 0
+  // Keel to Buoyancy center: KB = LCB_z - keel_z
+  const KB = lcb.z - minZ
+  // Metacentric radius: BM = Iₜ / V
+  const BM = waterplaneIx > 0 ? waterplaneIx / verifiedVolumeMm3 : 0
+  // Keel to Metacenter: KM = KB + BM
+  const KM = KB + BM
+  // Metacentric height: GM = KM - KG (if KG provided)
+  const GM = typeof KG === 'number' ? KM - KG : 0
+  // Freeboard at bow/stern: find actual bow/stern tip Z from mesh vertices (zero trim)
+  let bowX = -Infinity
+  let sternX = Infinity
+  let bowZ = 0
+  let sternZ = 0
+  for (let i = 0; i < workingPositions.length; i += 9) {
+    for (const vx of [i, i + 3, i + 6]) {
+      const x = workingPositions[vx]
+      const z = workingPositions[vx + 2]
+      if (x > bowX) {
+        bowX = x
+        bowZ = z
+      }
+      if (x < sternX) {
+        sternX = x
+        sternZ = z
+      }
+    }
+  }
+  const waterlineAtBow = waterlineZ - bowX * Math.tan(0)
+  const waterlineAtStern = waterlineZ - sternX * Math.tan(0)
+  const bowFreeboardMm = bowZ - waterlineAtBow
+  const sternFreeboardMm = sternZ - waterlineAtStern
+  return {
+    draftMm,
+    waterlineZ,
+    displacedVolumeMm3: verifiedVolumeMm3,
+    displacementKg,
+    targetKg: target_kg,
+    lcb,
+    waterplaneAreaMm2,
+    stepMm,
+    planesEvaluated,
+    converged: relErr < 0.01,
+    Cb: Number(Cb.toFixed(4)),
+    /** Waterline length in mm, measured at the waterline (not the bounding box). */
+    LWL: Number(LWL.toFixed(1)),
+    /** Beam at the waterline in mm. */
+    BWL: Number(BWL.toFixed(1)),
+    midshipAreaMm2: Number(midshipAreaMm2.toFixed(1)),
+    Cp: Number(Cp.toFixed(4)),
+    Cm: Number(Cm.toFixed(4)),
+    KB: Number(KB.toFixed(1)),
+    BM: Number(BM.toFixed(1)),
+    KM: Number(KM.toFixed(1)),
+    GM: Number(GM.toFixed(1)),
+    bowFreeboardMm: Number(bowFreeboardMm.toFixed(1)),
+    sternFreeboardMm: Number(sternFreeboardMm.toFixed(1)),
+    heelDeg: heelRad ? (heelRad * 180) / Math.PI : 0,
+  }
 }
 
 /**
@@ -1064,9 +1101,7 @@ export function solve_trim(
   // to the original mesh whenever the decimation is not clean. The original
   // is only ~40k triangles, which the solver handles comfortably.
   const decimated = decimateMesh(positions, DEFAULT_SOLVER_TRIANGLES)
-  const solveMesh = isMeshUsableForHydrostatics(decimated)
-    ? decimated
-    : positions
+  const solveMesh = isMeshUsableForHydrostatics(decimated) ? decimated : positions
   if (solveMesh !== decimated) {
     console.warn(
       `solve_trim: decimation produced an unusable mesh; ` +
@@ -1074,44 +1109,50 @@ export function solve_trim(
     )
   }
 
-    const bounds = computeBounds(solveMesh)
-    const lengthX = bounds.size.x
-    const bowX = bounds.max.x
-    const sternX = bounds.min.x
+  const bounds = computeBounds(solveMesh)
+  const lengthX = bounds.size.x
+  const bowX = bounds.max.x
+  const sternX = bounds.min.x
 
-    // Find bow/stern tip Z from ORIGINAL mesh (before decimation)
-    let bowTipZ = 0
-    let sternTipZ = 0
-    let maxX = -Infinity
-    let minX = Infinity
-    for (let i = 0; i < positions.length; i += 9) {
-      for (const vx of [i, i + 3, i + 6]) {
-        const x = positions[vx]
-        const z = positions[vx + 2]
-        if (x > maxX) { maxX = x; bowTipZ = z }
-        if (x < minX) { minX = x; sternTipZ = z }
+  // Find bow/stern tip Z from ORIGINAL mesh (before decimation)
+  let bowTipZ = 0
+  let sternTipZ = 0
+  let maxX = -Infinity
+  let minX = Infinity
+  for (let i = 0; i < positions.length; i += 9) {
+    for (const vx of [i, i + 3, i + 6]) {
+      const x = positions[vx]
+      const z = positions[vx + 2]
+      if (x > maxX) {
+        maxX = x
+        bowTipZ = z
+      }
+      if (x < minX) {
+        minX = x
+        sternTipZ = z
       }
     }
+  }
 
-    const targetLcgPercent = options?.targetLcgPercentFromBow ?? 52
-        // Bow is at max X; stern is at min X
-        const targetLcgX = bowX - (targetLcgPercent / 100) * lengthX
-        // KG is a HEIGHT above the keel, which is what find_draft_0trim expects
-        // (it computes KM - KG). LCG's world-Z is the same point expressed as an
-        // absolute coordinate, so it is bounds.min.z + KG.
-        //
-        // Passing `lcg.z` here as the KG argument was a unit bug: it handed the
-        // absolute height (117.47 on the test hull) to a function expecting a
-        // height above the keel (280). That silently shortened KG by |min.z|, which
-        // inflated every reported KM/GM by 162.5 mm — GM read 272.9 instead of
-        // 110.4, and no test caught it because every suite passed `undefined` for
-        // KG, leaving GM = 0.
-        const KG_MM = 280
-        const lcg: Vec3 = {
-          x: targetLcgX,
-          y: bounds.center.y,
-          z: bounds.min.z + KG_MM, // Default KG 280mm above keel
-        }
+  const targetLcgPercent = options?.targetLcgPercentFromBow ?? 52
+  // Bow is at max X; stern is at min X
+  const targetLcgX = bowX - (targetLcgPercent / 100) * lengthX
+  // KG is a HEIGHT above the keel, which is what find_draft_0trim expects
+  // (it computes KM - KG). LCG's world-Z is the same point expressed as an
+  // absolute coordinate, so it is bounds.min.z + KG.
+  //
+  // Passing `lcg.z` here as the KG argument was a unit bug: it handed the
+  // absolute height (117.47 on the test hull) to a function expecting a
+  // height above the keel (280). That silently shortened KG by |min.z|, which
+  // inflated every reported KM/GM by 162.5 mm — GM read 272.9 instead of
+  // 110.4, and no test caught it because every suite passed `undefined` for
+  // KG, leaving GM = 0.
+  const KG_MM = 280
+  const lcg: Vec3 = {
+    x: targetLcgX,
+    y: bounds.center.y,
+    z: bounds.min.z + KG_MM, // Default KG 280mm above keel
+  }
 
   const maxTrimDeg = options?.maxTrimDeg ?? 3.5
   const fineStepDeg = options?.trimStepDeg ?? 0.1
@@ -1200,55 +1241,66 @@ export function solve_trim(
   }
 
   if (!bestResult) {
-                    const fallback = find_draft_0trim(solveMesh, target_kg, KG_MM, fixedHeelRad)
-                    bestResult = {
-                      ...fallback,
-                                lcb: { ...fallback.lcb, y: bounds.center.y }, // Force centerline
-                                Cb: fallback.Cb,
-                                LWL: fallback.LWL,
-                                BWL: fallback.BWL,
-                                midshipAreaMm2: fallback.midshipAreaMm2,
-                                Cp: fallback.Cp,
-                                Cm: fallback.Cm,
-                                KB: fallback.KB,
-                                BM: fallback.BM,
-                                KM: fallback.KM,
-                                GM: fallback.GM,
-                                bowFreeboardMm: Number((bowTipZ - (fallback.waterlineZ - bowX * Math.tan(0))).toFixed(1)),
-                                sternFreeboardMm: Number((sternTipZ - (fallback.waterlineZ - sternX * Math.tan(0))).toFixed(1)),
-                                heelDeg: fixedHeelDeg,
-                              }
-                              bestAngleDeg = 0
-                              bestOffset = Math.abs(bestResult.lcb.x - targetLcgX)
-                            }
-
-                        return {
-                                                trimDeg: Number(bestAngleDeg.toFixed(2)),
-                                                                                              draftMm: bestResult.draftMm,
-                                                                                              waterlineZ: bestResult.waterlineZ,
-                                                                                              displacedVolumeMm3: bestResult.displacedVolumeMm3,
-                                                                                              displacementKg: bestResult.displacementKg,
-                                                                                              targetKg: target_kg,
-                                                                                              lcb: bestResult.lcb,
-                                                                                              lcg,
-                                                                                              pivot: { x: targetLcgX, y: bounds.center.y, z: bounds.center.z },
-                                                                                              lcbLcgOffsetMm: bestOffset,
-                                                                                              waterplaneAreaMm2: bestResult.waterplaneAreaMm2,
-                                                                                              planesEvaluated: totalPlanes,
-                                                                                              converged: bestOffset < 15.0, // within 15mm alignment or best reachable
-                                                                                              Cb: bestResult.Cb,
-                                                                                              LWL: bestResult.LWL,
-                                                                                              BWL: bestResult.BWL,
-                                                                                              midshipAreaMm2: bestResult.midshipAreaMm2,
-                                                                                              Cp: bestResult.Cp,
-                                                                                              Cm: bestResult.Cm,
-                                                                                              KB: bestResult.KB,
-                                                                                              BM: bestResult.BM,
-                                                                                              KM: bestResult.KM,
-                                                                                                                          GM: bestResult.GM,
-                                                                                              bowFreeboardMm: Number((bowTipZ - (bestResult.waterlineZ + bowX * Math.tan(bestAngleDeg * Math.PI / 180))).toFixed(1)),
-                                                                                              sternFreeboardMm: Number((sternTipZ - (bestResult.waterlineZ + sternX * Math.tan(bestAngleDeg * Math.PI / 180))).toFixed(1)),
-                                                                                              gzCurve: compute_gz_curve_geometric(solveMesh, target_kg, KG_MM),
-                                                                                              heelDeg: fixedHeelDeg,
-                                              }
+    const fallback = find_draft_0trim(solveMesh, target_kg, KG_MM, fixedHeelRad)
+    bestResult = {
+      ...fallback,
+      lcb: { ...fallback.lcb, y: bounds.center.y }, // Force centerline
+      Cb: fallback.Cb,
+      LWL: fallback.LWL,
+      BWL: fallback.BWL,
+      midshipAreaMm2: fallback.midshipAreaMm2,
+      Cp: fallback.Cp,
+      Cm: fallback.Cm,
+      KB: fallback.KB,
+      BM: fallback.BM,
+      KM: fallback.KM,
+      GM: fallback.GM,
+      bowFreeboardMm: Number((bowTipZ - (fallback.waterlineZ - bowX * Math.tan(0))).toFixed(1)),
+      sternFreeboardMm: Number(
+        (sternTipZ - (fallback.waterlineZ - sternX * Math.tan(0))).toFixed(1),
+      ),
+      heelDeg: fixedHeelDeg,
+    }
+    bestAngleDeg = 0
+    bestOffset = Math.abs(bestResult.lcb.x - targetLcgX)
   }
+
+  return {
+    trimDeg: Number(bestAngleDeg.toFixed(2)),
+    draftMm: bestResult.draftMm,
+    waterlineZ: bestResult.waterlineZ,
+    displacedVolumeMm3: bestResult.displacedVolumeMm3,
+    displacementKg: bestResult.displacementKg,
+    targetKg: target_kg,
+    lcb: bestResult.lcb,
+    lcg,
+    pivot: { x: targetLcgX, y: bounds.center.y, z: bounds.center.z },
+    lcbLcgOffsetMm: bestOffset,
+    waterplaneAreaMm2: bestResult.waterplaneAreaMm2,
+    planesEvaluated: totalPlanes,
+    converged: bestOffset < 15.0, // within 15mm alignment or best reachable
+    Cb: bestResult.Cb,
+    LWL: bestResult.LWL,
+    BWL: bestResult.BWL,
+    midshipAreaMm2: bestResult.midshipAreaMm2,
+    Cp: bestResult.Cp,
+    Cm: bestResult.Cm,
+    KB: bestResult.KB,
+    BM: bestResult.BM,
+    KM: bestResult.KM,
+    GM: bestResult.GM,
+    bowFreeboardMm: Number(
+      (bowTipZ - (bestResult.waterlineZ + bowX * Math.tan((bestAngleDeg * Math.PI) / 180))).toFixed(
+        1,
+      ),
+    ),
+    sternFreeboardMm: Number(
+      (
+        sternTipZ -
+        (bestResult.waterlineZ + sternX * Math.tan((bestAngleDeg * Math.PI) / 180))
+      ).toFixed(1),
+    ),
+    gzCurve: compute_gz_curve_geometric(solveMesh, target_kg, KG_MM),
+    heelDeg: fixedHeelDeg,
+  }
+}

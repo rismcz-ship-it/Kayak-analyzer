@@ -17,6 +17,8 @@
  *
  * Run: npx tsx tests/verify-decimation.ts
  */
+
+import { readFileSync } from 'node:fs'
 import { STLLoader } from 'three/addons/loaders/STLLoader.js'
 import {
   autoOrientToZUp,
@@ -27,7 +29,6 @@ import {
   isMeshUsableForHydrostatics,
 } from '../src/lib/geometry.js'
 import { clipBelowPlane, find_draft_0trim } from '../src/lib/hydrostatics.js'
-import { readFileSync } from 'fs'
 
 let failures = 0
 function check(ok: boolean, label: string, detail = ''): void {
@@ -82,9 +83,8 @@ function degenerateFraction(p: Float32Array): number {
 // --- load the real hull ---------------------------------------------------
 
 const STL = new URL('./test-kayak.stl', import.meta.url)
-const raw = new STLLoader()
-  .parse(readFileSync(STL).buffer as ArrayBuffer)
-  .getAttribute('position').array as Float32Array
+const raw = new STLLoader().parse(readFileSync(STL).buffer as ArrayBuffer).getAttribute('position')
+  .array as Float32Array
 
 const mesh = new Float32Array(raw)
 autoOrientToZUp(mesh)
@@ -92,8 +92,12 @@ centerToOrigin(mesh)
 
 const origVolume = signedVolumeMm3(mesh)
 const origBounds = computeBounds(mesh)
-console.log(`\nTest hull: ${(mesh.length / 9) | 0} triangles, volume ${(origVolume / 1e6).toFixed(3)} L`)
-console.log(`Bounds: ${origBounds.size.x.toFixed(0)} x ${origBounds.size.y.toFixed(0)} x ${origBounds.size.z.toFixed(0)} mm`)
+console.log(
+  `\nTest hull: ${(mesh.length / 9) | 0} triangles, volume ${(origVolume / 1e6).toFixed(3)} L`,
+)
+console.log(
+  `Bounds: ${origBounds.size.x.toFixed(0)} x ${origBounds.size.y.toFixed(0)} x ${origBounds.size.z.toFixed(0)} mm`,
+)
 
 // Baseline: the original mesh, as the solver would use it.
 const baseUpright = find_draft_0trim(mesh, 75, undefined, 0)
@@ -109,7 +113,7 @@ for (const target of TARGETS) {
   const d = decimateMesh(mesh, target)
   const tris = (d.length / 9) | 0
 
-  if (tris === (mesh.length / 9) | 0) {
+  if ((tris === mesh.length / 9) | 0) {
     console.log('  -- decimator declined to run; solver will fall back (acceptable but noted)')
     continue
   }
@@ -190,7 +194,12 @@ function makeCube(size: number, n: number): Float32Array {
   ]
 
   // The six faces, each as four corners counter-clockwise seen from outside.
-  const faceCorners: [ReturnType<typeof c>[], ReturnType<typeof c>[], ReturnType<typeof c>[], ReturnType<typeof c>[]][] = [
+  const faceCorners: [
+    ReturnType<typeof c>[],
+    ReturnType<typeof c>[],
+    ReturnType<typeof c>[],
+    ReturnType<typeof c>[],
+  ][] = [
     [c(0, 0, 0), c(0, 1, 0), c(1, 1, 0), c(1, 0, 0)], // z = 0
     [c(0, 0, 1), c(1, 0, 1), c(1, 1, 1), c(0, 1, 1)], // z = S
     [c(0, 0, 0), c(1, 0, 0), c(1, 0, 1), c(0, 0, 1)], // y = 0
@@ -228,7 +237,7 @@ function makeCube(size: number, n: number): Float32Array {
     const emit = (
       p: [number, number, number],
       q: [number, number, number],
-      r: [number, number, number]
+      r: [number, number, number],
     ): void => {
       const ux = q[0] - p[0]
       const uy = q[1] - p[1]
@@ -268,11 +277,7 @@ const CUBE = 100
 const CUBE_TRIS = makeCube(CUBE, 4)
 const cubeVol = Math.abs(signedVolumeMm3(CUBE_TRIS))
 console.log(`  generated ${(CUBE_TRIS.length / 9) | 0} triangles`)
-check(
-  Math.abs(cubeVol - CUBE ** 3) < 1,
-  'cube volume is 1,000,000 mm3',
-  `${cubeVol.toFixed(0)}`,
-)
+check(Math.abs(cubeVol - CUBE ** 3) < 1, 'cube volume is 1,000,000 mm3', `${cubeVol.toFixed(0)}`)
 check(checkWatertight(CUBE_TRIS).watertight, 'generated cube is watertight')
 check(
   signedVolumeMm3(CUBE_TRIS) > 0,
@@ -283,7 +288,7 @@ check(
 const cubeDec = decimateMesh(CUBE_TRIS, 100)
 const cubeDecTris = (cubeDec.length / 9) | 0
 console.log(`  decimated to ${cubeDecTris} triangles`)
-if (cubeDecTris !== (CUBE_TRIS.length / 9) | 0 && cubeDecTris > 0) {
+if ((cubeDecTris !== CUBE_TRIS.length / 9) | 0 && cubeDecTris > 0) {
   const cubeDecVol = Math.abs(signedVolumeMm3(cubeDec))
   const relErr = Math.abs(cubeDecVol - cubeVol) / cubeVol
   check(checkWatertight(cubeDec).watertight, 'decimated cube still watertight')
@@ -328,8 +333,6 @@ if (cubeDecTris !== (CUBE_TRIS.length / 9) | 0 && cubeDecTris > 0) {
 }
 
 console.log(
-  failures === 0
-    ? '\nALL DECIMATION CHECKS PASSED'
-    : `\n${failures} DECIMATION CHECK(S) FAILED`,
+  failures === 0 ? '\nALL DECIMATION CHECKS PASSED' : `\n${failures} DECIMATION CHECK(S) FAILED`,
 )
 process.exit(failures === 0 ? 0 : 1)

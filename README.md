@@ -18,21 +18,25 @@ Calculation**.
 ## Features
 
 **Hydrostatics** — for the solved waterplane:
+
 - Draft, displacement, immersed volume
 - Block (Cb), prismatic (Cp) and midship (Cm) coefficients
 - Waterplane area, LCB (centre of buoyancy) and the LCB–LCG offset
 - KB (keel → buoyancy), BM (metacentric radius), KM (keel → metacentre), GM (metacentric height)
 
 **Stability**
+
 - GZ righting-arm curve, plotted against heel
 - Fixed heel-angle input, so you can see how draft and BM change as the hull heels over
 
 **Trim**
+
 - Automatic trim solve: the solver sweeps pitch angles and picks the one that brings LCB into
   line with LCG
 - Bow and stern freeboard at that trim
 
 **Hull handling**
+
 - STL upload (25 MB cap, parsed in memory)
 - Automatic reorientation to the app's axes: Z-up, X = length, Y = beam, whatever the file used
 - 3D view with the waterline plane, rotating with trim and heel
@@ -48,16 +52,23 @@ it.
 
 ## Scripts
 
-| Command | What it does |
-|---------|--------------|
-| `npm run dev` | Vite dev server |
-| `npm run build` | Typecheck (`tsc -b`) then production build |
-| `npm run preview` | Serve the production build |
-| `npm run typecheck` | Types only, no emit |
-| `npm test` | The six assertion suites — see [tests/README.md](tests/README.md) |
-| `npm run test:print` | Diagnostic scripts that only print numbers |
+| Command              | What it does                                                                     |
+| -------------------- | -------------------------------------------------------------------------------- |
+| `npm run dev`        | Vite dev server                                                                  |
+| `npm run build`      | Typecheck (`tsc -b`) then production build                                       |
+| `npm run preview`    | Serve the production build                                                       |
+| `npm run typecheck`  | Types only, no emit                                                              |
+| `npm test`           | The seven assertion suites — see [tests/README.md](tests/README.md)              |
+| `npm run test:print` | Diagnostic scripts that only print numbers                                       |
+| `npm run ci`         | The full gate: typecheck → Biome (format + lint) → `npm test` → production build |
 
 `npm test` needs `tests/test-kayak.stl`, which is committed to the repo.
+
+Formatting and linting are enforced by [Biome](https://biomejs.dev) (`biome.json`): single
+quotes, no semicolons, space indent, 100-col lines. `npm run ci` checks that everything
+conforms; `npm exec -- biome check --write .` applies fixes to touched files (use `npx`
+where your shell allows it). Text files are LF
+in the repo and worktree (`.gitattributes`), which keeps the Biome line-ending check quiet.
 
 ## Known limitations
 
