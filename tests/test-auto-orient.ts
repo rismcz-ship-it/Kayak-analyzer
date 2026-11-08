@@ -10,7 +10,7 @@ import {
 
 const buffer = fs.readFileSync(new URL('./test-kayak.stl', import.meta.url))
 const loader = new STLLoader()
-const geometry = loader.parse(buffer.buffer)
+const geometry = loader.parse(buffer.buffer as ArrayBuffer)
 const positions = geometry.getAttribute('position').array as Float32Array
 
 console.log('=== ORIGINAL STL ===')

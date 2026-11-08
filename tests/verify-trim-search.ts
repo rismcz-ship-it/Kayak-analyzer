@@ -1,8 +1,8 @@
 /**
  * Gate for the cheap trim search.
  *
- * `solve_trim` now searches the trim angle with a waterline+LCB-only solve
- * (`solve_draft_lcb`) and runs the full coefficient solve once on the winner.
+ * `solveTrim` now searches the trim angle with a waterline+LCB-only solve
+ * (`solveDraftLcb`) and runs the full coefficient solve once on the winner.
  * The point of that split is speed, not accuracy — the draft and LCB that rank
  * the candidate angles must be the same numbers the full solve would produce,
  * or trim gets chosen against a waterline that is never reported.
@@ -11,10 +11,22 @@
  * heel angles. A tolerance would defeat the purpose: the split is a refactor,
  * so any difference at all means the two paths do not agree.
  *
- * Run: npx tsx tests/verify-trim-search.ts
+ * There are two comparisons, and both matter:
+ *
+ *  1. the search half against the full solve — "the cheap solve agrees with
+ *     the expensive one", and
+ *  2. the frozen mirror of the search half against the PRODUCTION
+ *     `solveDraftLcb` — "the production search half has not drifted".
+ *
+ * The second one is why the mirror exists at all. Without it, a change to
+ * `solveDraftLcb` would go unnoticed here, because the test would only be
+ * exercising its own copy of the code.
+ *
+ * Run: npm exec -- tsx tests/verify-trim-search.ts
  */
 
 import { readFileSync, statSync } from 'node:fs'
+import { homedir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { STLLoader } from 'three/addons/loaders/STLLoader.js'
 import {
@@ -27,7 +39,12 @@ import {
   decimateMesh,
   type Vec3,
 } from '../src/lib/geometry.js'
-import { clipBelowPlane, find_draft_0trim, volumeBelowPlane } from '../src/lib/hydrostatics.js'
+import {
+  clipBelowPlane,
+  findDraft0Trim,
+  solveDraftLcb,
+  volumeBelowPlane,
+} from '../src/lib/hydrostatics.js'
 
 const MM3_PER_KG = 1_000_000
 
@@ -41,7 +58,7 @@ function check(label: string, ok: boolean, detail = ''): void {
 }
 
 /**
- * The search-half solve, mirrored from src/lib/hydrostatics.ts `solve_draft_lcb`.
+ * The search-half solve, mirrored from src/lib/hydrostatics.ts `solveDraftLcb`.
  *
  * It exists here as an independent copy on purpose: if the implementation is
  * ever changed to compute the waterline differently, this file must not change
@@ -158,6 +175,17 @@ interface HullSpec {
   openSection?: boolean
 }
 
+/**
+ * Where the optional local hulls live.
+ *
+ * Override with the `KAYAK_LOCAL_HULL_DIR` environment variable. The default
+ * is the current user's Downloads folder, which is where these hulls were
+ * originally kept; they are optional extras, so a missing directory is not an
+ * error — the suites simply skip them.
+ */
+const LOCAL_HULL_DIR = process.env.KAYAK_LOCAL_HULL_DIR ?? `${homedir()}/Downloads`
+const localHull = (fileName: string): string => `${LOCAL_HULL_DIR}/${fileName}`
+
 const HULLS: HullSpec[] = [
   {
     label: 'test-kayak.stl',
@@ -170,26 +198,26 @@ const HULLS: HullSpec[] = [
   },
   {
     label: 'Body56.stl',
-    paths: ['C:/Users/Richard Malán/Downloads/Body56.stl'],
+    paths: [localHull('Body56.stl')],
     masses: [55, 65, 75, 90],
     optional: true,
   },
   {
     label: 'Kayak v2.stl',
-    paths: ['C:/Users/Richard Malán/Downloads/Kayak v2.stl'],
+    paths: [localHull('Kayak v2.stl')],
     masses: [55, 65, 75, 90],
     optional: true,
   },
   {
     label: 'kayak model bow.stl',
-    paths: ['C:/Users/Richard Malán/Downloads/kayak model bow.stl'],
+    paths: [localHull('kayak model bow.stl')],
     masses: [12, 18, 25, 32],
     optional: true,
     openSection: true,
   },
   {
     label: 'kayak model stern.stl',
-    paths: ['C:/Users/Richard Malán/Downloads/kayak model stern.stl'],
+    paths: [localHull('kayak model stern.stl')],
     masses: [12, 18, 25, 32],
     optional: true,
     openSection: true,
@@ -242,6 +270,8 @@ for (const spec of HULLS) {
   let cases = 0
   let worstDraft = 0
   let worstLcb = 0
+  let worstProdDraft = 0
+  let worstProdLcb = 0
 
   for (const mass of spec.masses) {
     if (mass > totalL * 0.9) continue
@@ -251,9 +281,9 @@ for (const spec of HULLS) {
         const w = new Float32Array(dm)
         applyPitchY(w, (trimDeg * Math.PI) / 180, targetLcgX, bounds.center.z)
 
-        let full: ReturnType<typeof find_draft_0trim>
+        let full: ReturnType<typeof findDraft0Trim>
         try {
-          full = find_draft_0trim(w, mass, undefined, heelRad)
+          full = findDraft0Trim(w, mass, undefined, heelRad)
         } catch {
           continue
         }
@@ -275,6 +305,20 @@ for (const spec of HULLS) {
           dl === 0,
           `full ${full.lcb.x} vs search ${half.lcb.x} (diff ${dl})`,
         )
+
+        // The frozen mirror against the PRODUCTION search half. Without this,
+        // a change to `solveDraftLcb` would go unnoticed: the test above only
+        // exercises this file's own copy of the code.
+        const prod = solveDraftLcb(w, mass, heelRad)
+        const pd = Math.abs(prod.draftMm - half.draftMm)
+        const pl = Math.abs(prod.lcb.x - half.lcb.x)
+        if (pd > worstProdDraft) worstProdDraft = pd
+        if (pl > worstProdLcb) worstProdLcb = pl
+        check(
+          `${label} mass=${mass} heel=${heelDeg} trim=${trimDeg} production search`,
+          pd === 0 && pl === 0,
+          `production ${prod.draftMm}/${prod.lcb.x} vs mirror ${half.draftMm}/${half.lcb.x}`,
+        )
         cases++
         totalCases++
       }
@@ -294,16 +338,17 @@ for (const spec of HULLS) {
   }
   console.log(
     `${label.padEnd(20)} ${String((dm.length / 9) | 0).padStart(6)} tris  ${String(cases).padStart(4)} cases  ` +
-      `worst draft ${worstDraft.toExponential(1).padStart(9)}  worst lcb ${worstLcb.toExponential(1).padStart(9)}`,
+      `worst draft ${worstDraft.toExponential(1).padStart(9)}  worst lcb ${worstLcb.toExponential(1).padStart(9)}  ` +
+      `prod-vs-mirror ${worstProdDraft.toExponential(1)} / ${worstProdLcb.toExponential(1)}`,
   )
 }
 
 // Every required hull must have actually contributed cases, otherwise the
-// test can pass while verifying nothing. Optional local hulls (~/Downloads
-// STLs) are skipped without failing when the file is absent — e.g. on CI —
-// but a hull that IS on disk still must produce cases, so its failure is
-// caught above even when optional. Open sections are excluded deliberately —
-// they enclose no volume and cannot float.
+// test can pass while verifying nothing. Optional local hulls (see
+// KAYAK_LOCAL_HULL_DIR) are skipped without failing when the file is absent —
+// e.g. on CI — but a hull that IS on disk still must produce cases, so its
+// failure is caught above even when optional. Open sections are excluded
+// deliberately — they enclose no volume and cannot float.
 console.log()
 check('every required hull produced cases', skipped.length === 0, `skipped: ${skipped.join(', ')}`)
 
@@ -318,4 +363,6 @@ if (totalCases === 0) {
   console.log('\nFAIL: no cases ran — the test verified nothing.')
   process.exit(1)
 }
-console.log('\nPASS: search half is bit-identical to the full solve on every case.')
+console.log(
+  '\nPASS: search half is bit-identical to the full solve, and to production, on every case.',
+)

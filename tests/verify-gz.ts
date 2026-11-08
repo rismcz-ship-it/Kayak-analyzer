@@ -15,7 +15,7 @@
  *      expanding y_B - KG sin(phi) yields (KM - KG) sin(phi) + ... exactly.
  *
  *   2. THE PRODUCTION GEOMETRY PATH. The same box is meshed, heeled with
- *      applyRollX, sunk with find_draft_0trim, and its GZ read straight off
+ *      applyRollX, sunk with findDraft0Trim, and its GZ read straight off
  *      the submerged centroid via clipBelowPlane + computeVolumeAndCentroid.
  *      No formula is involved: GZ is the horizontal gap between the line of
  *      action of buoyancy and the line of action of weight, by definition.
@@ -27,7 +27,7 @@
  * MODEL LIMIT, not a coding error, and it is quantified and reported at the
  * end rather than asserted away. See the "KNOWN LIMIT" section.
  *
- * Run: npx tsx tests/verify-gz.ts
+ * Run: npm exec -- tsx tests/verify-gz.ts
  */
 
 import { readFileSync } from 'node:fs'
@@ -47,8 +47,9 @@ import {
   compute_gz_curve,
   compute_gz_curve_geometric,
   DEFAULT_GZ_HEEL_ANGLES_DEG,
-  find_draft_0trim,
-  solve_trim,
+  DEFAULT_KG_MM,
+  findDraft0Trim,
+  solveTrim,
 } from '../src/lib/hydrostatics.js'
 
 let fails = 0
@@ -135,8 +136,8 @@ function geometricGz(
   const mesh = new Float32Array(base)
   applyRollX(mesh, phi, bounds.center.y, bounds.center.z)
 
-  const r = find_draft_0trim(mesh, targetKg, KG, 0)
-  // find_draft_0trim overwrites lcb.y with the centreline; re-clip to recover
+  const r = findDraft0Trim(mesh, targetKg, KG, 0)
+  // findDraft0Trim overwrites lcb.y with the centreline; re-clip to recover
   // the true off-centreline centroid, which is the whole point of the measurement.
   const { clipped } = clipBelowPlane(mesh, r.waterlineZ)
   const yB = computeVolumeAndCentroid(clipped).centroid.y
@@ -176,7 +177,7 @@ console.log('=== 1. closed form vs compute_gz_curve, wall-sided box ===')
   check('GM positive', GM > 0, `GM = ${GM.toFixed(2)} mm`)
 
   // The solver must recover the box's own hydrostatics before GZ means anything.
-  const r = find_draft_0trim(boxMesh(L, B, T), kg, KG, 0)
+  const r = findDraft0Trim(boxMesh(L, B, T), kg, KG, 0)
   check(
     'solver draft = analytic draft',
     close(r.draftMm, d, 0.5, 1e-4),
@@ -391,15 +392,15 @@ const base = new Float32Array(
 )
 autoOrientToZUp(base)
 centerToOrigin(base)
-// The mesh solve_trim actually floats: decimated once and reused. The shipped
+// The mesh solveTrim actually floats: decimated once and reused. The shipped
 // curve is computed on the same mesh, so the test measures what the app gets.
 const decimated = decimateMesh(new Float32Array(base), DEFAULT_SOLVER_TRIANGLES)
 const solveMeshForCurve = isMeshUsableForHydrostatics(decimated) ? decimated : base
 {
   const MASS_KG = 75
-  const KG = 280 // the app's hardcoded KG
+  const KG = DEFAULT_KG_MM
   const keelZ = computeBounds(base).min.z
-  const upright = find_draft_0trim(base, MASS_KG, KG, 0)
+  const upright = findDraft0Trim(base, MASS_KG, KG, 0)
   const GM = upright.GM
   const BM = upright.BM
   const curve = compute_gz_curve(GM, BM)
@@ -455,54 +456,50 @@ const solveMeshForCurve = isMeshUsableForHydrostatics(decimated) ? decimated : b
     `${slope.toFixed(3)} vs ${GM} mm/rad`,
   )
 
-  // solve_trim passes KG to find_draft_0trim, which treats it as a HEIGHT above
+  // solveTrim passes KG to findDraft0Trim, which treats it as a HEIGHT above
   // the keel. It used to pass `lcg.z` — an ABSOLUTE z — so on a mesh whose keel
   // is not at z = 0 the effective KG was shortened by |min.z| and every reported
   // KM/GM came out 162.5 mm too large. Every suite passed `undefined` for KG, so
   // GM was never asserted anywhere and this went unnoticed. Pin the relationship.
   //
-  // Compared against solve_trim itself, not the zero-trim direct solve: the
+  // Compared against solveTrim itself, not the zero-trim direct solve: the
   // solver floats the hull at its equilibrium trim (here -1.9 deg), which
   // legitimately gives a slightly larger KM than the upright case. Comparing
   // across trims would assert a difference that is not a bug.
-  const solved = solve_trim(base, MASS_KG)
-  const trimmedUpright = find_draft_0trim(base, MASS_KG, KG, 0)
+  const solved = solveTrim(base, MASS_KG)
+  const trimmedUpright = findDraft0Trim(base, MASS_KG, KG, 0)
   check(
-    'solve_trim GM = KM - KG',
+    'solveTrim GM = KM - KG',
     close(solved.GM, solved.KM - KG, 0.2, 1e-6),
     `${solved.GM} vs ${solved.KM} - ${KG} = ${(solved.KM - KG).toFixed(1)}`,
   )
 
-  // solve_trim must RETURN the geometric curve, not merely expose the function.
+  // solveTrim must RETURN the geometric curve, not merely expose the function.
   // Asserting compute_gz_curve_geometric on its own is not enough: reverting
-  // solve_trim's gzCurve field back to the closed form leaves every other check
+  // solveTrim's gzCurve field back to the closed form leaves every other check
   // in this file green, so this has to be pinned on the returned object.
   check(
-    'solve_trim returns the geometric curve',
+    'solveTrim returns the geometric curve',
     solved.gzCurve.some((p) => p.GZ < 0),
-    `solve_trim's own gzCurve goes negative: ${solved.gzCurve.map((p) => p.GZ).join(', ')}`,
+    `solveTrim's own gzCurve goes negative: ${solved.gzCurve.map((p) => p.GZ).join(', ')}`,
   )
   check(
-    'solve_trim gzCurve is not the closed form',
+    'solveTrim gzCurve is not the closed form',
     solved.gzCurve.some((p) => p.GZ !== compute_gz_curve(solved.GM, solved.BM, [p.heelDeg])[0].GZ),
     'differs from (GM, BM) closed form at >= 1 angle',
   )
   check(
-    'solve_trim gzCurve reaches the vanishing angle',
+    'solveTrim gzCurve reaches the vanishing angle',
     solved.gzCurve.length === DEFAULT_GZ_HEEL_ANGLES_DEG.length &&
       solved.gzCurve[solved.gzCurve.length - 1].heelDeg >= 45,
     `${solved.gzCurve.length} points, last ${solved.gzCurve[solved.gzCurve.length - 1].heelDeg} deg`,
   )
-  check(
-    'solve_trim KM is finite and plausible',
-    solved.KM > 0 && solved.KM < 800,
-    `${solved.KM} mm`,
-  )
-  check('solve_trim GM is positive at this load', solved.GM > 0, `${solved.GM} mm`)
+  check('solveTrim KM is finite and plausible', solved.KM > 0 && solved.KM < 800, `${solved.KM} mm`)
+  check('solveTrim GM is positive at this load', solved.GM > 0, `${solved.GM} mm`)
   // The old bug inflated GM by |min.z| = 162.5 mm on this hull. GM must stay in
   // the neighbourhood of KB + BM - KG, nowhere near that inflated value.
   check(
-    'solve_trim GM is not inflated by |min.z|',
+    'solveTrim GM is not inflated by |min.z|',
     solved.GM < trimmedUpright.GM + 20,
     `${solved.GM} vs upright ${trimmedUpright.GM} (+|min.z| would be ${(trimmedUpright.GM + Math.abs(keelZ)).toFixed(1)})`,
   )
@@ -519,7 +516,7 @@ const solveMeshForCurve = isMeshUsableForHydrostatics(decimated) ? decimated : b
     `worst |GZ(+) + GZ(-)| = ${Math.max(...sym).toFixed(4)} mm`,
   )
 
-  // The SHIPPED curve. compute_gz_curve_geometric is what solve_trim now
+  // The SHIPPED curve. compute_gz_curve_geometric is what solveTrim now
   // returns, so these assertions cover the number the chart actually draws.
   const shipped = compute_gz_curve_geometric(solveMeshForCurve, MASS_KG, KG)
   const at = (deg: number) => {
@@ -542,7 +539,7 @@ const solveMeshForCurve = isMeshUsableForHydrostatics(decimated) ? decimated : b
 
   // The whole point of the change: the plotted arm must agree with the
   // measurement it replaces, so a regression in the geometry path is caught.
-  // Compared against the SAME mesh (decimated), since that is what solve_trim
+  // Compared against the SAME mesh (decimated), since that is what solveTrim
   // floats — cross-mesh agreement is the decimation's job, not this curve's.
   for (const deg of [5, 15, 20, 30, 40]) {
     const m = geometricGz(solveMeshForCurve, MASS_KG, KG, deg, keelZOf(solveMeshForCurve))

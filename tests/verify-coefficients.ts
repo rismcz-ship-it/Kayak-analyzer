@@ -5,7 +5,7 @@
 import * as fs from 'node:fs'
 import { STLLoader } from 'three/addons/loaders/STLLoader.js'
 import { autoOrientToZUp, centerToOrigin, computeBounds } from '../src/lib/geometry.js'
-import { solve_trim } from '../src/lib/hydrostatics.js'
+import { solveTrim } from '../src/lib/hydrostatics.js'
 
 const buffer = fs.readFileSync(new URL('./test-kayak.stl', import.meta.url))
 const geometry = new STLLoader().parse(buffer.buffer as ArrayBuffer)
@@ -98,7 +98,7 @@ const check = (label: string, ok: boolean, detail: string) => {
 }
 
 for (const kg of [55, 65, 75]) {
-  const t = solve_trim(positions, kg)
+  const t = solveTrim(positions, kg)
   const wl = t.waterlineZ
   const draft = wl - b.min.z
   const V = t.displacedVolumeMm3

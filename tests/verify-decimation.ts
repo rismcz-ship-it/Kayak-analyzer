@@ -15,7 +15,7 @@
  * These assertions are the ones that actually matter for the solver, and the
  * last block is the one that would have caught the original bug.
  *
- * Run: npx tsx tests/verify-decimation.ts
+ * Run: npm exec -- tsx tests/verify-decimation.ts
  */
 
 import { readFileSync } from 'node:fs'
@@ -28,7 +28,7 @@ import {
   decimateMesh,
   isMeshUsableForHydrostatics,
 } from '../src/lib/geometry.js'
-import { clipBelowPlane, find_draft_0trim } from '../src/lib/hydrostatics.js'
+import { clipBelowPlane, findDraft0Trim } from '../src/lib/hydrostatics.js'
 
 let failures = 0
 function check(ok: boolean, label: string, detail = ''): void {
@@ -100,8 +100,8 @@ console.log(
 )
 
 // Baseline: the original mesh, as the solver would use it.
-const baseUpright = find_draft_0trim(mesh, 75, undefined, 0)
-const baseHeeled = find_draft_0trim(mesh, 75, undefined, (20 * Math.PI) / 180)
+const baseUpright = findDraft0Trim(mesh, 75, undefined, 0)
+const baseHeeled = findDraft0Trim(mesh, 75, undefined, (20 * Math.PI) / 180)
 
 const TARGETS = [8000, 12000, 16000, 20000, 25000]
 const VOLUME_TOLERANCE = 0.005 // 0.5%
@@ -113,7 +113,7 @@ for (const target of TARGETS) {
   const d = decimateMesh(mesh, target)
   const tris = (d.length / 9) | 0
 
-  if ((tris === mesh.length / 9) | 0) {
+  if (tris === mesh.length / 9) {
     console.log('  -- decimator declined to run; solver will fall back (acceptable but noted)')
     continue
   }
@@ -122,7 +122,7 @@ for (const target of TARGETS) {
 
   // 1. Watertight, no open edges.
   const wt = checkWatertight(d)
-  check(wt.watertight, 'watertight', `openEdges=${wt.openEdges ?? '?'}`)
+  check(wt.watertight, 'watertight', `openEdges=${wt.openEdgeCount}`)
 
   // 2. Geometrically non-degenerate.
   const degen = degenerateFraction(d)
@@ -139,8 +139,8 @@ for (const target of TARGETS) {
 
   // 5. The block that catches the original bug: hydrostatic agreement with
   //    the original mesh, upright and heeled, plus a single closed contour.
-  const up = find_draft_0trim(d, 75, undefined, 0)
-  const heel = find_draft_0trim(d, 75, undefined, (20 * Math.PI) / 180)
+  const up = findDraft0Trim(d, 75, undefined, 0)
+  const heel = findDraft0Trim(d, 75, undefined, (20 * Math.PI) / 180)
 
   const dUpright = Math.abs(up.draftMm - baseUpright.draftMm)
   check(dUpright < DRAFT_TOLERANCE_MM, 'upright draft within 1 mm', `${dUpright.toFixed(3)} mm`)
@@ -194,12 +194,7 @@ function makeCube(size: number, n: number): Float32Array {
   ]
 
   // The six faces, each as four corners counter-clockwise seen from outside.
-  const faceCorners: [
-    ReturnType<typeof c>[],
-    ReturnType<typeof c>[],
-    ReturnType<typeof c>[],
-    ReturnType<typeof c>[],
-  ][] = [
+  const faceCorners: ReturnType<typeof c>[][] = [
     [c(0, 0, 0), c(0, 1, 0), c(1, 1, 0), c(1, 0, 0)], // z = 0
     [c(0, 0, 1), c(1, 0, 1), c(1, 1, 1), c(0, 1, 1)], // z = S
     [c(0, 0, 0), c(1, 0, 0), c(1, 0, 1), c(0, 0, 1)], // y = 0
@@ -288,7 +283,7 @@ check(
 const cubeDec = decimateMesh(CUBE_TRIS, 100)
 const cubeDecTris = (cubeDec.length / 9) | 0
 console.log(`  decimated to ${cubeDecTris} triangles`)
-if ((cubeDecTris !== CUBE_TRIS.length / 9) | 0 && cubeDecTris > 0) {
+if (cubeDecTris !== CUBE_TRIS.length / 9 && cubeDecTris > 0) {
   const cubeDecVol = Math.abs(signedVolumeMm3(cubeDec))
   const relErr = Math.abs(cubeDecVol - cubeVol) / cubeVol
   check(checkWatertight(cubeDec).watertight, 'decimated cube still watertight')
@@ -302,13 +297,13 @@ if ((cubeDecTris !== CUBE_TRIS.length / 9) | 0 && cubeDecTris > 0) {
   // The analytic part: a box has a closed-form waterplane, so the solver's
   // numbers can be checked against arithmetic rather than against itself.
   //
-  // The load is 0.1 kg (0.1 L) rather than 50 kg. `find_draft_0trim` brackets
+  // The load is 0.1 kg (0.1 L) rather than 50 kg. `findDraft0Trim` brackets
   // the waterline in 10 mm steps before bisecting, so it only resolves a solid
   // as fine as that step allows; on a 100 mm cube the top of the range is not
   // reachable and the solver reports a total hull volume well under the
   // analytic 1 L. 0.1 L sits comfortably inside the bracket.
   const LOAD_KG = 0.1
-  const up = find_draft_0trim(cubeDec, LOAD_KG, undefined, 0)
+  const up = findDraft0Trim(cubeDec, LOAD_KG, undefined, 0)
 
   // 0.1 L of a 100 x 100 section -> 10 mm draft
   check(

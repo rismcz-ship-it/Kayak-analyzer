@@ -11,7 +11,7 @@ import {
   computeWaterlineBeamMm,
   computeWaterlineLengthMm,
 } from '../src/lib/geometry.js'
-import { find_draft_0trim } from '../src/lib/hydrostatics.js'
+import { findDraft0Trim } from '../src/lib/hydrostatics.js'
 
 const L = 2000,
   B = 600,
@@ -83,7 +83,7 @@ check('LWL = L', Math.abs(lwl - L) < 0.01, `${lwl.toFixed(2)} vs ${L} mm`)
 check('BWL = B', Math.abs(bwl - B) < 0.01, `${bwl.toFixed(2)} vs ${B} mm`)
 
 console.log('\n--- solver on the box (50 kg) ---')
-const res = find_draft_0trim(box, 50, 100, 0)
+const res = findDraft0Trim(box, 50, 100, 0)
 const expectDraft = 50e6 / (L * B)
 console.log(`  draft ${res.draftMm.toFixed(3)} mm (expect ${expectDraft.toFixed(3)} mm)`)
 check('draft', Math.abs(res.draftMm - expectDraft) < 0.5, `${res.draftMm.toFixed(3)} mm`)

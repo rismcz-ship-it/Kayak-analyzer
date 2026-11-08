@@ -1,8 +1,20 @@
 import fs from 'node:fs'
+import os from 'node:os'
 import { STLLoader } from 'three/addons/loaders/STLLoader.js'
 
-// Load the actual test STL
-const path = 'C:/Users/Richard Malán/Downloads/Kayak v2.stl'
+// Load the actual test STL.
+//
+// This hull is NOT in the repository — it is a local extra. Point
+// KAYAK_LOCAL_HULL_DIR at the folder holding it (the default is the current
+// user's Downloads folder). If it is missing, say so and stop: this script is
+// a diagnostic, not a gate.
+const hullDir = process.env.KAYAK_LOCAL_HULL_DIR ?? `${os.homedir()}/Downloads`
+const path = `${hullDir}/Kayak v2.stl`
+if (!fs.existsSync(path)) {
+  console.log(`SKIPPED: ${path} not found.`)
+  console.log('Set KAYAK_LOCAL_HULL_DIR to the folder holding the local hulls.')
+  process.exit(0)
+}
 const buffer = fs.readFileSync(path)
 const geometry = new STLLoader().parse(
   buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength),

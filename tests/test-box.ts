@@ -154,7 +154,7 @@ import {
   computeBounds,
   computeVolumeAndCentroid,
 } from '../src/lib/geometry.js'
-import { solve_trim } from '../src/lib/hydrostatics.js'
+import { solveTrim } from '../src/lib/hydrostatics.js'
 
 const positions = createTestHull()
 console.log(`Triangles: ${positions.length / 9}`)
@@ -178,7 +178,7 @@ bounds = computeBounds(p1)
 console.log(`maxX: ${bounds.max.x.toFixed(1)}, minX: ${bounds.min.x.toFixed(1)}`)
 vol = computeVolumeAndCentroid(p1)
 console.log(`Centroid X: ${vol.centroid.x.toFixed(1)}`)
-const t1 = solve_trim(p1, 15, { maxTrimDeg: 5, trimStepDeg: 0.5 })
+const t1 = solveTrim(p1, 15, { maxTrimDeg: 5, trimStepDeg: 0.5 })
 console.log(
   `Trim: ${t1.trimDeg.toFixed(2)}°, LCG: ${t1.lcg.x.toFixed(1)}, LCB: ${t1.lcb.x.toFixed(1)}`,
 )
@@ -195,7 +195,7 @@ console.log(
 )
 vol = computeVolumeAndCentroid(p2)
 console.log(`Centroid X: ${vol.centroid.x.toFixed(1)}`)
-const t2 = solve_trim(p2, 15, { maxTrimDeg: 5, trimStepDeg: 0.5 })
+const t2 = solveTrim(p2, 15, { maxTrimDeg: 5, trimStepDeg: 0.5 })
 console.log(
   `Trim: ${t2.trimDeg.toFixed(2)}°, LCG: ${t2.lcg.x.toFixed(1)}, LCB: ${t2.lcb.x.toFixed(1)}`,
 )

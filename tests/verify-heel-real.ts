@@ -15,13 +15,13 @@
  *   3. GM stays finite and the solve reports convergence at every angle.
  *   4. The waterplane closes into exactly ONE contour.
  *
- * Run: npx tsx tests/verify-heel-real.ts
+ * Run: npm exec -- tsx tests/verify-heel-real.ts
  */
 
 import { readFileSync } from 'node:fs'
 import { STLLoader } from 'three/addons/loaders/STLLoader.js'
 import { autoOrientToZUp, centerToOrigin } from '../src/lib/geometry.js'
-import { find_draft_0trim, solve_trim } from '../src/lib/hydrostatics.js'
+import { findDraft0Trim, solveTrim } from '../src/lib/hydrostatics.js'
 
 const STL = new URL('./test-kayak.stl', import.meta.url)
 const raw = new STLLoader().parse(readFileSync(STL).buffer as ArrayBuffer).getAttribute('position')
@@ -44,12 +44,12 @@ function check(ok: boolean, label: string, detail = ''): void {
   }
 }
 
-console.log(`\n=== find_draft_0trim on the real hull (${MASS_KG} kg) ===`)
+console.log(`\n=== findDraft0Trim on the real hull (${MASS_KG} kg) ===`)
 console.log('heel   draft      BM        GM        Awp       conv')
 const direct: { heel: number; draft: number; BM: number; GM: number }[] = []
 
 for (const heel of HEELS) {
-  const r = find_draft_0trim(mesh, MASS_KG, undefined, (heel * Math.PI) / 180)
+  const r = findDraft0Trim(mesh, MASS_KG, undefined, (heel * Math.PI) / 180)
   direct.push({ heel, draft: r.draftMm, BM: r.BM, GM: r.GM })
   console.log(
     `  ${String(heel).padStart(2)}°  ${r.draftMm.toFixed(2).padStart(8)}  ` +
@@ -85,35 +85,35 @@ for (const r of direct) {
   check(Number.isFinite(r.GM), `heel ${r.heel}° GM is finite`, `got ${r.GM}`)
 }
 
-console.log(`\n=== solve_trim (full production path) ===`)
+console.log(`\n=== solveTrim (full production path) ===`)
 console.log('heel   trim      draft      BM        GM        conv')
 const trimmed: { heel: number; BM: number }[] = []
 
 for (const heel of [0, 10, 20, 30]) {
-  const r = solve_trim(mesh, MASS_KG, { fixedHeelDeg: heel })
+  const r = solveTrim(mesh, MASS_KG, { fixedHeelDeg: heel })
   trimmed.push({ heel, BM: r.BM })
   console.log(
     `  ${String(heel).padStart(2)}°  ${r.trimDeg.toFixed(2).padStart(6)}  ` +
       `${r.draftMm.toFixed(2).padStart(8)}  ${r.BM.toFixed(1).padStart(8)}  ` +
       `${r.GM.toFixed(1).padStart(8)}   ${r.converged}`,
   )
-  check(r.converged, `solve_trim converged at ${heel}° heel`)
-  check(r.draftMm > 0, `solve_trim produced a real draft at ${heel}°`, `got ${r.draftMm}`)
+  check(r.converged, `solveTrim converged at ${heel}° heel`)
+  check(r.draftMm > 0, `solveTrim produced a real draft at ${heel}°`, `got ${r.draftMm}`)
   check(
     Number.isFinite(r.BM) && r.BM > 0,
-    `solve_trim BM finite and positive at ${heel}°`,
+    `solveTrim BM finite and positive at ${heel}°`,
     `got ${r.BM}`,
   )
   // Heel must actually reach the solver. A constant result across every angle
   // is the signature of the angle being dropped somewhere upstream.
   check(
     Math.abs(r.heelDeg - heel) < 1e-6,
-    `solve_trim reports the requested heel at ${heel}°`,
+    `solveTrim reports the requested heel at ${heel}°`,
     `reported ${r.heelDeg}`,
   )
 }
 
-console.log('\n--- solve_trim BM still falls with heel ---')
+console.log('\n--- solveTrim BM still falls with heel ---')
 for (let i = 1; i < trimmed.length; i++) {
   const a = trimmed[i - 1]
   const b = trimmed[i]

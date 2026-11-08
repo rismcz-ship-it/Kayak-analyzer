@@ -17,7 +17,7 @@ import {
   computeWaterlineBeamMm,
   computeWaterlineLengthMm,
 } from '../src/lib/geometry.js'
-import { find_draft_0trim } from '../src/lib/hydrostatics.js'
+import { findDraft0Trim } from '../src/lib/hydrostatics.js'
 
 let fails = 0
 const check = (label: string, ok: boolean, detail: string) => {
@@ -78,7 +78,7 @@ console.log('=== BOX 2000 x 600 x 300 mm ===')
   )
 
   const V = 50e6
-  const r = find_draft_0trim(box, 50, 100, 0)
+  const r = findDraft0Trim(box, 50, 100, 0)
   const d = V / (L * B)
   check(
     'draft = V/(L*B)',
@@ -97,14 +97,14 @@ console.log('=== BOX 2000 x 600 x 300 mm ===')
   check('BM = (L*B^3/12)/V', Math.abs(r.BM - bmBox) < 1, `${r.BM} vs ${bmBox.toFixed(1)} mm`)
 
   // KG -> KM -> GM, asserted against closed form. This block exists because a
-  // unit bug once lived exactly here: solve_trim passed the LCG's ABSOLUTE z to
-  // find_draft_0trim's KG argument, which expects a height above the keel, so
+  // unit bug once lived exactly here: solveTrim passed the LCG's ABSOLUTE z to
+  // findDraft0Trim's KG argument, which expects a height above the keel, so
   // every reported GM was inflated by |min.z| (162.5 mm on the test hull). It
   // survived because every suite passed `undefined` for KG, leaving GM = 0 —
   // a parameter defaulted away by every caller is invisible to the tests. The
   // box has an exact KB and BM, so KM - KG is exact ground truth here.
   const KG = 100
-  const rKG = find_draft_0trim(box, 50, KG, 0)
+  const rKG = findDraft0Trim(box, 50, KG, 0)
   const kmExpect = rKG.draftMm / 2 + bmBox
   check('KM = KB + BM', Math.abs(rKG.KM - kmExpect) < 1, `${rKG.KM} vs ${kmExpect.toFixed(1)} mm`)
   check(
@@ -115,14 +115,14 @@ console.log('=== BOX 2000 x 600 x 300 mm ===')
   // A second, very different KG must shift GM by exactly the KG change. This is
   // what catches an absolute-vs-relative confusion regardless of the mesh origin.
   const KG2 = 40
-  const rKG2 = find_draft_0trim(box, 50, KG2, 0)
+  const rKG2 = findDraft0Trim(box, 50, KG2, 0)
   check(
     'GM shifts by dKG exactly',
     Math.abs(rKG2.GM - rKG.GM - (KG - KG2)) < 1,
     `${rKG2.GM} vs ${rKG.GM}, dKG = ${KG - KG2}`,
   )
   // No KG passed => GM is 0, not garbage. Pins the optional-argument contract.
-  const rNoKG = find_draft_0trim(box, 50, undefined, 0)
+  const rNoKG = findDraft0Trim(box, 50, undefined, 0)
   check(
     'GM = 0 when KG omitted',
     rNoKG.GM === 0,
@@ -132,8 +132,8 @@ console.log('=== BOX 2000 x 600 x 300 mm ===')
   const KGhigh = kmExpect + 50
   check(
     'GM negative when G above M',
-    Math.abs(find_draft_0trim(box, 50, KGhigh, 0).GM - (kmExpect - KGhigh)) < 1,
-    `${find_draft_0trim(box, 50, KGhigh, 0).GM} mm`,
+    Math.abs(findDraft0Trim(box, 50, KGhigh, 0).GM - (kmExpect - KGhigh)) < 1,
+    `${findDraft0Trim(box, 50, KGhigh, 0).GM} mm`,
   )
 }
 
@@ -174,7 +174,7 @@ console.log('\n=== CYLINDER along X, r = 300, L = 2000 mm ===')
   const d = r
   const V = (L * r * r * Math.PI) / 2
   const kg = V / 1e6
-  const res = find_draft_0trim(cyl, kg, 100, 0)
+  const res = findDraft0Trim(cyl, kg, 100, 0)
   check(
     'draft = r (half)',
     Math.abs(res.draftMm - d) < d * 0.02,
@@ -256,7 +256,7 @@ console.log('=== BOX offset 120 mm in Y ===')
   check('watertight', wtY.watertight, `${wtY.openEdgeCount} open edges`)
 
   const V = 50e6
-  const r = find_draft_0trim(boxY, 50, 100, 0)
+  const r = findDraft0Trim(boxY, 50, 100, 0)
   const bmCentroid = (L * B ** 3) / 12 / V
   check(
     'BM uses own centroid',
@@ -317,7 +317,7 @@ console.log('=== BOX 2000 x 600 x 400 heeled about X ===')
 
     const m = new Float32Array(v)
     applyRollX(m, phi, 0, 0)
-    const r = find_draft_0trim(m, kg, 100, 0)
+    const r = findDraft0Trim(m, kg, 100, 0)
 
     check(
       `A_wp at ${deg}° heel`,
