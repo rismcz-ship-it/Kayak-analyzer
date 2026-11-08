@@ -9,7 +9,7 @@ interface Viewer3DProps {
   waterlineZ?: number | null
   /** Trim angle in degrees (+ bow up, - bow down). */
   trimDeg?: number
-  /** Heel angle in degrees (+ starboard/right heel). */
+  /** Heel angle in degrees (+ = the -Y side goes down; same sign as the solver's). */
   heelDeg?: number
   /** Waterline center Y for trimming pivot. */
   waterlineCenterY?: number

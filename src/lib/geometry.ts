@@ -230,7 +230,19 @@ export function applyPitchY(
 /**
  * Roll rotation about the longitudinal X axis by `phiRad` radians,
  * pivoting about `(pivotY, pivotZ)` (e.g. centerline and baseline/center).
- * Positive phi = starboard (right) down.
+ *
+ * Sign convention: this is the plain right-hand rotation about +X, so a
+ * positive `phiRad` carries the +Y side towards +Z (up) and the -Y side
+ * towards -Z (down). With the app's axes — bow = +X, up = +Z — the
+ * paddler's right hand points along -Y, so -Y is starboard and a positive
+ * roll is "starboard down".
+ *
+ * CAVEAT: `autoOrientToZUp` mirrors Y when the axis permutation is odd, so
+ * for a mirrored STL the +Y / -Y labels swap and the same positive angle
+ * rolls the other way relative to the physical boat. The stable, always
+ * true statement is "+Y up / -Y down"; do not rely on the word "starboard"
+ * across uploads.
+ *
  * Det = +1 (proper rotation), preserving winding / normals / volume.
  */
 export function applyRollX(positions: Float32Array, phiRad: number, pivotY = 0, pivotZ = 0): void {
@@ -240,7 +252,8 @@ export function applyRollX(positions: Float32Array, phiRad: number, pivotY = 0, 
   for (let i = 0; i < positions.length; i += 3) {
     const y = positions[i + 1] - pivotY
     const z = positions[i + 2] - pivotZ
-    // Positive roll (starboard down): +Y rotates towards -Z (downward)
+    // Right-hand rotation about +X: a positive angle carries +Y towards +Z
+    // (up) and -Y towards -Z (down).
     positions[i + 1] = y * c - z * s + pivotY
     positions[i + 2] = y * s + z * c + pivotZ
   }
@@ -988,9 +1001,10 @@ export function analyzeMesh(positions: Float32Array): MeshStats {
  *  - a significant share of zero-area triangles, which contribute no volume
  *    but still emit waterplane crossings that do not pair into a contour.
  *
- * `decimateMesh` snaps vertices to cell centroids, which collapses the
- * majority of triangles on a hull this size, so its output usually fails
- * here. Callers should fall back to the original mesh rather than solve on it.
+ * `decimateMesh` is a QEM edge collapse (below) whose output normally passes
+ * here; the vertex-clustering implementation it replaced did not. Callers
+ * should still fall back to the original mesh whenever a decimated result
+ * fails this check.
  */
 export function isMeshUsableForHydrostatics(positions: Float32Array): boolean {
   if (positions.length === 0) return false

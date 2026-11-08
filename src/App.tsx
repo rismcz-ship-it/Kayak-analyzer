@@ -11,11 +11,13 @@ import {
 import Upload, { type LoadedMesh } from './components/Upload'
 import Viewer3D from './components/Viewer3D'
 import {
+  DEFAULT_KG_MM,
   type Draft0TrimResult,
-  find_draft_0trim,
-  solve_trim,
+  findDraft0Trim,
+  solveTrim,
   type TrimSolveResult,
 } from './lib/hydrostatics'
+import { viewerHeelDeg, viewerTrimDeg } from './lib/viewer-conventions'
 
 const fmt = (v: number, digits = 1) => v.toLocaleString('en-US', { maximumFractionDigits: digits })
 
@@ -50,6 +52,7 @@ export default function App() {
   const [isCalculating, setIsCalculating] = useState(false)
   const [targetWeight, setTargetWeight] = useState(75) // kg, fresh water 1 kg = 1 L
   const [targetLcgPercent, setTargetLcgPercent] = useState(52) // % from bow
+  const [targetKgMm, setTargetKgMm] = useState(DEFAULT_KG_MM) // mm above the keel
   const [showHeelInput, setShowHeelInput] = useState(false) // toggle for fixed heel input
   const [heelInputDeg, setHeelInputDeg] = useState(0) // fixed heel angle in degrees
   const calcToken = useRef(0)
@@ -67,7 +70,7 @@ export default function App() {
   }, [])
 
   const runCalculation = useCallback(
-    (weightKg: number, lcgPercent: number, heelDeg: number, current: LoadedMesh) => {
+    (weightKg: number, lcgPercent: number, kgMm: number, heelDeg: number, current: LoadedMesh) => {
       const token = ++calcToken.current
       setIsCalculating(true)
       setDraftError(null)
@@ -83,18 +86,22 @@ export default function App() {
           if (!Number.isFinite(weightKg) || weightKg <= 0) {
             throw new Error(`Target weight must be > 0 kg (got ${String(weightKg)}).`)
           }
+          if (!Number.isFinite(kgMm) || kgMm <= 0) {
+            throw new Error(`KG must be > 0 mm (got ${String(kgMm)}).`)
+          }
           const heelRad = (heelDeg * Math.PI) / 180
           // First run zero-trim draft (with heel if set)
-          const draft = find_draft_0trim(positions, weightKg, undefined, heelRad)
+          const draft = findDraft0Trim(positions, weightKg, kgMm, heelRad)
           if (calcToken.current !== token) return
           setDraftResult(draft)
 
           // Then run full trim solver
-          const trim = solve_trim(positions, weightKg, {
+          const trim = solveTrim(positions, weightKg, {
             targetLcgPercentFromBow: lcgPercent,
             maxTrimDeg: 4.5,
             trimStepDeg: 0.1,
             fixedHeelDeg: heelDeg,
+            kgMm,
           })
           if (calcToken.current !== token) return
           setTrimResult(trim)
@@ -128,8 +135,16 @@ export default function App() {
       return
     }
     const appliedHeel = showHeelInput ? heelInputDeg : 0
-    runCalculation(targetWeight, targetLcgPercent, appliedHeel, mesh)
-  }, [mesh, targetWeight, targetLcgPercent, showHeelInput, heelInputDeg, runCalculation])
+    runCalculation(targetWeight, targetLcgPercent, targetKgMm, appliedHeel, mesh)
+  }, [
+    mesh,
+    targetWeight,
+    targetLcgPercent,
+    targetKgMm,
+    showHeelInput,
+    heelInputDeg,
+    runCalculation,
+  ])
 
   const s = mesh?.stats
   const maxKg = s ? s.volumeLiters : null
@@ -162,12 +177,12 @@ export default function App() {
                   key={mesh.id}
                   geometry={mesh.geometry}
                   waterlineZ={trimResult?.waterlineZ ?? draftResult?.waterlineZ ?? null}
-                  trimDeg={-(trimResult?.trimDeg ?? 0)}
-                  heelDeg={
+                  trimDeg={viewerTrimDeg(trimResult?.trimDeg ?? 0)}
+                  heelDeg={viewerHeelDeg(
                     trimResult?.heelDeg ??
-                    draftResult?.heelDeg ??
-                    (showHeelInput ? heelInputDeg : 0)
-                  }
+                      draftResult?.heelDeg ??
+                      (showHeelInput ? heelInputDeg : 0),
+                  )}
                   waterlineCenterY={trimResult?.lcg.y ?? 0}
                   lcg={trimResult?.lcg ?? null}
                   lcb={trimResult?.lcb ?? draftResult?.lcb ?? null}
@@ -244,6 +259,23 @@ export default function App() {
                     className="w-32 rounded border border-zinc-700 bg-zinc-800 p-2 text-white"
                   />
                 </div>
+                <label htmlFor="target-kg" className="mb-1 block text-xs text-zinc-400">
+                  KG above keel (mm) — sets GM
+                </label>
+                <div className="mb-4 flex items-center gap-2">
+                  <input
+                    id="target-kg"
+                    type="number"
+                    min={0}
+                    step={1}
+                    value={Number.isFinite(targetKgMm) ? targetKgMm : ''}
+                    onChange={(e) => setTargetKgMm(Number(e.target.value))}
+                    className="w-32 rounded border border-zinc-700 bg-zinc-800 p-2 text-white"
+                  />
+                  <span className="text-xs text-zinc-500">
+                    height above the keel, not an absolute Z
+                  </span>
+                </div>
 
                 <div className="mb-4 space-y-2">
                   <label className="flex items-center gap-2 cursor-pointer group">
@@ -267,8 +299,12 @@ export default function App() {
 
                   {showHeelInput && (
                     <div className="animate-in fade-in slide-in-from-top-1 duration-200">
-                      <label htmlFor="heel-input" className="mb-1 block text-xs text-zinc-400">
-                        Heel angle (°) — positive = starboard down
+                      <label
+                        htmlFor="heel-input"
+                        className="mb-1 block text-xs text-zinc-400"
+                        title="A positive angle lowers the -Y side of the hull. Which physical side that is depends on how the STL was mirrored on load, so read it as 'the hull leans to one side'."
+                      >
+                        Heel angle (°) — positive = the −Y side goes down
                       </label>
                       <div className="flex items-center gap-3">
                         <input
@@ -357,6 +393,7 @@ export default function App() {
                       {statRow('KB (Keel→Buoyancy)', `${fmt(trimResult.KB)} mm`)}
                       {statRow('BM (Metacentric Radius)', `${fmt(trimResult.BM)} mm`)}
                       {statRow('KM (Keel→Metacenter)', `${fmt(trimResult.KM)} mm`, true)}
+                      {statRow('KG (Keel→Gravity)', `${fmt(trimResult.kgMm)} mm`)}
                       {statRow('GM (Metacentric Height)', `${fmt(trimResult.GM)} mm`, true)}
 
                       {sectionTitle('Righting Arm (GZ)')}

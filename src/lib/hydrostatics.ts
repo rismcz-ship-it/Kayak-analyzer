@@ -1,10 +1,15 @@
-// Waterplane (hydrostatics) solver — first pass: zero-trim draft.
+// Hydrostatics solver: waterplane clipping, form coefficients, stability and trim.
 //
 // Conventions (shared with src/lib/geometry.ts):
 // - Z-up, X = LOA (forward), Y = BOA (side). All STL units are millimetres.
 // - "Draft" is measured upwards from the keel (bounding-box min Z).
 // - Fresh water: rho = 1000 kg/m^3, so 1 kg <-> 1 L <-> 1_000_000 mm^3.
 // - Zero trim means the waterplane is horizontal (no heel, no trim angle).
+//
+// Public entry points:
+// - `findDraft0Trim`  — draft and displacement at a fixed trim/heel.
+// - `solveTrim`       — full solve: trim sweep, form coefficients, stability, GZ curve.
+// - `solveDraftLcb`   — the search half of `findDraft0Trim` (waterline + LCB only).
 
 import {
   applyPitchY,
@@ -82,7 +87,7 @@ export interface Draft0TrimResult {
 }
 
 export interface GZPoint {
-  /** Heel angle in degrees (+ = starboard/right heel) */
+  /** Heel angle in degrees (+ = the -Y side goes down) */
   heelDeg: number
   /** Righting arm in mm */
   GZ: number
@@ -144,8 +149,14 @@ export interface TrimSolveResult {
   bowFreeboardMm: number
   /** Stern freeboard: vertical distance from waterline to stern tip (+ = stern above water) */
   sternFreeboardMm: number
-  /** Fixed heel angle used in solver (degrees). + = starboard down. */
+  /** Fixed heel angle used in solver (degrees). + = the -Y side goes down. */
   heelDeg: number
+  /**
+   * Height of the centre of gravity above the keel, in mm — the KG the
+   * reported `GM` is based on. A run record must state this, otherwise the
+   * GM cannot be reproduced.
+   */
+  kgMm: number
 }
 
 /** Standard heel angles to sample for the GZ curve (degrees). */
@@ -189,6 +200,13 @@ export function compute_gz_curve(
 export const RHO_KG_PER_M3 = 1000
 /** mm^3 per kg of fresh-water displacement (1 kg <-> 1 L). */
 export const MM3_PER_KG = 1_000_000
+/**
+ * Fallback height of the centre of gravity above the keel, in mm.
+ *
+ * Used when a caller does not supply `kgMm`. The UI exposes KG directly, so
+ * this default only applies to library callers and to the test suites.
+ */
+export const DEFAULT_KG_MM = 280
 
 const EPS = 1e-9
 /**
@@ -600,13 +618,15 @@ export function volumeBelowPlane(positions: Float32Array, h: number): number {
  * @param mesh Hull mesh (Z-up; draft measured from bbox min Z = keel).
  * @param target_kg Target displacement mass in kg (fresh water, 1 kg = 1 L).
  * @param KG Optional center of gravity height above keel (mm) for GM calculation.
- * @param heelRad Optional heel angle in radians (+ starboard down). Applied as X-rotation before solving.
+ * @param heelRad Optional heel angle in radians. Positive = the -Y side goes down (see
+ *   `applyRollX`); applied as an X-rotation before solving.
  * @throws when the target is non-positive or exceeds the hull's total volume.
  */
 /**
- * Waterline + LCB only — the search half of {@link find_draft_0trim}.
+ * Waterline + LCB only — the search half of {@link findDraft0Trim}.
  *
- * `solve_trim` sweeps ~26 trim angles and ranks them by how closely LCB tracks
+ * `solveTrim` sweeps the trim window coarse-then-fine (~30 candidate angles
+ * on the app's ±4.5° window) and ranks them by how closely LCB tracks
  * LCG. The sweep reads only `draftMm` and `lcb.x`; everything else the full
  * solve computes — Cb, Cp, Cm, KB, BM, KM, GM, freeboard, the GZ curve — is
  * discarded for all but the winning angle. Deriving those on every trial
@@ -624,7 +644,7 @@ export function volumeBelowPlane(positions: Float32Array, h: number): number {
  *
  * @throws when the target is non-positive or exceeds the hull's total volume.
  */
-function solve_draft_lcb(
+export function solveDraftLcb(
   mesh: MeshLike,
   target_kg: number,
   heelRad?: number,
@@ -636,13 +656,13 @@ function solve_draft_lcb(
   planesEvaluated: number
 } {
   const positions = toPositions(mesh)
-  if (positions.length === 0) throw new Error('solve_draft_lcb: empty mesh')
+  if (positions.length === 0) throw new Error('solveDraftLcb: empty mesh')
   if (!Number.isFinite(target_kg) || target_kg <= 0) {
-    throw new Error(`solve_draft_lcb: target_kg must be > 0 (got ${target_kg})`)
+    throw new Error(`solveDraftLcb: target_kg must be > 0 (got ${target_kg})`)
   }
 
   // Heel first, about the hull bounding-box centre — identical to the block in
-  // find_draft_0trim. Order matters: the bracket must use the *heeled* mesh's
+  // findDraft0Trim. Order matters: the bracket must use the *heeled* mesh's
   // bounds, because a 20 deg roll lifts the low deck corner and the unheeled
   // maxZ is the wrong ceiling.
   //
@@ -723,21 +743,21 @@ function solve_draft_lcb(
   }
 }
 
-export function find_draft_0trim(
+export function findDraft0Trim(
   mesh: MeshLike,
   target_kg: number,
   KG?: number,
   heelRad?: number,
 ): Draft0TrimResult {
   const positions = toPositions(mesh)
-  if (positions.length === 0) throw new Error('find_draft_0trim: empty mesh')
+  if (positions.length === 0) throw new Error('findDraft0Trim: empty mesh')
   if (!Number.isFinite(target_kg) || target_kg <= 0) {
-    throw new Error(`find_draft_0trim: target_kg must be > 0 (got ${target_kg})`)
+    throw new Error(`findDraft0Trim: target_kg must be > 0 (got ${target_kg})`)
   }
 
   // Apply heel rotation (X-axis) if specified.
   //
-  // This function is the SINGLE owner of heel: `solve_trim` passes the angle
+  // This function is the SINGLE owner of heel: `solveTrim` passes the angle
   // in here rather than rolling the mesh itself. Rolling in both places
   // composed the two rotations, so a requested 20 deg floated as 40 deg —
   // and because the two used different pivots (the hull centre vs the origin)
@@ -766,7 +786,7 @@ export function find_draft_0trim(
   const totalVolumeMm3 = Math.abs(signedVolumeMm3(positions))
   if (targetVolumeMm3 > totalVolumeMm3) {
     throw new Error(
-      `find_draft_0trim: target ${(targetVolumeMm3 / 1_000_000).toFixed(1)} L exceeds ` +
+      `findDraft0Trim: target ${(targetVolumeMm3 / 1_000_000).toFixed(1)} L exceeds ` +
         `hull volume ${(totalVolumeMm3 / 1_000_000).toFixed(1)} L — hull would sink`,
     )
   }
@@ -993,7 +1013,8 @@ export function find_draft_0trim(
 /**
  * Trim & LCG/LCB equilibrium solver.
  *
- * Sweeps pitch angles between -maxTrimDeg and +maxTrimDeg in trimStepDeg increments.
+ * Sweeps pitch angles coarse at 5× `trimStepDeg` across ±`maxTrimDeg`, then fine
+ * at `trimStepDeg` over ±0.5° around the winner ("Trim sweep shape" in AGENTS.md).
  * For each candidate pitch angle, finds the equilibrium draft for targetKg,
  * computes the resulting Center of Buoyancy (LCB), and identifies the pitch angle
  * that aligns LCB longitudinally with the target LCG (minimizing |LCB_x - LCG_x|).
@@ -1015,7 +1036,7 @@ export function find_draft_0trim(
  * the rise in KB(φ), which pushes the other way. The shape is the problem.
  *
  * Cost: one heeled draft solve per angle. Callers should pass the mesh that
- * `solve_trim` already decimated — on the test hull that is 2.87x cheaper than
+ * `solveTrim` already decimated — on the test hull that is 2.87x cheaper than
  * the raw mesh (353 ms vs 1013 ms per angle) and moves BM by <= 0.2 mm.
  *
  * @param solveMesh  Hull to float. Reuse the decimated mesh where possible.
@@ -1039,16 +1060,16 @@ export function compute_gz_curve_geometric(
     const phi = (deg * Math.PI) / 180
     if (Math.abs(phi) < 1e-12) return { heelDeg: deg, GZ: 0 }
 
-    // Heel about the hull's own centre, matching how find_draft_0trim applies
+    // Heel about the hull's own centre, matching how findDraft0Trim applies
     // roll internally. Reuse one buffer; each angle overwrites it.
     heeled.set(positions)
     applyRollX(heeled, phi, bounds.center.y, bounds.center.z)
 
-    // Sink to the SAME displacement as the parent solve. find_draft_0trim owns
+    // Sink to the SAME displacement as the parent solve. findDraft0Trim owns
     // heel, so it is called with heelRad = 0 on an already-heeled mesh.
-    const r = find_draft_0trim(heeled, target_kg, KG, 0)
+    const r = findDraft0Trim(heeled, target_kg, KG, 0)
 
-    // Re-clip for the immersed centroid. find_draft_0trim forces lcb.y onto the
+    // Re-clip for the immersed centroid. findDraft0Trim forces lcb.y onto the
     // centreline, which is right for reporting LCB but destroys the very
     // off-centreline offset GZ depends on.
     const { clipped } = clipBelowPlane(heeled, r.waterlineZ)
@@ -1077,34 +1098,41 @@ export function compute_gz_curve_geometric(
  * computes the resulting Center of Buoyancy (LCB), and identifies the pitch angle
  * that aligns LCB longitudinally with the target LCG (minimizing |LCB_x - LCG_x|).
  */
-export function solve_trim(
+export function solveTrim(
   mesh: MeshLike,
   target_kg: number,
   options?: {
     targetLcgPercentFromBow?: number // e.g. 52% default
-    maxTrimDeg?: number // default 3 deg
+    maxTrimDeg?: number // default 3.5 deg
     trimStepDeg?: number // default 0.1 deg
-    fixedHeelDeg?: number // default 0 (no heel). + = starboard down
+    fixedHeelDeg?: number // default 0 (no heel). + = the -Y side goes down
+    /**
+     * Height of the centre of gravity ABOVE THE KEEL, in mm. Default 280 mm.
+     * This is a height, not an absolute Z — see the note on `KG_MM` below.
+     */
+    kgMm?: number
   },
 ): TrimSolveResult {
   const positions = toPositions(mesh)
-  if (positions.length === 0) throw new Error('solve_trim: empty mesh')
+  if (positions.length === 0) throw new Error('solveTrim: empty mesh')
 
   // Decimate once for the entire trim sweep — keeps solver fast.
   //
-  // Decimation is only safe if it leaves the mesh watertight. `decimateMesh`
-  // snaps vertices to cell centroids, which collapses ~76% of triangles to
-  // zero area on a hull this size; those faces carry no volume but their
-  // edges still generate waterplane crossings that do not pair up, which
-  // shattered the waterplane contour into open chains and produced
-  // meaningless BM/GM at heel. Rather than patch holes downstream, fall back
-  // to the original mesh whenever the decimation is not clean. The original
-  // is only ~40k triangles, which the solver handles comfortably.
+  // `decimateMesh` is a QEM edge-collapse (see geometry.ts): it keeps the mesh
+  // watertight and preserves winding, which is what the waterplane clipper
+  // needs. An EARLIER clustering-based implementation snapped vertices to cell
+  // centroids and collapsed ~76% of the triangles to zero area; those faces
+  // carried no volume but their edges still generated waterplane crossings
+  // that did not pair up, which shattered the waterplane contour into open
+  // chains and produced meaningless BM/GM at heel. Rather than patch holes
+  // downstream, the solver still falls back to the original mesh whenever the
+  // decimation is not clean. The original is only ~40k triangles, which the
+  // solver handles comfortably.
   const decimated = decimateMesh(positions, DEFAULT_SOLVER_TRIANGLES)
   const solveMesh = isMeshUsableForHydrostatics(decimated) ? decimated : positions
   if (solveMesh !== decimated) {
     console.warn(
-      `solve_trim: decimation produced an unusable mesh; ` +
+      `solveTrim: decimation produced an unusable mesh; ` +
         `solving on the original ${(positions.length / 9) | 0} triangles instead.`,
     )
   }
@@ -1137,7 +1165,7 @@ export function solve_trim(
   const targetLcgPercent = options?.targetLcgPercentFromBow ?? 52
   // Bow is at max X; stern is at min X
   const targetLcgX = bowX - (targetLcgPercent / 100) * lengthX
-  // KG is a HEIGHT above the keel, which is what find_draft_0trim expects
+  // KG is a HEIGHT above the keel, which is what findDraft0Trim expects
   // (it computes KM - KG). LCG's world-Z is the same point expressed as an
   // absolute coordinate, so it is bounds.min.z + KG.
   //
@@ -1147,11 +1175,18 @@ export function solve_trim(
   // inflated every reported KM/GM by 162.5 mm — GM read 272.9 instead of
   // 110.4, and no test caught it because every suite passed `undefined` for
   // KG, leaving GM = 0.
-  const KG_MM = 280
+  //
+  // DEFAULT_KG_MM is the fallback for callers that do not supply one. The UI
+  // now exposes KG (App.tsx) and passes it explicitly, so a run's GM always
+  // reflects the value the user entered.
+  const KG_MM = options?.kgMm ?? DEFAULT_KG_MM
+  if (!Number.isFinite(KG_MM) || KG_MM <= 0) {
+    throw new Error(`solveTrim: kgMm must be > 0 (got ${KG_MM})`)
+  }
   const lcg: Vec3 = {
     x: targetLcgX,
     y: bounds.center.y,
-    z: bounds.min.z + KG_MM, // Default KG 280mm above keel
+    z: bounds.min.z + KG_MM, // KG is a height above the keel
   }
 
   const maxTrimDeg = options?.maxTrimDeg ?? 3.5
@@ -1176,7 +1211,7 @@ export function solve_trim(
   // Search the trim angle with the cheap waterline+LCB solve. Only the winning
   // angle is re-solved in full afterwards, so Cb/Cp/Cm/KB/BM/GM/GZ and the
   // freeboards are derived once rather than ~26 times. The reported numbers
-  // still come from find_draft_0trim, so this cannot alter the output —
+  // still come from findDraft0Trim, so this cannot alter the output —
   // verified bit-identical by tests/verify-trim-search.ts.
   const searchAngle = (deg: number): void => {
     const rad = (deg * Math.PI) / 180
@@ -1186,7 +1221,7 @@ export function solve_trim(
     applyPitchY(workingPositions, rad, targetLcgX, bounds.center.z)
 
     try {
-      const res = solve_draft_lcb(workingPositions, target_kg, fixedHeelRad)
+      const res = solveDraftLcb(workingPositions, target_kg, fixedHeelRad)
       totalPlanes += res.planesEvaluated
 
       const cosA = Math.cos(rad)
@@ -1224,7 +1259,7 @@ export function solve_trim(
   // One full solve on the winning angle: this is the result the user sees.
   if (hasBest && bestPitchedPositions) {
     try {
-      const full = find_draft_0trim(bestPitchedPositions, target_kg, KG_MM, fixedHeelRad)
+      const full = findDraft0Trim(bestPitchedPositions, target_kg, KG_MM, fixedHeelRad)
       const rx = full.lcb.x - targetLcgX
       const rz = full.lcb.z - bounds.center.z
       bestResult = {
@@ -1241,7 +1276,7 @@ export function solve_trim(
   }
 
   if (!bestResult) {
-    const fallback = find_draft_0trim(solveMesh, target_kg, KG_MM, fixedHeelRad)
+    const fallback = findDraft0Trim(solveMesh, target_kg, KG_MM, fixedHeelRad)
     bestResult = {
       ...fallback,
       lcb: { ...fallback.lcb, y: bounds.center.y }, // Force centerline
@@ -1302,5 +1337,6 @@ export function solve_trim(
     ),
     gzCurve: compute_gz_curve_geometric(solveMesh, target_kg, KG_MM),
     heelDeg: fixedHeelDeg,
+    kgMm: KG_MM,
   }
 }
