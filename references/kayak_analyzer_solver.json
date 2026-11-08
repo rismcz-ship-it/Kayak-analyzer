@@ -7,7 +7,7 @@
     "model_hash": { "type": "string", "description": "SHA256 of the STL model used" },
     "targets": {
       "type": "object",
-      "required": ["weight_kg", "lcg_pct_lwl"],
+      "required": ["weight_kg", "lcg_pct_lwl", "kg_mm"],
       "properties": {
         "weight_kg": { "type": "number", "minimum": 0 },
         "lcg_pct_lwl": {
@@ -19,7 +19,7 @@
         "kg_mm": {
           "type": "number",
           "minimum": 0,
-          "description": "Vertical center of gravity above keel in mm. Optional only because the UI has no KG control yet — the solver currently assumes 280 mm, so a run that does not state its KG did not come from user input."
+          "description": "Vertical center of gravity above keel in mm. Required: the UI exposes KG, and a run that does not state its KG cannot be reproduced. The solver's fallback when a caller omits it is 280 mm (DEFAULT_KG_MM)."
         }
       }
     },
