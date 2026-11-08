@@ -1,6 +1,10 @@
 ---
 name: computational-geometry
 description: Design and review robust computational-geometry algorithms for CAD. Use whenever the task involves ray casting, point-in-polygon or point-in-solid tests, plane/curve/surface intersection, bounding boxes, spatial acceleration (BVH, KD-tree, R-tree), convex hull, boolean operations, distance and closest-point queries, or collision/interference checks — and especially when robustness, degenerate cases, or floating-point reliability matter. Use this skill when geometry code must give correct answers on real-world dirty data.
+license: MIT
+metadata:
+  author: OpenAEC-Foundation
+  version: "1.0"
 ---
 
 # Computational Geometry for CAD

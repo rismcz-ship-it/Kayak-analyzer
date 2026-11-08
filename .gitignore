@@ -24,14 +24,17 @@ Thumbs.db
 .env
 
 # Local dev scripts (wizard-generated)
-scripts/deploy-wizard.sh
-scripts/reset-to-commit.sh
+scripts/
 check-mesh.ts
 
 # Local uploads / test artifacts (keep repo small)
 uploads/
 *.stl
 !sample_data/*.stl
-# The verification suites need this mesh — without it they abort at import.
-# It has to live in the repo or a fresh clone verifies nothing.
-!tests/*.stl
+# Test fixtures must be committed: the verification suites read them at import
+# time, so a fresh clone has to contain them or it verifies nothing. The
+# re-inclusion has to cover every fixture folder, not just tests/, or a new
+# fixture is silently ignored and the suite fails at import for no visible
+# reason.
+!tests/**/*.stl
+!fixtures/**/*.stl
