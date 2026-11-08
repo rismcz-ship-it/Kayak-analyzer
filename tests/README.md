@@ -21,15 +21,15 @@ npm test
 
 Runs all seven in order and stops at the first failure.
 
-| File                     | Validates                                                                                                                                       |
-| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| `verify-analytic.ts`     | Box and cylinder with closed-form answers: Cb/Cp/Cm, KB, BM, waterplane area at heel                                                            |
-| `verify-box-identity.ts` | Box identity — BM = I/V, KB = draft/2, section clipping against the waterline                                                                   |
-| `verify-coefficients.ts` | Real-hull Cb in range, displacement closes on the target mass                                                                                   |
-| `verify-decimation.ts`   | QEM decimation is watertight, hits its triangle target, holds volume; plus an analytic subdivided cube                                          |
-| `verify-gz.ts`           | GZ curve: wall-sided closed form, the same box measured through the geometry path, sign convention, and real hull vs plotted curve              |
-| `verify-heel-real.ts`    | Real hull: draft rises and BM falls monotonically with heel                                                                                     |
-| `verify-trim-search.ts`  | The cheap trim search returns exactly the same draft and LCB as the full solve — 240 cases over 3 hulls, 4 masses, 4 heel angles, 5 trim angles |
+| File                     | Validates                                                                                                                                                                                                                                                              |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `verify-analytic.ts`     | Box and cylinder with closed-form answers: Cb/Cp/Cm, KB, BM, waterplane area at heel                                                                                                                                                                                   |
+| `verify-box-identity.ts` | Box identity — BM = I/V, KB = draft/2, section clipping against the waterline                                                                                                                                                                                          |
+| `verify-coefficients.ts` | Real-hull Cb in range, displacement closes on the target mass                                                                                                                                                                                                          |
+| `verify-decimation.ts`   | QEM decimation is watertight, hits its triangle target, holds volume; plus an analytic subdivided cube                                                                                                                                                                 |
+| `verify-gz.ts`           | GZ curve: wall-sided closed form, the same box measured through the geometry path, sign convention, and real hull vs plotted curve                                                                                                                                     |
+| `verify-heel-real.ts`    | Real hull: draft rises and BM falls monotonically with heel                                                                                                                                                                                                            |
+| `verify-trim-search.ts`  | The cheap trim search returns exactly the same draft and LCB as the full solve — 80 cases per floatable hull (4 masses, 4 heel angles, 5 trim angles). Only `test-kayak.stl` is required; the `~/Downloads` hulls are optional extras skipped when absent (e.g. on CI) |
 
 ## Diagnostic scripts — `npm run test:print`
 
@@ -64,4 +64,6 @@ node tests/test-lcb.mjs
 - Expected after correct auto-orientation: bounds `2714.4 × 613.1 × 325.1 mm`, trim ≈ `-1.90°`,
   LCB–LCG offset under 1 mm. A large offset means orientation or bow detection broke.
 - The two open-section STLs in `~/Downloads` (bow, stern) enclose no volume and cannot float;
-  `verify-trim-search` loads them only to prove it is not silently passing on an empty case set.
+  they are optional local extras: when present, `verify-trim-search` loads them only to prove it
+  is not silently passing on an empty case set. When absent (e.g. on CI) they are skipped
+  without failing — a mesh that is _present but unreadable_ still fails, in either group.

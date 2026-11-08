@@ -51,20 +51,20 @@ Scripts in `tests/` — run when modifying the corresponding module. **They fall
 
 All of them need `tests/test-kayak.stl` (2.0 MB, tracked in git). Without it they fail at import.
 
-| Test                     | Group  | Trigger               | Validates                                                                     |
-| ------------------------ | ------ | --------------------- | ----------------------------------------------------------------------------- |
-| `verify-analytic.ts`     | assert | Coefficients          | Box + cylinder known answers: Cb/Cp/Cm, KB, BM, Awp at heel                   |
-| `verify-box-identity.ts` | assert | Coefficients          | Box identity — BM = I/V, KB = draft/2, section clipping                       |
-| `verify-coefficients.ts` | assert | Coefficients          | Real-hull Cb range, displacement closes on target                             |
-| `verify-decimation.ts`   | assert | Geometry              | QEM output watertight, on target, volume error; analytic subdivided cube      |
-| `verify-gz.ts`           | assert | Stability             | GZ curve vs analytic box closed form and vs the production geometry path      |
-| `verify-heel-real.ts`    | assert | Stability             | Real-hull draft rises and BM falls monotonically with heel                    |
-| `verify-trim-search.ts`  | assert | Solver                | Cheap trim search is bit-identical to the full solve (240 cases)              |
-| `test-auto-orient.ts`    | print  | Geometry: orientation | `autoOrientToZUp()` — arbitrary STL axes → Z-up, deck-up, bow detection       |
-| `test-box.ts`            | print  | Geometry: primitives  | All geometry helpers + `solve_trim` on synthetic hull with known ground truth |
-| `test-solver.ts`         | print  | Solver: trim          | Full pipeline: 4 orientation scenarios × trim sweep                           |
-| `test-lcb.mjs`           | print  | Mesh: external        | Raw mesh validation on `~/Downloads/Kayak v2.stl` — hardcoded local path      |
-| `test-kayak.stl`         | data   | —                     | Test mesh (2.0 MB), required by all of the above                              |
+| Test                     | Group  | Trigger               | Validates                                                                                                                                                |
+| ------------------------ | ------ | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `verify-analytic.ts`     | assert | Coefficients          | Box + cylinder known answers: Cb/Cp/Cm, KB, BM, Awp at heel                                                                                              |
+| `verify-box-identity.ts` | assert | Coefficients          | Box identity — BM = I/V, KB = draft/2, section clipping                                                                                                  |
+| `verify-coefficients.ts` | assert | Coefficients          | Real-hull Cb range, displacement closes on target                                                                                                        |
+| `verify-decimation.ts`   | assert | Geometry              | QEM output watertight, on target, volume error; analytic subdivided cube                                                                                 |
+| `verify-gz.ts`           | assert | Stability             | GZ curve vs analytic box closed form and vs the production geometry path                                                                                 |
+| `verify-heel-real.ts`    | assert | Stability             | Real-hull draft rises and BM falls monotonically with heel                                                                                               |
+| `verify-trim-search.ts`  | assert | Solver                | Cheap trim search is bit-identical to the full solve (80 cases with only the tracked mesh; +80 per present local floatable STL, 0 for the open sections) |
+| `test-auto-orient.ts`    | print  | Geometry: orientation | `autoOrientToZUp()` — arbitrary STL axes → Z-up, deck-up, bow detection                                                                                  |
+| `test-box.ts`            | print  | Geometry: primitives  | All geometry helpers + `solve_trim` on synthetic hull with known ground truth                                                                            |
+| `test-solver.ts`         | print  | Solver: trim          | Full pipeline: 4 orientation scenarios × trim sweep                                                                                                      |
+| `test-lcb.mjs`           | print  | Mesh: external        | Raw mesh validation on `~/Downloads/Kayak v2.stl` — hardcoded local path                                                                                 |
+| `test-kayak.stl`         | data   | —                     | Test mesh (2.0 MB), required by all of the above                                                                                                         |
 
 Run: `npm test` (all seven assertion suites, stops on first failure) · `npm run test:print` (the `console.log` harnesses) · or a single file with `npm exec -- tsx tests/<file>.ts` / `node tests/test-lcb.mjs`
 

@@ -109,9 +109,18 @@ function applyRollXHelper(out: Float32Array, phiRad: number, pivotY: number, piv
   }
 }
 
-function loadHull(path: string): Float32Array | null {
+/**
+ * Result of trying to load one STL path. The distinction matters for the
+ * guard at the bottom of this file: "missing" (the file is not there) can be
+ * tolerated for optional hulls, but "invalid" (present on disk, unreadable,
+ * too large, or not an STL) must always fail — a corrupted mesh cannot be
+ * waved off as merely absent.
+ */
+function loadHull(
+  path: string,
+): { missing: true } | { invalid: true } | { positions: Float32Array } {
   try {
-    if (statSync(path).size > 40e6) return null
+    if (statSync(path).size > 40e6) return { invalid: true }
     // Node's readFileSync can return a buffer that is a view into a larger
     // pooled ArrayBuffer, so slice out exactly the file's own bytes before
     // handing them to the parser. Passing the whole pool made the STL parse
@@ -122,9 +131,10 @@ function loadHull(path: string): Float32Array | null {
     const p = new Float32Array(raw)
     autoOrientToZUp(p)
     centerToOrigin(p)
-    return p
-  } catch {
-    return null
+    return { positions: p }
+  } catch (e) {
+    if (e instanceof Error && 'code' in e && e.code === 'ENOENT') return { missing: true }
+    return { invalid: true }
   }
 }
 
@@ -132,6 +142,14 @@ interface HullSpec {
   label: string
   paths: string[]
   masses: number[]
+  /**
+   * Optional local extras (~/Downloads STLs on Richard's machine). When the
+   * file is absent — e.g. on CI — the hull is skipped without failing: only
+   * test-kayak.stl is required by the repo's test contract (AGENTS.md).
+   * Hulls present on disk still must produce cases, so a corrupted or
+   * unreadable optional mesh cannot be waved off as "not found".
+   */
+  optional?: boolean
   /**
    * Open / partial STL sections that enclose no volume. They are loaded to
    * prove the test does not silently pass on an empty case set, but they
@@ -154,22 +172,26 @@ const HULLS: HullSpec[] = [
     label: 'Body56.stl',
     paths: ['C:/Users/Richard Malán/Downloads/Body56.stl'],
     masses: [55, 65, 75, 90],
+    optional: true,
   },
   {
     label: 'Kayak v2.stl',
     paths: ['C:/Users/Richard Malán/Downloads/Kayak v2.stl'],
     masses: [55, 65, 75, 90],
+    optional: true,
   },
   {
     label: 'kayak model bow.stl',
     paths: ['C:/Users/Richard Malán/Downloads/kayak model bow.stl'],
     masses: [12, 18, 25, 32],
+    optional: true,
     openSection: true,
   },
   {
     label: 'kayak model stern.stl',
     paths: ['C:/Users/Richard Malán/Downloads/kayak model stern.stl'],
     masses: [12, 18, 25, 32],
+    optional: true,
     openSection: true,
   },
 ]
@@ -182,13 +204,32 @@ const skipped: string[] = []
 
 for (const spec of HULLS) {
   let positions: Float32Array | null = null
+  // Every candidate path was absent. If any path was present but unreadable
+  // ("invalid"), the hull fails below regardless of `optional`.
+  let allMissing = true
   for (const p of spec.paths) {
-    positions = loadHull(p)
-    if (positions) break
+    const load = loadHull(p)
+    if ('positions' in load) {
+      positions = load.positions
+      break
+    }
+    if ('invalid' in load) {
+      allMissing = false
+      break
+    }
   }
   if (!positions) {
-    skipped.push(spec.label)
-    console.log(`${spec.label.padEnd(20)} SKIPPED (not found)`)
+    if (allMissing) {
+      console.log(
+        `${spec.label.padEnd(20)} SKIPPED (not found${spec.optional ? ', optional local hull — fine on CI' : ''})`,
+      )
+      if (!spec.optional) skipped.push(spec.label)
+      continue
+    }
+    // Present on disk but unreadable, too large, or not an STL. Fails even
+    // for optional hulls — corruption is not absence.
+    console.log(`${spec.label.padEnd(20)} PRESENT BUT UNREADABLE`)
+    check(`${spec.label} readable as an STL`, false, 'file exists but could not be loaded')
     continue
   }
 
@@ -257,15 +298,14 @@ for (const spec of HULLS) {
   )
 }
 
-// Every floatable hull in the list must have actually contributed cases,
-// otherwise the test can pass while verifying nothing. Open sections are
-// excluded deliberately — they enclose no volume and cannot float.
+// Every required hull must have actually contributed cases, otherwise the
+// test can pass while verifying nothing. Optional local hulls (~/Downloads
+// STLs) are skipped without failing when the file is absent — e.g. on CI —
+// but a hull that IS on disk still must produce cases, so its failure is
+// caught above even when optional. Open sections are excluded deliberately —
+// they enclose no volume and cannot float.
 console.log()
-check(
-  'every floatable listed hull produced cases',
-  skipped.length === 0,
-  `skipped: ${skipped.join(', ')}`,
-)
+check('every required hull produced cases', skipped.length === 0, `skipped: ${skipped.join(', ')}`)
 
 console.log(`\n${checks} checks, ${failures} failed, ${totalCases} cases`)
 if (skipped.length) console.log(`skipped hulls: ${skipped.join(', ')}`)
