@@ -15,6 +15,7 @@ import {
   applyPitchY,
   applyRollX,
   computeBounds,
+  computeSurfaceAreaMm2,
   computeVolumeAndCentroid,
   computeWaterlineBeamMm,
   computeWaterlineLengthMm,
@@ -84,6 +85,33 @@ export interface Draft0TrimResult {
   sternFreeboardMm: number
   /** Heel angle applied during solve (radians → degrees for consistency) */
   heelDeg: number
+  /**
+   * Number of closed loops the waterplane contour resolved into at the solved
+   * waterline. 1 for a watertight hull; anything else means the waterplane
+   * numbers on this result are not trustworthy.
+   */
+  waterplaneLoopCount: number
+  /** Waterplane coefficient: Cwp = Awp / (LWL × BWL). */
+  Cwp: number
+  /**
+   * Wetted surface area of the hull, mm² — the clipped solid's surface minus
+   * the waterplane cap. Used for paint/area estimates and for normalising
+   * resistance figures.
+   */
+  wettedSurfaceAreaMm2: number
+  /** Longitudinal centre of flotation (waterplane centroid x), mm. */
+  waterplaneCentroidX: number
+  /**
+   * Waterplane longitudinal second moment of area about its own centroidal
+   * axis, mm⁴. The companion of `waterplaneIx`; do not substitute one for the
+   * other.
+   */
+  waterplaneIyyMm4: number
+  /**
+   * Tonnes per centimetre immersion: the mass added by 1 cm of sinkage.
+   * Awp[m²] / 100 for fresh water (ρ = 1000 kg/m³).
+   */
+  tpcTonnesPerCm: number
 }
 
 export interface GZPoint {
@@ -91,6 +119,22 @@ export interface GZPoint {
   heelDeg: number
   /** Righting arm in mm */
   GZ: number
+  /**
+   * Draft at this heel (above the keel), mm. Present once the curve reports it;
+   * absent for points produced by callers that only supply the arm.
+   */
+  draftMm?: number
+  /**
+   * Clearance from the waterline to the bow/stern STEM TIP at this heel, mm
+   * (min of bow and stern, taken from the extreme-X vertex — see
+   * `findDraft0Trim`). It is NOT a sheer or deck-edge distance: a kayak's stem
+   * tip sits well below the highest point of the deck, so this wets earlier
+   * than the deck edge does. The lower anchor of the
+   * {@link TrimSolveResult.endTipImmersionDeg} interpolation; 0 is the waterline
+   * reaching the stem tip. Like the whole curve it is sampled on the UPRIGHT,
+   * untrimmed hull — it does not follow {@link TrimSolveResult.pivot}.
+   */
+  minFreeboardMm?: number
 }
 
 export interface TrimSolveResult {
@@ -157,6 +201,60 @@ export interface TrimSolveResult {
    * GM cannot be reproduced.
    */
   kgMm: number
+  /**
+   * Number of closed loops the waterplane contour resolved into at the solved
+   * waterline. 1 for a watertight hull; anything else means the waterplane
+   * numbers on this result are not trustworthy.
+   */
+  waterplaneLoopCount: number
+  /** Waterplane coefficient: Cwp = Awp / (LWL × BWL). */
+  Cwp: number
+  /** Wetted surface area of the hull, mm² (clipped surface minus the cap). */
+  wettedSurfaceAreaMm2: number
+  /**
+   * Longitudinal centre of flotation (waterplane centroid x), mm, in the
+   * UNTILTED hull frame — rotated back from the pitched solve frame by the same
+   * transform applied to {@link lcb}, so LCF and LCB are directly comparable.
+   * Without that correction the value sits in the tilted frame and disagrees
+   * with the LCG/LCB pairing by ~1 mm at the ±4.5° sweep edges.
+   */
+  waterplaneCentroidX: number
+  /**
+   * Waterplane longitudinal second moment of area about its own centroidal
+   * axis, mm⁴. Companion of the transverse `waterplaneIx` inside
+   * {@link Draft0TrimResult}: Iy = ∫x²dA about the waterplane centroid, the
+   * LCF term, while Ix = ∫y²dA is what feeds BM. Do not substitute one for the
+   * other. The transverse/longitudinal wording follows this repo's existing
+   * convention on `waterplaneIx` (the axis each quantity integrates y,x about),
+   * not the I_L/I_T notation of naval handbooks.
+   */
+  waterplaneIyyMm4: number
+  /**
+   * Tonnes per centimetre immersion: Awp[m²] / 100, fresh water.
+   */
+  tpcTonnesPerCm: number
+  /**
+   * Heel angle in degrees at which a hull END (bow or stern STEM TIP) first
+   * reaches the water, linearly interpolated between the {@link gzCurve}
+   * samples (so it is approximate to about half a sample step). 0 when the stem
+   * tip is already under at rest, and null when it stays clear across the whole
+   * sampled range.
+   *
+   * What this is NOT: a sheer or deck-edge immersion angle. The stem tip of a
+   * kayak sits far below the deck edge, so this reports immersion early — it is
+   * the first water at the extremity, not the first water over the deck. It is
+   * also measured on the UPRIGHT, untrimmed GZ curve (see {@link compute_gz_curve_geometric}),
+   * so it does not follow `fixedHeelDeg` or the solved trim: a result trimmed
+   * bow-down and heeled 20° still reports the upright value here. Read it as
+   * "how far can this hull be heeled, upright, before an end dips". Both
+   * properties are asserted by `tests/verify-solve-extras.ts` sections 8–9.
+   *
+   * It comes off the same decimated solve mesh as every other number on this
+   * result, so a stem tip is only as precise as the decimation that kept it —
+   * measured 38.4° on the decimated mesh against 40.2° on the original for the
+   * committed test hull at 150 kg.
+   */
+  endTipImmersionDeg: number | null
 }
 
 /** Standard heel angles to sample for the GZ curve (degrees). */
@@ -313,6 +411,21 @@ export interface ClippedBelow {
   /** Waterplane second moment of area about the waterplane's own centroid, mm^4. */
   waterplaneIx: number
   /**
+   * Waterplane second moment of area about the waterplane's own LONGITUDINAL
+   * centroidal axis, mm^4. The companion of {@link waterplaneIx} on the other
+   * axis: I_x is the transverse moment (it drives BM and GM), I_y is the
+   * longitudinal one (trim metacentre, LCF context). On a slender hull I_y is
+   * roughly (LWL/BWL)^2 times larger, so a transposed pair is easy to spot and
+   * fatal to ship if it is not spotted.
+   */
+  waterplaneIyyMm4: number
+  /**
+   * Longitudinal centre of flotation: the x coordinate of the waterplane
+   * centroid, in mesh coordinates. The trim rotates about this point, so it is
+   * the reference every trim statement is measured from.
+   */
+  waterplaneCentroidX: number
+  /**
    * Number of distinct closed loops the waterplane contour resolved into.
    * A watertight hull cut by a single plane must give exactly 1. More than
    * one means the contour was fragmented (bad welding, or a genuinely
@@ -340,6 +453,7 @@ export function clipBelowPlane(positions: Float32Array, h: number): ClippedBelow
   const segX2: number[] = []
   const segY2: number[] = []
   let waterplaneIx = 0
+  let waterplaneIyyMm4 = 0
 
   const pushTri = (
     ax: number,
@@ -473,6 +587,10 @@ export function clipBelowPlane(positions: Float32Array, h: number): ClippedBelow
   }
 
   let waterplaneAreaMm2 = 0
+  // Waterplane-centroid accumulators, summed over loops as unsigned areas so
+  // the result does not depend on the winding of each loop.
+  let lcAreaSum = 0
+  let lcMomentSum = 0
   const loops: XY[][] = []
 
   if (segX1.length > 0) {
@@ -540,6 +658,7 @@ export function clipBelowPlane(positions: Float32Array, h: number): ClippedBelow
     for (const pts of loops) {
       let signedArea = 0
       let Ix = 0 // second moment of area about the X axis through Y=0
+      let Iy = 0 // second moment of area about the Y axis through X=0
       for (let k = 0; k < pts.length; k++) {
         const p = pts[k]
         const q = pts[(k + 1) % pts.length]
@@ -547,6 +666,9 @@ export function clipBelowPlane(positions: Float32Array, h: number): ClippedBelow
         signedArea += cross
         // I contribution for this edge: (y₁² + y₁y₂ + y₂²) * (x₁y₂ - x₂y₁) / 12
         Ix += (p.y * p.y + p.y * q.y + q.y * q.y) * cross
+        // Same edge integral with the roles of x and y exchanged — this is the
+        // OTHER axis, so the two moments cannot be transposed by accident.
+        Iy += (p.x * p.x + p.x * q.x + q.x * q.x) * cross
       }
       signedArea /= 2
       if (Math.abs(signedArea) < 1e-9) continue
@@ -575,6 +697,13 @@ export function clipBelowPlane(positions: Float32Array, h: number): ClippedBelow
       // The shoelace cross product flips sign with the loop's winding, so
       // abs() each loop's Ix; the correction term is already unsigned.
       waterplaneIx += Math.max(0, Math.abs(Ix) / 12 - A * cy * cy)
+      // The longitudinal companion: identical formula, x instead of y.
+      // Keeping the sign/abs convention the same as Ix above is what makes the
+      // pair comparable — see the parallel comment on `waterplaneIyyMm4`.
+      waterplaneIyyMm4 += Math.max(0, Math.abs(Iy) / 12 - A * cx * cx)
+      // LCF is an area-weighted mean of the loop centroids.
+      lcAreaSum += A
+      lcMomentSum += A * cx
       // Fan needs CCW order for a +Z (outward) cap, CW for inward.
       const wantCCW = outward
       const isCCW = signedArea > 0
@@ -591,6 +720,8 @@ export function clipBelowPlane(positions: Float32Array, h: number): ClippedBelow
     clipped: new Float32Array(out),
     waterplaneAreaMm2,
     waterplaneIx,
+    waterplaneIyyMm4,
+    waterplaneCentroidX: lcAreaSum > 0 ? lcMomentSum / lcAreaSum : 0,
     waterplaneLoopCount: loops.length,
   }
 }
@@ -743,6 +874,39 @@ export function solveDraftLcb(
   }
 }
 
+/**
+ * Waterplane extras, shared by both of `findDraft0Trim`'s return paths.
+ *
+ * Cwp's denominator uses the RAW LWL/BWL, not the 0.1 mm-rounded values the
+ * result reports, so the coefficient is not polluted by display rounding. The
+ * cap is part of `clip.clipped`, so subtracting Awp from the clipped solid's
+ * total surface leaves the wetted hull area.
+ */
+function waterplaneExtras(
+  clip: ClippedBelow,
+  lwlMm: number,
+  bwlMm: number,
+): {
+  waterplaneLoopCount: number
+  Cwp: number
+  wettedSurfaceAreaMm2: number
+  waterplaneCentroidX: number
+  waterplaneIyyMm4: number
+  tpcTonnesPerCm: number
+} {
+  const { clipped, waterplaneAreaMm2, waterplaneCentroidX, waterplaneIyyMm4, waterplaneLoopCount } =
+    clip
+  return {
+    waterplaneLoopCount,
+    Cwp: lwlMm > 0 && bwlMm > 0 ? waterplaneAreaMm2 / (lwlMm * bwlMm) : 0,
+    wettedSurfaceAreaMm2: Math.max(0, computeSurfaceAreaMm2(clipped) - waterplaneAreaMm2),
+    waterplaneCentroidX,
+    waterplaneIyyMm4,
+    // Fresh water (ρ = 1000 kg/m³): 1 cm of extra sinkage displaces Awp[m²]/100 t.
+    tpcTonnesPerCm: waterplaneAreaMm2 / 1_000_000 / 100,
+  }
+}
+
 export function findDraft0Trim(
   mesh: MeshLike,
   target_kg: number,
@@ -801,7 +965,8 @@ export function findDraft0Trim(
 
   // Degenerate case: target equals total volume — floating at the deck edge.
   if (upperV <= targetVolumeMm3) {
-    const { clipped, waterplaneAreaMm2, waterplaneIx } = clipBelowPlane(workingPositions, upperH)
+    const clip = clipBelowPlane(workingPositions, upperH)
+    const { clipped, waterplaneAreaMm2, waterplaneIx } = clip
     const { centroid: lcb } = computeVolumeAndCentroid(clipped)
     const draftMm = maxZ - minZ
     const LWL = computeWaterlineLengthMm(workingPositions, upperH) || bounds.size.x
@@ -872,6 +1037,7 @@ export function findDraft0Trim(
       bowFreeboardMm: Number(bowFreeboardMm.toFixed(1)),
       sternFreeboardMm: Number(sternFreeboardMm.toFixed(1)),
       heelDeg: heelRad ? (heelRad * 180) / Math.PI : 0,
+      ...waterplaneExtras(clip, LWL, BWL),
     }
   }
 
@@ -913,7 +1079,8 @@ export function findDraft0Trim(
 
   // Verification pass: clip exactly at the interpolated waterline so the
   // returned displacement is a measured mesh volume, not the interpolation.
-  const { clipped, waterplaneAreaMm2, waterplaneIx } = clipBelowPlane(workingPositions, waterlineZ)
+  const clip = clipBelowPlane(workingPositions, waterlineZ)
+  const { clipped, waterplaneAreaMm2, waterplaneIx } = clip
   const { volumeMm3: verifiedVolumeMm3, centroid: lcb } = computeVolumeAndCentroid(clipped)
   planesEvaluated += 1
 
@@ -1007,18 +1174,10 @@ export function findDraft0Trim(
     bowFreeboardMm: Number(bowFreeboardMm.toFixed(1)),
     sternFreeboardMm: Number(sternFreeboardMm.toFixed(1)),
     heelDeg: heelRad ? (heelRad * 180) / Math.PI : 0,
+    ...waterplaneExtras(clip, LWL, BWL),
   }
 }
 
-/**
- * Trim & LCG/LCB equilibrium solver.
- *
- * Sweeps pitch angles coarse at 5× `trimStepDeg` across ±`maxTrimDeg`, then fine
- * at `trimStepDeg` over ±0.5° around the winner ("Trim sweep shape" in AGENTS.md).
- * For each candidate pitch angle, finds the equilibrium draft for targetKg,
- * computes the resulting Center of Buoyancy (LCB), and identifies the pitch angle
- * that aligns LCB longitudinally with the target LCG (minimizing |LCB_x - LCG_x|).
- */
 /**
  * Measured righting-arm (GZ) curve — the curve the app plots.
  *
@@ -1058,7 +1217,20 @@ export function compute_gz_curve_geometric(
 
   return heelAnglesDeg.map((deg) => {
     const phi = (deg * Math.PI) / 180
-    if (Math.abs(phi) < 1e-12) return { heelDeg: deg, GZ: 0 }
+    if (Math.abs(phi) < 1e-12) {
+      // GZ is identically zero at zero heel, so the arm is not measured here.
+      // The draft and deck freeboard still are: the 0° point is the lower
+      // anchor of the deck-edge immersion interpolation in `solveTrim`, and
+      // without it the first interpolation step has nothing to interpolate
+      // from. One draft solve per curve is the price of that anchor.
+      const r = findDraft0Trim(positions, target_kg, KG, 0)
+      return {
+        heelDeg: deg,
+        GZ: 0,
+        draftMm: r.draftMm,
+        minFreeboardMm: Math.min(r.bowFreeboardMm, r.sternFreeboardMm),
+      }
+    }
 
     // Heel about the hull's own centre, matching how findDraft0Trim applies
     // roll internally. Reuse one buffer; each angle overwrites it.
@@ -1087,8 +1259,55 @@ export function compute_gz_curve_geometric(
     return {
       heelDeg: deg,
       GZ: Number((Number.isFinite(gz) ? gz : 0).toFixed(1)),
+      draftMm: r.draftMm,
+      minFreeboardMm: Math.min(r.bowFreeboardMm, r.sternFreeboardMm),
     }
   })
+}
+
+/**
+ * Heel at which a hull END (bow or stern stem tip) reaches the water,
+ * interpolated from a GZ curve.
+ *
+ * The curve samples the stem-tip clearance (see {@link GZPoint.minFreeboardMm})
+ * at fixed heel angles (5° apart by default), so the crossing between two
+ * samples is found by linear interpolation — accurate to roughly half a sample
+ * step, and cheap. Returns 0 when the stem tip is already under at rest, and
+ * null when it stays clear over the whole sampled range (the usual light-load
+ * case: there is no crossing to report, and inventing one by extrapolating
+ * would be a lie).
+ *
+ * The measured clearance is the stem tip, not the sheer/deck edge, so the
+ * number this returns is "first water at an extremity", not "first water over
+ * the deck". Callers that label it must choose their wording accordingly.
+ */
+function endTipImmersionHeelDeg(curve: GZPoint[]): number | null {
+  const freeboard = (i: number): number | undefined => curve[i]?.minFreeboardMm
+  if (curve.length === 0 || freeboard(0) === undefined) return null
+
+  const first = freeboard(0) as number
+  if (first <= 0) return 0
+
+  // Track the last point that DID carry a freeboard: a curve where interior
+  // points omit it (callers that only supply the arm) must still interpolate
+  // from the nearest known neighbour, not skip the crossing entirely.
+  let last = 0
+  for (let i = 1; i < curve.length; i++) {
+    const here = freeboard(i)
+    if (here === undefined) continue
+    if (here > 0) {
+      last = i
+      continue
+    }
+    const prev = freeboard(last) as number
+    const j = last
+    if (prev === here) continue
+    // Linear interpolation of the heel at which freeboard hits zero.
+    const t = prev / (prev - here)
+    const heel = curve[j].heelDeg + t * (curve[i].heelDeg - curve[j].heelDeg)
+    return Number(Math.max(0, heel).toFixed(1))
+  }
+  return null
 }
 
 /**
@@ -1097,6 +1316,11 @@ export function compute_gz_curve_geometric(
  * For each candidate pitch angle, finds the equilibrium draft for targetKg,
  * computes the resulting Center of Buoyancy (LCB), and identifies the pitch angle
  * that aligns LCB longitudinally with the target LCG (minimizing |LCB_x - LCG_x|).
+ *
+ * The sweep is not a uniform fine ladder: coarse angles step 5× the fine step
+ * (0.5° by default) across ±maxTrimDeg, then fine angles step by trimStepDeg
+ * over ±one coarse step around the winner. So a ±3.5° sweep is 15 + 11 = 26
+ * solves, not 71 — do not model its cost as a uniform 0.1° sweep.
  */
 export function solveTrim(
   mesh: MeshLike,
@@ -1111,6 +1335,26 @@ export function solveTrim(
      * This is a height, not an absolute Z — see the note on `KG_MM` below.
      */
     kgMm?: number
+    /**
+     * Progress observer for the trim sweep. Called once per candidate angle,
+     * after that angle has been evaluated, with `index` counting 1..`total`
+     * across BOTH sweeps so a progress bar has one continuous scale. `total`
+     * counts ONLY the candidate angles (coarse + fine ladders), not the final
+     * full solve or the GZ curve, which run after the last call.
+     *
+     * It is an observer only: a solve with the callback returns exactly the
+     * same numbers as one without (asserted in tests/verify-solve-extras.ts).
+     *
+     * An exception thrown inside the callback is swallowed, so a broken progress
+     * handler cannot change the answer the solver returns.
+     */
+    onAngle?: (info: {
+      phase: 'coarse' | 'fine'
+      angleDeg: number
+      /** 1-based position across the whole sweep. */
+      index: number
+      total: number
+    }) => void
   },
 ): TrimSolveResult {
   const positions = toPositions(mesh)
@@ -1194,6 +1438,20 @@ export function solveTrim(
   const coarseStepDeg = fineStepDeg * 5 // 0.5° default
   const fixedHeelDeg = options?.fixedHeelDeg ?? 0
   const fixedHeelRad = (fixedHeelDeg * Math.PI) / 180
+  const onAngle = options?.onAngle
+
+  // Sweep size, derived from the same ladder the loops below walk, so the
+  // progress observer can report a total that matches the call count exactly.
+  // Both loops close with `deg <= <bound> + 1e-6` ON THE ANGLE, so the epsilon
+  // has to be carried inside the division here. Using a small `+1e-9` on the
+  // quotient instead under-counted by one whenever 2*maxTrimDeg/coarseStepDeg
+  // landed a hair below an integer (maxTrimDeg = 4.49999975 reported 29 against
+  // 30 real calls), which left index == total + 1 and a progress bar that could
+  // not finish.
+  const coarseCount = Math.max(1, Math.floor((2 * maxTrimDeg + 1e-6) / coarseStepDeg) + 1)
+  const fineCount = Math.max(1, Math.floor((2 * coarseStepDeg + 1e-6) / fineStepDeg) + 1)
+  const angleTotal = coarseCount + fineCount
+  let angleIndex = 0
 
   let bestAngleDeg = 0
   let bestOffset = Infinity
@@ -1213,7 +1471,7 @@ export function solveTrim(
   // freeboards are derived once rather than ~26 times. The reported numbers
   // still come from findDraft0Trim, so this cannot alter the output —
   // verified bit-identical by tests/verify-trim-search.ts.
-  const searchAngle = (deg: number): void => {
+  const searchAngle = (deg: number, phase: 'coarse' | 'fine'): void => {
     const rad = (deg * Math.PI) / 180
     workingPositions.set(solveMesh)
     // Trim only. Heel is applied inside the solve, which owns it —
@@ -1242,18 +1500,26 @@ export function solveTrim(
     } catch {
       // Continue if one extreme angle fails to bracket
     }
+    // Outside the try: a failed angle still consumed a slot of the sweep, so
+    // the index must advance either way.
+    angleIndex++
+    try {
+      onAngle?.({ phase, angleDeg: deg, index: angleIndex, total: angleTotal })
+    } catch {
+      // A broken progress handler must not be able to change the answer.
+    }
   }
 
   // --- Coarse sweep: 0.5° steps to find the neighborhood ---
   for (let deg = -maxTrimDeg; deg <= maxTrimDeg + 1e-6; deg += coarseStepDeg) {
-    searchAngle(deg)
+    searchAngle(deg, 'coarse')
   }
 
   // --- Fine sweep: ±0.5° around best at 0.1° steps ---
   const fineStart = bestAngleDeg - coarseStepDeg
   const fineEnd = bestAngleDeg + coarseStepDeg
   for (let deg = fineStart; deg <= fineEnd + 1e-6; deg += fineStepDeg) {
-    searchAngle(deg)
+    searchAngle(deg, 'fine')
   }
 
   // One full solve on the winning angle: this is the result the user sees.
@@ -1262,6 +1528,13 @@ export function solveTrim(
       const full = findDraft0Trim(bestPitchedPositions, target_kg, KG_MM, fixedHeelRad)
       const rx = full.lcb.x - targetLcgX
       const rz = full.lcb.z - bounds.center.z
+      // The waterplane centroid comes out of the clip in the PITCHED frame, the
+      // same as LCB, so it needs the same rotation back into the hull frame —
+      // otherwise LCF and LCB on one result object live in different frames and
+      // disagree with the LCG pairing. The centroid lies in the cut plane, so
+      // its z is exactly the waterline the clip used.
+      const lcx = full.waterplaneCentroidX - targetLcgX
+      const lcz = full.waterlineZ - bounds.center.z
       bestResult = {
         ...full,
         lcb: {
@@ -1269,6 +1542,7 @@ export function solveTrim(
           y: bounds.center.y,
           z: -rx * Math.sin(bestRad) + rz * Math.cos(bestRad) + bounds.center.z,
         },
+        waterplaneCentroidX: lcx * Math.cos(bestRad) + lcz * Math.sin(bestRad) + targetLcgX,
       }
     } catch {
       // Fall through to the zero-trim fallback below.
@@ -1299,6 +1573,16 @@ export function solveTrim(
     bestAngleDeg = 0
     bestOffset = Math.abs(bestResult.lcb.x - targetLcgX)
   }
+
+  // Hoisted out of the return so the end-tip immersion heel can read it: the
+  // curve is the only source of clearance-at-heel in this function.
+  //
+  // Cost note: this curve carries an extra full draft solve for the 0° anchor
+  // (the equilibrium solve above cannot supply it — that one is trimmed, this
+  // one must be level), which measured ~0.7 s of a ~10 s solve. It is the part
+  // of the solve a worker/progress-bar task should absorb, not something to
+  // shave off by reusing a wrong-basis anchor.
+  const gzCurve = compute_gz_curve_geometric(solveMesh, target_kg, KG_MM)
 
   return {
     trimDeg: Number(bestAngleDeg.toFixed(2)),
@@ -1335,8 +1619,15 @@ export function solveTrim(
         (bestResult.waterlineZ + sternX * Math.tan((bestAngleDeg * Math.PI) / 180))
       ).toFixed(1),
     ),
-    gzCurve: compute_gz_curve_geometric(solveMesh, target_kg, KG_MM),
+    gzCurve,
     heelDeg: fixedHeelDeg,
     kgMm: KG_MM,
+    waterplaneLoopCount: bestResult.waterplaneLoopCount,
+    Cwp: bestResult.Cwp,
+    wettedSurfaceAreaMm2: bestResult.wettedSurfaceAreaMm2,
+    waterplaneCentroidX: bestResult.waterplaneCentroidX,
+    waterplaneIyyMm4: bestResult.waterplaneIyyMm4,
+    tpcTonnesPerCm: bestResult.tpcTonnesPerCm,
+    endTipImmersionDeg: endTipImmersionHeelDeg(gzCurve),
   }
 }

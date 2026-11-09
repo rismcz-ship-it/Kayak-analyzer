@@ -71,7 +71,7 @@ Scripts in `tests/` — run when modifying the corresponding module. **They fall
 
 `test-*.ts` are `console.log` harnesses. They print numbers and **always exit 0**, so a wrong result still reports success — you must read the output.
 
-`verify-*.ts` are assertion suites. They compare against analytic ground truth or against the committed baseline, print `FAIL` lines, and **exit non-zero when a check fails** (all eight verified by injecting a forced failure). Run them with `npm test`, which chains the eight and stops at the first failure. A few end with only explicit `exit 1` branches and return 0 by normal termination on success — that is expected, not a gap.
+`verify-*.ts` are assertion suites. They compare against analytic ground truth or against the committed baseline, print `FAIL` lines, and **exit non-zero when a check fails**. Run them with `npm test`, which chains them and stops at the first failure. A few end with only explicit `exit 1` branches and return 0 by normal termination on success — that is expected, not a gap.
 
 Every `verify-*` suite needs `tests/test-kayak.stl` (2.0 MB, tracked in git). Without it they fail at import. `test-lcb.mjs` is the exception: it reads a local hull that is _not_ in the repo and skips itself when it is absent.
 
@@ -85,13 +85,14 @@ Every `verify-*` suite needs `tests/test-kayak.stl` (2.0 MB, tracked in git). Wi
 | `verify-gz.ts`           | assert | Stability             | GZ curve vs analytic box closed form and vs the production geometry path                                                                                                                           |
 | `verify-heel-real.ts`    | assert | Stability             | Real-hull draft rises and BM falls monotonically with heel                                                                                                                                         |
 | `verify-trim-search.ts`  | assert | Solver                | Cheap trim search is bit-identical to the full solve **and** to the production `solveDraftLcb` (80 cases with only the tracked mesh; +80 per present local floatable STL, 0 for the open sections) |
+| `verify-solve-extras.ts` | assert | Solver: extras        | Tier-1 extras against analytic box ground truth (Cwp, Iy/Ix axes, wetted area, TPC, loop count, LCF frame) plus `onAngle`'s total and `endTipImmersionDeg`'s three branches                        |
 | `test-auto-orient.ts`    | print  | Geometry: orientation | `autoOrientToZUp()` — arbitrary STL axes → Z-up, deck-up, bow detection                                                                                                                            |
 | `test-box.ts`            | print  | Geometry: primitives  | All geometry helpers + `solveTrim` on synthetic hull with known ground truth                                                                                                                       |
 | `test-solver.ts`         | print  | Solver: trim          | Full pipeline: 4 orientation scenarios × trim sweep                                                                                                                                                |
 | `test-lcb.mjs`           | print  | Mesh: external        | Raw mesh validation on a local hull — `KAYAK_LOCAL_HULL_DIR` / `~/Downloads/Kayak v2.stl`; skips itself when absent                                                                                |
 | `test-kayak.stl`         | data   | —                     | Test mesh (2.0 MB), required by every `verify-*` suite                                                                                                                                             |
 
-Run: `npm test` (all eight assertion suites, stops on first failure) · `npm run test:print` (the `console.log` harnesses) · or a single file with `npm exec -- tsx tests/<file>.ts` / `node tests/test-lcb.mjs`
+Run: `npm test` (all nine assertion suites, stops on first failure) · `npm run test:print` (the `console.log` harnesses) · or a single file with `npm exec -- tsx tests/<file>.ts` / `node tests/test-lcb.mjs`
 
 **Published baseline** for the test hull after correct auto-orientation, asserted by `verify-orientation.ts`:
 bounds `2714.4 x 613.1 x 325.1 mm` (±0.5 mm), trim `-1.90°` (±0.05°), LCB–LCG offset `1.64 mm`.
