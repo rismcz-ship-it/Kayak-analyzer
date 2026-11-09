@@ -76,8 +76,9 @@ const EMPTY_VIEW: ViewerView = {
  *
  * The line is built once at mount, so a result update rewrites the existing
  * position attribute rather than allocating a new geometry per solve. The
- * value is a hull-local coordinate: it rides with `hullGroup`, which is why the
- * lower end is the raw keel Z and not a world-transformed one.
+ * endpoints are GROUP-local: the caller has already subtracted the pivot, so
+ * `from` is a mesh coordinate in the group's frame and the lower end is the
+ * mesh-keel Z minus the pivot Z for the same reason.
  */
 function setLeaderEnds(line: Line, from: { x: number; y: number; z: number }, keelZ: number): void {
   const attr = line.geometry.getAttribute('position') as BufferAttribute
@@ -89,6 +90,33 @@ function setLeaderEnds(line: Line, from: { x: number; y: number; z: number }, ke
   a[4] = from.y
   a[5] = keelZ
   attr.needsUpdate = true
+}
+
+/**
+ * Build one LCG/LCB leader line and parent it to the hull group.
+ *
+ * The line is built once at mount, so a result update rewrites the existing
+ * position attribute rather than allocating a new geometry per solve. Shared
+ * between the mount pass and `tests/verify-viewer-scene.ts`: the seam has to
+ * be driven against the same object graph the app builds it for, or a check
+ * written in world space reads an unparented line and quietly tests nothing.
+ */
+export function createLeader(hullGroup: THREE.Group, color: number): Line {
+  const lineGeom = new THREE.BufferGeometry()
+  lineGeom.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(6), 3))
+  const line = new THREE.Line(
+    lineGeom,
+    new THREE.LineBasicMaterial({ color, linewidth: 2, depthTest: false }),
+  )
+  // The line must not be frustum culled: three.js computes a geometry's
+  // bounding sphere once and never invalidates it when the position attribute
+  // is rewritten, so the sphere frozen at the first render is the zeroed
+  // buffer — centre (0,0,0), radius 0 — and the line then vanishes from view as
+  // soon as the origin leaves the camera frustum.
+  line.frustumCulled = false
+  line.renderOrder = 1
+  hullGroup.add(line)
+  return line
 }
 
 /**
@@ -120,34 +148,57 @@ export function applyResultToScene(refs: ViewerRefs, view: ViewerView): void {
   refs.hullGroup.rotation.y = trimRad
 
   // Waterline plane: horizontal at waterlineZ in world coordinates, centred on
-  // the ROTATED hull centre so it tracks the hull as it trims and heels.
+  // the ROTATED hull centre so it tracks the hull as it trims and heels. The
+  // plane is a child of the scene, so this position is a WORLD coordinate, and
+  // the hull centre is a MESH coordinate — the transform that carries one to
+  // the other is the MESH's matrixWorld. The mesh is offset by -pivot inside
+  // the group, so using the group's matrix drops that offset and displaces the
+  // plane by the pivot vector (54.4 mm on the test hull, over a metre with the
+  // LCG slider at an end).
   const waterlineZ = view.waterlineZ
   const floating = waterlineZ !== null && Number.isFinite(waterlineZ)
   if (refs.waterPlane) refs.waterPlane.visible = floating
   if (floating && waterlineZ !== null) {
     refs.hullGroup.updateMatrixWorld(true)
-    const rotatedCenter = refs.hullCenter.clone().applyMatrix4(refs.hullGroup.matrixWorld)
+    const rotatedCenter = refs.hullCenter.clone().applyMatrix4(refs.hullMesh.matrixWorld)
     refs.waterPlane?.position.set(rotatedCenter.x, rotatedCenter.y, waterlineZ)
   }
 
-  // LCG marker (red sphere + vertical line to the keel), in hull local coords.
+  // Markers and their leader lines are children of the hull group, so their
+  // positions are GROUP-local. A group-local point c lands at world
+  // pivot + R*c, and a mesh point m belongs at pivot + R*(m - pivot), so the
+  // mesh coordinate is written to the child as m - pivot. Skipping that
+  // subtraction displaces every marker (and the leader's keel end) by exactly
+  // the pivot vector. Note the keel Z is a MESH z too, so it goes through the
+  // same subtraction.
+  const keelGroupZ = refs.keelZ - p.z
+
+  // LCG marker (red sphere + vertical line to the keel), group coordinates.
   const lcg = view.lcg
   const hasLcg = lcg !== null && Number.isFinite(lcg.x)
   if (refs.lcgSphere) refs.lcgSphere.visible = hasLcg
   if (refs.lcgLine) refs.lcgLine.visible = hasLcg
   if (hasLcg && lcg) {
-    if (refs.lcgSphere) refs.lcgSphere.position.set(lcg.x, lcg.y, lcg.z)
-    if (refs.lcgLine) setLeaderEnds(refs.lcgLine, lcg, refs.keelZ)
+    if (refs.lcgSphere) {
+      refs.lcgSphere.position.set(lcg.x - p.x, lcg.y - p.y, lcg.z - p.z)
+    }
+    if (refs.lcgLine) {
+      setLeaderEnds(refs.lcgLine, { x: lcg.x - p.x, y: lcg.y - p.y, z: lcg.z - p.z }, keelGroupZ)
+    }
   }
 
-  // LCB marker (green sphere + vertical line to the keel), in hull local coords.
+  // LCB marker (green sphere + vertical line to the keel), group coordinates.
   const lcb = view.lcb
   const hasLcb = lcb !== null && Number.isFinite(lcb.x)
   if (refs.lcbSphere) refs.lcbSphere.visible = hasLcb
   if (refs.lcbLine) refs.lcbLine.visible = hasLcb
   if (hasLcb && lcb) {
-    if (refs.lcbSphere) refs.lcbSphere.position.set(lcb.x, lcb.y, lcb.z)
-    if (refs.lcbLine) setLeaderEnds(refs.lcbLine, lcb, refs.keelZ)
+    if (refs.lcbSphere) {
+      refs.lcbSphere.position.set(lcb.x - p.x, lcb.y - p.y, lcb.z - p.z)
+    }
+    if (refs.lcbLine) {
+      setLeaderEnds(refs.lcbLine, { x: lcb.x - p.x, y: lcb.y - p.y, z: lcb.z - p.z }, keelGroupZ)
+    }
   }
 }
 
@@ -254,20 +305,10 @@ export default function Viewer3D({
     waterPlane?.position.set(center.x, center.y, keelZ)
     if (waterPlane) scene.add(waterPlane)
 
-    // Markers ride with the hull, so their positions are hull-local and the
-    // update pass only has to move them, never re-parent them.
+    // Markers ride with the hull, so their update-pass positions are GROUP
+    // coordinates (mesh minus the pivot), not mesh ones — and they are never
+    // re-parented.
     const markerMat = (color: number) => new THREE.MeshBasicMaterial({ color, depthTest: false })
-    const leaderMat = (color: number) =>
-      new THREE.LineBasicMaterial({ color, linewidth: 2, depthTest: false })
-
-    const buildLeader = (): Line => {
-      const lineGeom = new THREE.BufferGeometry()
-      lineGeom.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(6), 3))
-      const line = new THREE.Line(lineGeom, leaderMat(0xffffff))
-      line.renderOrder = 1
-      hullGroup.add(line)
-      return line
-    }
 
     const lcgSphere = new THREE.Mesh(
       new THREE.SphereGeometry(hullSizeX * 0.02),
@@ -275,8 +316,7 @@ export default function Viewer3D({
     )
     lcgSphere.renderOrder = 1
     hullGroup.add(lcgSphere)
-    const lcgLine = buildLeader()
-    lcgLine.material = leaderMat(0xef4444)
+    const lcgLine = createLeader(hullGroup, 0xef4444)
 
     const lcbSphere = new THREE.Mesh(
       new THREE.SphereGeometry(hullSizeX * 0.02),
@@ -284,8 +324,7 @@ export default function Viewer3D({
     )
     lcbSphere.renderOrder = 1
     hullGroup.add(lcbSphere)
-    const lcbLine = buildLeader()
-    lcbLine.material = leaderMat(0x22c55e)
+    const lcbLine = createLeader(hullGroup, 0x22c55e)
 
     // Add coordinate axes helper (Red=X, Green=Y, Blue=Z) - world axes
     const axesHelper = new THREE.AxesHelper(500)
@@ -296,8 +335,9 @@ export default function Viewer3D({
     // 3/4 bow view from above: length along X, beam along Y, up along Z.
     const dir = new THREE.Vector3(1, -1.1, 0.55).normalize()
 
-    // Apply the first result before framing: the camera targets the ROTATED
-    // hull centre, so the transforms have to be settled first.
+    // Apply the first result before framing: the waterline transform has to be
+    // settled before the camera is placed, and the marker positions depend on
+    // the pivot the first result picks.
     const refs: ViewerRefs = {
       hullGroup,
       hullMesh: mesh,
@@ -312,6 +352,12 @@ export default function Viewer3D({
     refsRef.current = refs
     applyResultToScene(refs, initialView)
 
+    // Camera framing, once, at mount. Like the old waterline centring, this
+    // transforms the bbox centre by the GROUP matrix, so it equals the hull
+    // centre only because `Upload.tsx` centres the mesh at the origin — with a
+    // non-centred mesh it would aim at centre + pivot. It is mount-only and
+    // re-evaluated on every new mesh, so it is documented rather than changed:
+    // with the mesh centred there is no visible error to correct.
     hullGroup.updateMatrixWorld(true)
     const rotatedCenter = center.clone().applyMatrix4(hullGroup.matrixWorld)
     camera.position.copy(rotatedCenter).addScaledVector(dir, radius * 3)

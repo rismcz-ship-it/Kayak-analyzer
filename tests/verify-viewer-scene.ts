@@ -37,6 +37,15 @@
 //     attribute is written in place, so a result update cannot churn the GPU
 //     buffer or leak geometry.
 //
+//  6. THE FRAME RULE. Two different coordinate frames meet inside the seam:
+//     the waterline plane is a child of the SCENE and so lives in WORLD
+//     coordinates, while the markers are children of the hull GROUP and live in
+//     GROUP coordinates. The pivot is a MESH coordinate. Getting any of those
+//     three wrong puts the plane or the markers the pivot vector away from the
+//     hull — 54.4 mm on the test hull, and 1357 mm with the LCG slider at an
+//     end — and it is invisible to every check that only looks at the object's
+//     own `.position`, so each one is asserted in WORLD space.
+//
 // The mount/update split itself (exactly `[geometry]` as the mount deps, every
 // old dispose still on unmount, no `new WebGLRenderer` on a result-dependent
 // path) is verified by reading the effect body and by typecheck, as the plan
@@ -47,17 +56,16 @@
 
 import {
   Box3,
-  BufferAttribute,
+  type BufferAttribute,
   BufferGeometry,
   Group,
-  Line,
-  LineBasicMaterial,
   Mesh,
   MeshBasicMaterial,
+  type Object3D,
   SphereGeometry,
   Vector3,
 } from 'three'
-import { applyResultToScene } from '../src/components/Viewer3D.js'
+import { applyResultToScene, createLeader } from '../src/components/Viewer3D.js'
 
 let fails = 0
 let checks = 0
@@ -71,6 +79,17 @@ const check = (label: string, ok: boolean, detail: string) => {
 const KEEL_Z = 0
 const HULL_CENTER = new Vector3(4, -2, 12)
 
+/**
+ * Build the mount-owned objects for one load case.
+ *
+ * The graph has to be the one the mount pass builds, or checks written in world
+ * space read unparented objects and quietly test nothing: the markers ride with
+ * the hull (children of `hullGroup`, exactly as in the mount pass), the water
+ * plane is a scene child with no parent, and the leader lines come from the
+ * component's own factory so `frustumCulled` and `renderOrder` are the shipped
+ * values. The use of the real factories is what makes this a regression suite
+ * for the component rather than a restatement of it.
+ */
 function makeRefs() {
   const hullGroup = new Group()
   const hullMesh = new Mesh(new BufferGeometry(), new MeshBasicMaterial())
@@ -78,29 +97,28 @@ function makeRefs() {
 
   const waterPlane = new Mesh(new BufferGeometry(), new MeshBasicMaterial())
   const lcgSphere = new Mesh(new SphereGeometry(1), new MeshBasicMaterial())
-  const lcgLine = new Line(
-    (() => {
-      const g = new BufferGeometry()
-      g.setAttribute('position', new BufferAttribute(new Float32Array(6), 3))
-      return g
-    })(),
-    new LineBasicMaterial(),
-  )
+  hullGroup.add(lcgSphere)
+  const lcgLine = createLeader(hullGroup, 0xef4444)
   const lcbSphere = new Mesh(new SphereGeometry(1), new MeshBasicMaterial())
-  const lcbLine = new Line(
-    (() => {
-      const g = new BufferGeometry()
-      g.setAttribute('position', new BufferAttribute(new Float32Array(6), 3))
-      return g
-    })(),
-    new LineBasicMaterial(),
-  )
+  hullGroup.add(lcbSphere)
+  const lcbLine = createLeader(hullGroup, 0x22c55e)
 
   return { hullGroup, hullMesh, waterPlane, lcgSphere, lcgLine, lcbSphere, lcbLine }
 }
 
 /** A fresh set of mount-owned objects for one load case. */
 const refsFor = () => ({ ...makeRefs(), keelZ: KEEL_Z, hullCenter: HULL_CENTER })
+
+/**
+ * An object's position in WORLD space, after the group matrices are settled
+ * with `updateMatrixWorld(true)`. The seam's transforms are only meaningful
+ * through their world result: a marker written into a group child with a mesh
+ * coordinate lands the pivot vector away from where it belongs, and that is
+ * invisible to the child's own `.position` — only the world position sees it.
+ */
+function worldPosition(o: Object3D): Vector3 {
+  return new Vector3().setFromMatrixPosition(o.matrixWorld)
+}
 
 // --- 1. the sign translation, driven through the component boundary ----------
 console.log('=== 1. solver signs reach the scene correctly ===')
@@ -287,10 +305,32 @@ console.log('\n=== 3. visibility: hidden when there is nothing to show ===')
     floating.lcgSphere.visible === true,
     `visible = ${floating.lcgSphere.visible}`,
   )
+  // The sphere is a GROUP child, so `.position` holds a group coordinate (mesh
+  // minus pivot), and the marker must land on the LCG point in WORLD space.
+  // Writing the mesh coordinate straight into the child — the bug this used to
+  // pin — displaces it by exactly the pivot vector: 54.4 mm on the test hull at
+  // the default LCG, and 1357 mm (half the LOA) with the LCG slider at an end.
+  floating.hullGroup.updateMatrixWorld(true)
+  const lcgAt = worldPosition(floating.lcgSphere)
   check(
-    'lcg sphere follows the lcg',
-    floating.lcgSphere.position.toArray().join(',') === '1,2,3',
-    `at ${floating.lcgSphere.position.toArray().join(', ')}`,
+    'lcg sphere sits on the lcg in world space',
+    lcgAt.distanceTo(new Vector3(1, 2, 3)) < 1e-6,
+    `${lcgAt.toArray().join(', ')} vs lcg 1, 2, 3`,
+  )
+  check(
+    'lcg sphere holds the pivot-relative coordinate',
+    floating.lcgSphere.position.toArray().join(',') === '-3,-3,-3',
+    `group-local = ${floating.lcgSphere.position.toArray().join(', ')} (lcg 1,2,3 minus pivot 4,5,6)`,
+  )
+  check(
+    'lcg leader line is not frustum culled',
+    floating.lcgLine.frustumCulled === false,
+    `frustumCulled = ${floating.lcgLine.frustumCulled}`,
+  )
+  check(
+    'lcb leader line is not frustum culled',
+    floating.lcbLine.frustumCulled === false,
+    `frustumCulled = ${floating.lcbLine.frustumCulled}`,
   )
 
   // With no trim/heel the plane tracks the hull centre; with trim it must track
@@ -304,23 +344,37 @@ console.log('\n=== 3. visibility: hidden when there is nothing to show ===')
     lcb: null,
     pivot: null,
   })
-  // NOTE ON WHAT THIS CHECK IS. `hullGroup.matrixWorld` maps GROUP-local to
-  // world; the bbox centre is a MESH coordinate, so the correct transform is
-  // `mesh.matrixWorld`, which also carries the mesh's -pivot offset. Measured
-  // on the test hull at 75 kg (pivot at LCG, trim -1.9°): the two disagree by
-  // 54.4 mm, 2.6 % of LWL — the plane and the camera aim at the pivot instead
-  // of the hull's rotated centre. That is pre-existing behaviour, preserved
-  // verbatim by the Task 2 split and deliberately NOT fixed here, so this
-  // check pins the current rule rather than the geometric truth: it fails if
-  // the centring formula changes, not if it is wrong. Fixing it is a visible
-  // change (plane and camera framing), so it needs Richard's say-so first.
+  // THE FRAME RULE, made explicit. The waterline plane is a child of the SCENE
+  // while the hull centre is a coordinate of the MESH, so the transform that
+  // carries one to the other is the MESH's matrixWorld — the mesh sits offset
+  // by -pivot inside the group, and the group's matrixWorld drops that offset.
+  // Using the group displaced the plane by the pivot vector (54.4 mm on the
+  // test hull at 75 kg, 2.6 % of LWL), and the LCG markers carried the same
+  // error by the same route. Both are fixed and asserted here, in world space.
   trimmed.hullGroup.updateMatrixWorld(true)
-  const rotated = HULL_CENTER.clone().applyMatrix4(trimmed.hullGroup.matrixWorld)
+  const rotated = HULL_CENTER.clone().applyMatrix4(trimmed.hullMesh.matrixWorld)
   const err = Math.hypot(
     trimmed.waterPlane.position.x - rotated.x,
     trimmed.waterPlane.position.y - rotated.y,
   )
-  check('waterline centring formula is unchanged', err < 1e-6, `error = ${err.toExponential(2)} mm`)
+  check(
+    'waterline centres on the rotated hull centre',
+    err < 1e-6,
+    `error = ${err.toExponential(2)} mm`,
+  )
+
+  // Proof the check above can actually fail: the group matrix gives a
+  // different answer, so a regression to it is caught rather than tolerated.
+  const viaGroup = HULL_CENTER.clone().applyMatrix4(trimmed.hullGroup.matrixWorld)
+  const gap = Math.hypot(
+    trimmed.waterPlane.position.x - viaGroup.x,
+    trimmed.waterPlane.position.y - viaGroup.y,
+  )
+  check(
+    'the group matrix does not give this answer',
+    gap > 0.1,
+    `would differ by ${gap.toFixed(2)} mm`,
+  )
 }
 
 // --- 4. the leader lines are updated in place, not rebuilt ------------------
@@ -331,24 +385,37 @@ console.log('\n=== 4. marker leader lines are written in place ===')
   const arrBefore = attrBefore.array
   const versionBefore = attrBefore.version
 
+  // A pivot distinct from the lcg, so the two are not accidentally equal and
+  // the pivot subtraction is forced to show up in the buffer.
+  const piv = { x: 1, y: 2, z: 3 }
   applyResultToScene(r, {
     waterlineZ: null,
     trimDeg: 0,
     heelDeg: 0,
     lcg: { x: 11, y: 22, z: 33 },
     lcb: null,
-    pivot: null,
+    pivot: piv,
   })
   const a0 = Array.from((r.lcgLine.geometry.getAttribute('position') as BufferAttribute).array)
   check(
     'line runs marker -> keel',
-    a0[0] === 11 &&
-      a0[1] === 22 &&
-      a0[2] === 33 &&
-      a0[3] === 11 &&
-      a0[4] === 22 &&
-      a0[5] === KEEL_Z,
-    `ends = ${a0.join(', ')}`,
+    a0[0] === 10 && a0[1] === 20 && a0[2] === 30 && a0[3] === 10 && a0[4] === 20 && a0[5] === -3,
+    `ends = ${a0.join(', ')} (lcg 11,22,33 minus pivot 1,2,3; keel 0 minus 3)`,
+  )
+  // The whole point of the pivot subtraction: in world space the leader's ends
+  // land on the LCG point and on the keel point below it.
+  r.hullGroup.updateMatrixWorld(true)
+  const top0 = r.lcgLine.localToWorld(new Vector3(a0[0], a0[1], a0[2]))
+  const bottom0 = r.lcgLine.localToWorld(new Vector3(a0[3], a0[4], a0[5]))
+  check(
+    'leader top is the lcg in world space',
+    top0.distanceTo(new Vector3(11, 22, 33)) < 1e-6,
+    `${top0.toArray().join(', ')} vs lcg 11, 22, 33`,
+  )
+  check(
+    'leader foot is the keel under the lcg',
+    bottom0.distanceTo(new Vector3(11, 22, KEEL_Z)) < 1e-6,
+    `${bottom0.toArray().join(', ')} vs keel 11, 22, ${KEEL_Z}`,
   )
 
   applyResultToScene(r, {
@@ -357,7 +424,7 @@ console.log('\n=== 4. marker leader lines are written in place ===')
     heelDeg: 0,
     lcg: { x: 99, y: 88, z: 77 },
     lcb: null,
-    pivot: null,
+    pivot: piv,
   })
   // `needsUpdate` is a setter-only accessor on BufferAttribute — reading it
   // back yields undefined. The observable right after a write is the version
@@ -371,8 +438,8 @@ console.log('\n=== 4. marker leader lines are written in place ===')
   const a1 = Array.from(attrAfter.array)
   check(
     'buffer contents follow the new lcg',
-    a1[0] === 99 && a1[3] === 99 && a1[5] === KEEL_Z,
-    `ends = ${a1.join(', ')}`,
+    a1[0] === 98 && a1[3] === 98 && a1[5] === -3,
+    `ends = ${a1.join(', ')} (lcg 99,88,77 minus pivot 1,2,3; keel 0 minus 3)`,
   )
   check(
     'buffer is flagged for upload',
@@ -408,6 +475,21 @@ console.log('\n=== 5. purity: no renderer, camera or controls in the seam ===')
     touched.length === 0,
     touched.length === 0 ? 'none' : touched.join(', '),
   )
+  // The proxy is SHALLOW: it records `refs.<key>` reads, not `<key>.<nested>`
+  // ones. The seam already reaches one level deep (`hullGroup.matrixWorld`,
+  // which is a transform it must read) and could walk further without this
+  // proxy noticing. The mount parents `hullGroup` to a real THREEN.Scene, so
+  // the one property that hands out a scene handle is `.parent`; the harness
+  // therefore gives the group no parent at all, so a seam that walks up for a
+  // scene gets null here and the world-position checks above come apart rather
+  // than silently passing. (A read-recording trap on `.parent` was rejected:
+  // three.js's own `updateMatrixWorld` reads it internally, so the trap cannot
+  // tell the seam's read from the library's.)
+  check(
+    'the seam cannot walk up to a scene',
+    spy.hullGroup.parent === null && spy.hullMesh.parent === spy.hullGroup,
+    `hullGroup.parent = ${spy.hullGroup.parent}, hullMesh.parent is the group`,
+  )
   check(
     'the seam returns nothing',
     applyResultToScene(refsFor(), {
@@ -434,19 +516,29 @@ console.log('\n=== 6. keel and centre come from the geometry ===')
   const r = refsFor()
   r.hullCenter.copy(centre)
   r.keelZ = keel
+  const piv = { x: 0, y: 0, z: 110 }
   applyResultToScene(r, {
     waterlineZ: 20,
     trimDeg: 0,
     heelDeg: 0,
     lcg: { x: 10, y: 20, z: 60 },
     lcb: null,
-    pivot: { x: 0, y: 0, z: 110 },
+    pivot: piv,
   })
+  r.hullGroup.updateMatrixWorld(true)
   const ends = Array.from((r.lcgLine.geometry.getAttribute('position') as BufferAttribute).array)
+  // The keel Z is a MESH z, so it goes through the same pivot subtraction as
+  // the marker; in world space the leader foot lands on the geometry keel.
   check(
     'leader line ends at the geometry keel',
-    ends[5] === keel,
-    `keel z = ${ends[5]} (bounds min.z = ${keel})`,
+    ends[5] === keel - piv.z,
+    `group-local keel z = ${ends[5]} (mesh keel ${keel} minus pivot z ${piv.z})`,
+  )
+  const foot = r.lcgLine.localToWorld(new Vector3(ends[3], ends[4], ends[5]))
+  check(
+    'leader foot lands on the keel in world space',
+    foot.distanceTo(new Vector3(10, 20, keel)) < 1e-6,
+    `${foot.toArray().join(', ')} vs keel point 10, 20, ${keel}`,
   )
   check(
     'hull centre is the geometry centre',
