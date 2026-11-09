@@ -328,7 +328,8 @@ interface WeldNode {
 }
 
 class WeldIndex {
-  private readonly buckets = new Map<string, number[]>()
+  /** Numeric (cellX -> cellY -> node indices) instead of `${x}|${y}` strings. */
+  private readonly buckets = new Map<number, Map<number, number[]>>()
   readonly nodes: WeldNode[] = []
 
   /**
@@ -341,6 +342,9 @@ class WeldIndex {
    * makes the result depend on insertion order, so a long contour collapses
    * into fewer nodes than a short one and coincident vertices land in
    * different buckets -- which splits the waterplane into open chains.
+   *
+   * The 3x3 sweep still runs dx outer / dy inner, so the candidate order --
+   * and therefore which coincident point wins a distance tie -- is unchanged.
    */
   add(x: number, y: number): number {
     const cx = Math.floor(x / WELD_CELL_MM)
@@ -348,8 +352,10 @@ class WeldIndex {
     let best = -1
     let bestD = WELD_TOL_MM
     for (let dx = -1; dx <= 1; dx++) {
+      const row = this.buckets.get(cx + dx)
+      if (!row) continue
       for (let dy = -1; dy <= 1; dy++) {
-        const list = this.buckets.get(`${cx + dx}|${cy + dy}`)
+        const list = row.get(cy + dy)
         if (!list) continue
         for (const idx of list) {
           const n = this.nodes[idx]
@@ -364,13 +370,31 @@ class WeldIndex {
     if (best >= 0) return best
     const idx = this.nodes.length
     this.nodes.push({ x, y, links: [] })
-    const key = `${cx}|${cy}`
-    const list = this.buckets.get(key)
+    let row = this.buckets.get(cx)
+    if (!row) {
+      row = new Map<number, number[]>()
+      this.buckets.set(cx, row)
+    }
+    const list = row.get(cy)
     if (list) list.push(idx)
-    else this.buckets.set(key, [idx])
+    else row.set(cy, [idx])
     return idx
   }
 }
+
+/**
+ * Per-plane staging scratch for {@link clipBelowPlane}, reused across calls.
+ * A straddling triangle used to build `[[x,y,z] x3]` + a flags array + two
+ * intersection tuples every time, i.e. ~7 small allocations per clipped facet;
+ * at ~10k clipped facets that is 70k throwaway objects per waterline and the
+ * garbage collector became the second most expensive thing in the solve.
+ *
+ * Safe to share at module scope: the solver is single-threaded, and
+ * clipBelowPlane never re-enters itself (it calls nothing but local helpers).
+ */
+const CLIP_VERTS = [0, 0, 0, 0, 0, 0, 0, 0, 0] // 3 vertices, xyz interleaved
+const CLIP_FLAGS = [false, false, false] // "vertex is in the below-plane region"
+const CLIP_POINT = [0, 0] // last ix() result, 2-tuple slot
 
 function toPositions(mesh: MeshLike): Float32Array {
   return mesh instanceof Float32Array ? mesh : mesh.positions
@@ -470,6 +494,9 @@ export function clipBelowPlane(positions: Float32Array, h: number): ClippedBelow
   }
 
   // Intersection of edge p->q with the plane z=h (caller guarantees straddle).
+  // Writes into the shared CLIP_POINT slot and returns it, so the result stays
+  // valid only until the next ix() call: destructure it at the call site (or
+  // copy both coordinates out) before computing the second intersection.
   const ix = (
     ax: number,
     ay: number,
@@ -477,15 +504,21 @@ export function clipBelowPlane(positions: Float32Array, h: number): ClippedBelow
     bx: number,
     by: number,
     bz: number,
-  ): [number, number] => {
+  ): readonly number[] => {
     // Both endpoints can sit exactly in the cutting plane (a facet coplanar
     // with the waterline, which happens routinely on a heeled hull). That
     // makes bz - az zero and t = inf/NaN, and a single NaN node poisons the
     // whole contour walk. Clamp t to the endpoints in that case.
     const dz = bz - az
-    if (Math.abs(dz) < EPS) return [ax, ay]
+    if (Math.abs(dz) < EPS) {
+      CLIP_POINT[0] = ax
+      CLIP_POINT[1] = ay
+      return CLIP_POINT
+    }
     const t = (h - az) / dz
-    return [lerp(ax, bx, t), lerp(ay, by, t)]
+    CLIP_POINT[0] = lerp(ax, bx, t)
+    CLIP_POINT[1] = lerp(ay, by, t)
+    return CLIP_POINT
   }
 
   for (let i = 0; i < positions.length; i += 9) {
@@ -514,8 +547,15 @@ export function clipBelowPlane(positions: Float32Array, h: number): ClippedBelow
     const nx = e1y * e2z - e1z * e2y
     const ny = e1z * e2x - e1x * e2z
     const nz = e1x * e2y - e1y * e2x
-    const areaMag = Math.hypot(nx, ny, nz)
-    if (areaMag < 1e-9) continue
+    // Squared magnitude against the SQUARED threshold, instead of
+    // Math.hypot() against the linear one. hypot is a non-inlined runtime call
+    // that spends its effort defending against over/underflow this loop cannot
+    // produce (hull coordinates are millimetres), and sqrt(x^2+y^2+z^2) makes
+    // the same accept/reject decision up to a final rounding bit -- which can
+    // only differ for a triangle within one ULP of 1e-9 mm^2 of area, i.e. one
+    // that is degenerate to within double precision anyway.
+    const nx2 = nx * nx + ny * ny + nz * nz
+    if (nx2 < 1e-18) continue
 
     // Fast reject/accept on the triangle Z-range before per-vertex work.
     const triMin = Math.min(az, bz, cz)
@@ -540,38 +580,82 @@ export function clipBelowPlane(positions: Float32Array, h: number): ClippedBelow
     if (nIn === 0) continue
 
     // Straddle cases, dispatched on the odd vertex index so the emitted
-    // triangles keep the original cyclic order (winding). PNext(i)/PPrev(i)
-    // are the cyclic successor/predecessor of vertex i.
-    const P = [
-      [ax, ay, az],
-      [bx, by, bz],
-      [cx, cy, cz],
-    ]
-    const flags = [aIn, bIn, cIn]
-    const nxt = (i: number) => P[(i + 1) % 3]
-    const prv = (i: number) => P[(i + 2) % 3]
+    // triangles keep the original cyclic order (winding). Vertex i lives at
+    // CLIP_VERTS[i*3], its cyclic successor at ((i+1)%3)*3 and its predecessor
+    // at ((i+2)%3)*3 — the same index arithmetic nxt()/prv() used, over flat
+    // shared storage instead of three freshly allocated arrays.
+    CLIP_VERTS[0] = ax
+    CLIP_VERTS[1] = ay
+    CLIP_VERTS[2] = az
+    CLIP_VERTS[3] = bx
+    CLIP_VERTS[4] = by
+    CLIP_VERTS[5] = bz
+    CLIP_VERTS[6] = cx
+    CLIP_VERTS[7] = cy
+    CLIP_VERTS[8] = cz
+    CLIP_FLAGS[0] = aIn
+    CLIP_FLAGS[1] = bIn
+    CLIP_FLAGS[2] = cIn
 
     if (nIn === 1) {
       // Below vertex i, crossings on both its outgoing edges.
-      const i = flags[0] ? 0 : flags[1] ? 1 : 2
-      const p = P[i]
-      const qNext = nxt(i)
-      const qPrev = prv(i)
-      const [e1x, e1y] = ix(p[0], p[1], p[2], qNext[0], qNext[1], qNext[2])
-      const [e2x, e2y] = ix(p[0], p[1], p[2], qPrev[0], qPrev[1], qPrev[2])
-      pushTri(p[0], p[1], p[2], e1x, e1y, h, e2x, e2y, h)
+      const i = CLIP_FLAGS[0] ? 0 : CLIP_FLAGS[1] ? 1 : 2
+      const i3 = i * 3
+      const n3 = ((i + 1) % 3) * 3
+      const p3 = ((i + 2) % 3) * 3
+      const [e1x, e1y] = ix(
+        CLIP_VERTS[i3],
+        CLIP_VERTS[i3 + 1],
+        CLIP_VERTS[i3 + 2],
+        CLIP_VERTS[n3],
+        CLIP_VERTS[n3 + 1],
+        CLIP_VERTS[n3 + 2],
+      )
+      const [e2x, e2y] = ix(
+        CLIP_VERTS[i3],
+        CLIP_VERTS[i3 + 1],
+        CLIP_VERTS[i3 + 2],
+        CLIP_VERTS[p3],
+        CLIP_VERTS[p3 + 1],
+        CLIP_VERTS[p3 + 2],
+      )
+      pushTri(CLIP_VERTS[i3], CLIP_VERTS[i3 + 1], CLIP_VERTS[i3 + 2], e1x, e1y, h, e2x, e2y, h)
       pushSeg(e1x, e1y, e2x, e2y)
     } else {
       // Above vertex i; below-region quad (F, PNext, PPrev, G) in cyclic
       // order, where F/G sit on the i→next / prev→i edges.
-      const i = !flags[0] ? 0 : !flags[1] ? 1 : 2
-      const pNext = nxt(i)
-      const pPrev = prv(i)
-      const pi = P[i]
-      const [fX, fY] = ix(pi[0], pi[1], pi[2], pNext[0], pNext[1], pNext[2])
-      const [gX, gY] = ix(pPrev[0], pPrev[1], pPrev[2], pi[0], pi[1], pi[2])
-      pushTri(fX, fY, h, pNext[0], pNext[1], pNext[2], pPrev[0], pPrev[1], pPrev[2])
-      pushTri(fX, fY, h, pPrev[0], pPrev[1], pPrev[2], gX, gY, h)
+      const i = !CLIP_FLAGS[0] ? 0 : !CLIP_FLAGS[1] ? 1 : 2
+      const i3 = i * 3
+      const n3 = ((i + 1) % 3) * 3
+      const p3 = ((i + 2) % 3) * 3
+      const [fX, fY] = ix(
+        CLIP_VERTS[i3],
+        CLIP_VERTS[i3 + 1],
+        CLIP_VERTS[i3 + 2],
+        CLIP_VERTS[n3],
+        CLIP_VERTS[n3 + 1],
+        CLIP_VERTS[n3 + 2],
+      )
+      const [gX, gY] = ix(
+        CLIP_VERTS[p3],
+        CLIP_VERTS[p3 + 1],
+        CLIP_VERTS[p3 + 2],
+        CLIP_VERTS[i3],
+        CLIP_VERTS[i3 + 1],
+        CLIP_VERTS[i3 + 2],
+      )
+      pushTri(
+        fX,
+        fY,
+        h,
+        CLIP_VERTS[n3],
+        CLIP_VERTS[n3 + 1],
+        CLIP_VERTS[n3 + 2],
+        CLIP_VERTS[p3],
+        CLIP_VERTS[p3 + 1],
+        CLIP_VERTS[p3 + 2],
+      )
+      pushTri(fX, fY, h, CLIP_VERTS[p3], CLIP_VERTS[p3 + 1], CLIP_VERTS[p3 + 2], gX, gY, h)
       pushSeg(fX, fY, gX, gY)
     }
   }

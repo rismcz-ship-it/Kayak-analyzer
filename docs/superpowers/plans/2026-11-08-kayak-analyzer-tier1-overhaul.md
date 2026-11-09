@@ -306,6 +306,63 @@ output-identity against a golden snapshot plus a soft perf budget.
 
 **Proposed commit:** `perf(clipper): numeric weld buckets, scratch buffers instead of per-triangle arrays`
 
+### Done (2026-11-09)
+
+**Committed:** `perf(clipper): numeric weld buckets, scratch buffers instead of
+per-triangle arrays` — 6 files, and the gate (`npm.cmd run ci`) exits 0 with all
+**eleven** assertion suites green.
+
+**What changed** in `src/lib/hydrostatics.ts`:
+
+1. `WeldIndex.buckets` is now a two-level `Map<number, Map<number, number[]>>` keyed by the
+   integer cell coordinates. The 3×3 search order, the `bestD` closest-match rule and the
+   `nodes` ordering are untouched — no string key is built per bucket probe.
+2. Module-scope scratch `CLIP_VERTS` (9 slots) / `CLIP_FLAGS` (3) / `CLIP_POINT` (2) replace
+   the per-straddling-triangle `P` / `flags` arrays and the `nxt`/`prv` closures. `nxt`/`prv`
+   became flat indexes `((i+1)%3)*3` / `((i+2)%3)*3` — the same arithmetic.
+3. `ix()` writes into `CLIP_POINT` and returns `readonly number[]` (see deviation b).
+4. `Math.hypot(nx, ny, nz) < 1e-9` became the squared magnitude tested against `1e-18`.
+   `areaMag` has no remaining reader and is gone.
+
+**Measured** — a throwaway probe (20 heights spanning keel→deck on the 12 000-tri decimated
+hull, 7 repeats per height after a 3-round warm-up) run against the **new** code, then
+`git stash push -- src/lib/hydrostatics.ts` and the same probe against the old:
+
+| | median of medians | total, 20 clips | worst single clip |
+| --- | --- | --- | --- |
+| old | 5.435 ms | 110.5 ms | 7.738 ms |
+| new | 2.793 ms | 53.0 ms | 3.912 ms |
+
+**2.1× faster**, total roughly halved. The stashed A/B was necessary: the suite's own timing
+section first *looked* like a regression (median 5.62 → 7.42 ms) because it times a single
+cold pass per case, and compilation plus heap growth over the first ~40 clips swamps the
+measurement. The suite now runs a warm-up pass before the timed one, which is what makes its
+printed medians (~3.7 ms) comparable run to run.
+
+**Deviations from the plan:**
+
+- **(a) The review focus's "`waterplaneLoopCount` still 1 on every sampled plane" is false.**
+  The fixture records `1 loop ×30, 2 loops ×8, 3 loops ×2` — one mesh cut does not always
+  yield a single waterplane on this hull. The suite therefore asserts identity against the
+  recorded counts, and carries its own check that the fixture covers more than one count, so
+  a future fixture that flattens the tally cannot silently relax the assertion.
+- **(b) `ix()` returns the shared buffer (`readonly number[]`) rather than `void`**, with
+  every call site destructuring immediately (`const [e1x, e1y] = ix(...)`). `void` + index
+  reads is the same number of operations but reads worse at the call sites; the buffer is
+  still single-assignment per crossing, so there is no aliasing hazard.
+- **(c) The fixture stores `h` at full round-trip precision, not `Number(h.toFixed(6))`.**
+  An earlier fixture rounded to 6 dp, which clips at a *slightly different plane* — the
+  clipped lengths and loop counts still matched while every digest differed (~3e-8 relative
+  on `Ix`). Storing the exact double makes the case reproducible.
+
+Also: the fixture is JSON, so Biome formats it too (`biome check --write tests/fixtures/
+clip-golden.json`); and `verify-clipper-perf` loads it with `new TextDecoder().decode(...)`
+because `tests/node-shims.d.ts` declares `readFileSync(path): Buffer` with no encoding
+parameter and `Buffer` is just a `Uint8Array` — whose own `toString()` would return
+`"123,45,67"`, not the text.
+
+Step 6's deliberate omission stands: `out`/`seg*` are not preallocated into typed arrays.
+
 ---
 
 # Task 4 — Web Worker + client
@@ -611,7 +668,7 @@ chaining that hides a missing field in tests; Recharts `ReferenceDot` needs expl
 | --- | --- | --- |
 | 1 | `verify-solve-extras.ts` (assert) | `npm test` (9 suites) + build |
 | 2 | extracted pure `applyResultToScene` seam | typecheck + build |
-| 3 | `verify-clipper-perf.ts` (assert) + golden fixture | `npm test` (10 suites) + build |
+| 3 | `verify-clipper-perf.ts` (assert) + golden fixture | `npm test` (11 suites) + build |
 | 4 | `verify-worker-protocol.ts` (assert) | `npm test` (11 suites) + build (worker chunk emitted) |
 | 5 | — | typecheck + build |
 | 6 | — | typecheck + build |

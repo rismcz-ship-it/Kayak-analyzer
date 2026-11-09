@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "typecheck": "tsc -b --noEmit",
     "ci": "npm run typecheck && biome check . && npm test && npm run build",
-    "test": "tsx tests/verify-orientation.ts && tsx tests/verify-analytic.ts && tsx tests/verify-box-identity.ts && tsx tests/verify-coefficients.ts && tsx tests/verify-decimation.ts && tsx tests/verify-gz.ts && tsx tests/verify-heel-real.ts && tsx tests/verify-trim-search.ts && tsx tests/verify-solve-extras.ts && tsx tests/verify-viewer-scene.ts",
+    "test": "tsx tests/verify-orientation.ts && tsx tests/verify-analytic.ts && tsx tests/verify-box-identity.ts && tsx tests/verify-coefficients.ts && tsx tests/verify-decimation.ts && tsx tests/verify-gz.ts && tsx tests/verify-heel-real.ts && tsx tests/verify-trim-search.ts && tsx tests/verify-solve-extras.ts && tsx tests/verify-viewer-scene.ts && tsx tests/verify-clipper-perf.ts",
     "test:print": "tsx tests/test-auto-orient.ts && tsx tests/test-box.ts && tsx tests/test-solver.ts"
   },
   "dependencies": {
