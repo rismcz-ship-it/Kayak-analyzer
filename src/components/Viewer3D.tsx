@@ -77,8 +77,8 @@ const EMPTY_VIEW: ViewerView = {
  * The line is built once at mount, so a result update rewrites the existing
  * position attribute rather than allocating a new geometry per solve. The
  * endpoints are GROUP-local: the caller has already subtracted the pivot, so
- * `from` is a mesh coordinate in the group's frame and the lower end is the
- * mesh-keel Z minus the pivot Z for the same reason.
+ * `from` is the mesh coordinate expressed relative to the pivot, and the lower
+ * end is the mesh-keel Z minus the pivot Z for the same reason.
  */
 function setLeaderEnds(line: Line, from: { x: number; y: number; z: number }, keelZ: number): void {
   const attr = line.geometry.getAttribute('position') as BufferAttribute
@@ -147,21 +147,29 @@ export function applyResultToScene(refs: ViewerRefs, view: ViewerView): void {
   refs.hullGroup.rotation.x = heelRad
   refs.hullGroup.rotation.y = trimRad
 
-  // Waterline plane: horizontal at waterlineZ in world coordinates, centred on
-  // the ROTATED hull centre so it tracks the hull as it trims and heels. The
-  // plane is a child of the scene, so this position is a WORLD coordinate, and
-  // the hull centre is a MESH coordinate — the transform that carries one to
-  // the other is the MESH's matrixWorld. The mesh is offset by -pivot inside
-  // the group, so using the group's matrix drops that offset and displaces the
-  // plane by the pivot vector (54.4 mm on the test hull, over a metre with the
-  // LCG slider at an end).
+  // Waterline plane: horizontal, centred on the ROTATED hull centre so it
+  // tracks the hull as it trims and heels. The plane is a child of the scene,
+  // so its position is a WORLD coordinate, and both the centre and the height
+  // are MESH coordinates — the transform that carries one to the other is the
+  // MESH's matrixWorld. The mesh is offset by -pivot inside the group, so using
+  // the group's matrix drops that offset and displaces the plane by the pivot
+  // vector (54.4 mm on the test hull, over a metre with the LCG slider at an
+  // end).
   const waterlineZ = view.waterlineZ
   const floating = waterlineZ !== null && Number.isFinite(waterlineZ)
   if (refs.waterPlane) refs.waterPlane.visible = floating
   if (floating && waterlineZ !== null) {
     refs.hullGroup.updateMatrixWorld(true)
     const rotatedCenter = refs.hullCenter.clone().applyMatrix4(refs.hullMesh.matrixWorld)
-    refs.waterPlane?.position.set(rotatedCenter.x, rotatedCenter.y, waterlineZ)
+    // The height is a MESH z too, so it takes the same rotation: the world Z is
+    // the world Z of the mesh point on the waterline above the hull centre. At
+    // rest the rotation is the identity and this is exactly `waterlineZ`, so
+    // only the heeled/trimmed case changes.
+    const atWaterline = refs.hullCenter
+      .clone()
+      .setZ(waterlineZ)
+      .applyMatrix4(refs.hullMesh.matrixWorld)
+    refs.waterPlane?.position.set(rotatedCenter.x, rotatedCenter.y, atWaterline.z)
   }
 
   // Markers and their leader lines are children of the hull group, so their
@@ -352,12 +360,18 @@ export default function Viewer3D({
     refsRef.current = refs
     applyResultToScene(refs, initialView)
 
-    // Camera framing, once, at mount. Like the old waterline centring, this
-    // transforms the bbox centre by the GROUP matrix, so it equals the hull
-    // centre only because `Upload.tsx` centres the mesh at the origin — with a
-    // non-centred mesh it would aim at centre + pivot. It is mount-only and
-    // re-evaluated on every new mesh, so it is documented rather than changed:
-    // with the mesh centred there is no visible error to correct.
+    // Camera framing, once, at mount. It transforms the bbox centre by the
+    // GROUP matrix, so the target is `pivot + R*centre` — which is the hull
+    // centre only when `R` is the identity AND the mesh is centred at the
+    // origin. Both hold here, for a different reason than the mesh being
+    // centred: `App.tsx` clears the results when a mesh loads, so at mount the
+    // view is empty and the seam falls back to `hullCentre` as the pivot, the
+    // group sits on that centre untranslated, and for a centred mesh the centre
+    // is the origin — target = origin = hull centre, exactly. It is mount-only
+    // and re-evaluated on every new mesh, so it is documented rather than
+    // changed: there is no visible error to correct in this app. Do NOT copy
+    // this transform onto the waterline plane (above) — that one must use the
+    // MESH's matrix, because it is re-evaluated on every result.
     hullGroup.updateMatrixWorld(true)
     const rotatedCenter = center.clone().applyMatrix4(hullGroup.matrixWorld)
     camera.position.copy(rotatedCenter).addScaledVector(dir, radius * 3)

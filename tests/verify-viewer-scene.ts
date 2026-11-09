@@ -107,7 +107,10 @@ function makeRefs() {
 }
 
 /** A fresh set of mount-owned objects for one load case. */
-const refsFor = () => ({ ...makeRefs(), keelZ: KEEL_Z, hullCenter: HULL_CENTER })
+// A fresh copy of the centre per case: `HULL_CENTER` is a shared module-level
+// Vector3, and handing the same instance to every case lets one case's
+// `.copy()` silently rewrite every other case's expectation.
+const refsFor = () => ({ ...makeRefs(), keelZ: KEEL_Z, hullCenter: HULL_CENTER.clone() })
 
 /**
  * An object's position in WORLD space, after the group matrices are settled
@@ -333,6 +336,53 @@ console.log('\n=== 3. visibility: hidden when there is nothing to show ===')
     `frustumCulled = ${floating.lcbLine.frustumCulled}`,
   )
 
+  // The LCB block in the seam is a hand-copied duplicate of the LCG block, so
+  // it needs its own world-space assertions: a copy-paste axis or ordering slip
+  // would otherwise hide inside a branch nothing else exercises. No rotation
+  // here, so the world point IS the mesh point — same arrangement as the LCG
+  // case above, which is what makes the two comparable.
+  const buoyant = refsFor()
+  applyResultToScene(buoyant, {
+    waterlineZ: 137,
+    trimDeg: 0,
+    heelDeg: 0,
+    lcg: { x: 1, y: 2, z: 3 },
+    lcb: { x: -60, y: 5, z: 7 },
+    pivot: { x: 4, y: 5, z: 6 },
+  })
+  buoyant.hullGroup.updateMatrixWorld(true)
+  const lcbAt = worldPosition(buoyant.lcbSphere)
+  check(
+    'lcb sphere sits on the lcb in world space',
+    lcbAt.distanceTo(new Vector3(-60, 5, 7)) < 1e-6,
+    `${lcbAt.toArray().join(', ')} vs lcb -60, 5, 7`,
+  )
+  check(
+    'lcb sphere holds the pivot-relative coordinate',
+    buoyant.lcbSphere.position.toArray().join(',') === '-64,0,1',
+    `group-local = ${buoyant.lcbSphere.position.toArray().join(', ')} (lcb -60,5,7 minus pivot 4,5,6)`,
+  )
+  const lcbEnds = Array.from(
+    (buoyant.lcbLine.geometry.getAttribute('position') as BufferAttribute).array,
+  )
+  check(
+    'lcb leader runs marker -> keel',
+    lcbEnds[0] === -64 && lcbEnds[1] === 0 && lcbEnds[2] === 1 && lcbEnds[5] === -6,
+    `ends = ${lcbEnds.join(', ')} (lcb -60,5,7 minus pivot 4,5,6; keel 0 minus 6)`,
+  )
+  const lcbTop = buoyant.lcbLine.localToWorld(new Vector3(lcbEnds[0], lcbEnds[1], lcbEnds[2]))
+  const lcbFoot = buoyant.lcbLine.localToWorld(new Vector3(lcbEnds[3], lcbEnds[4], lcbEnds[5]))
+  check(
+    'lcb leader top is the lcb in world space',
+    lcbTop.distanceTo(new Vector3(-60, 5, 7)) < 1e-6,
+    `${lcbTop.toArray().join(', ')} vs lcb -60, 5, 7`,
+  )
+  check(
+    'lcb leader foot is the keel under the lcb',
+    lcbFoot.distanceTo(new Vector3(-60, 5, KEEL_Z)) < 1e-6,
+    `${lcbFoot.toArray().join(', ')} vs keel -60, 5, ${KEEL_Z}`,
+  )
+
   // With no trim/heel the plane tracks the hull centre; with trim it must track
   // the ROTATED centre, which is what keeps the waterline under the hull.
   const trimmed = refsFor()
@@ -374,6 +424,25 @@ console.log('\n=== 3. visibility: hidden when there is nothing to show ===')
     'the group matrix does not give this answer',
     gap > 0.1,
     `would differ by ${gap.toFixed(2)} mm`,
+  )
+
+  // The height is a MESH z too, so it must rotate with the hull: at 3 deg trim
+  // and 6 deg heel the raw mesh height is not the world height, and writing it
+  // raw is exactly the mixed-frame residue the frame rule exists to remove.
+  // The expected value is pushed through the group's EULER angles — a different
+  // three.js API from the matrix composition the seam uses, so this cross-checks
+  // the seam rather than restating it.
+  const dzWorld = new Vector3(0, 0, 50 - HULL_CENTER.z).applyEuler(trimmed.hullGroup.rotation)
+  const expectedZ = rotated.z + dzWorld.z
+  check(
+    'waterline height rotates with the hull',
+    Math.abs(trimmed.waterPlane.position.z - expectedZ) < 1e-9,
+    `z = ${trimmed.waterPlane.position.z.toFixed(6)} vs rotated ${expectedZ.toFixed(6)} (raw mesh 50 differs by ${(50 - expectedZ).toFixed(3)} mm)`,
+  )
+  check(
+    'the raw mesh height is not the answer',
+    Math.abs(trimmed.waterPlane.position.z - 50) > 1e-9,
+    `z = ${trimmed.waterPlane.position.z.toFixed(6)}, raw mesh height 50`,
   )
 }
 
@@ -482,11 +551,18 @@ console.log('\n=== 5. purity: no renderer, camera or controls in the seam ===')
   // the one property that hands out a scene handle is `.parent`; the harness
   // therefore gives the group no parent at all, so a seam that walks up for a
   // scene gets null here and the world-position checks above come apart rather
-  // than silently passing. (A read-recording trap on `.parent` was rejected:
-  // three.js's own `updateMatrixWorld` reads it internally, so the trap cannot
-  // tell the seam's read from the library's.)
+  // than silently passing.
+  // A HARNESS TRIPWIRE, not coverage of the seam: both properties below are of
+  // the harness's own construction, so this check cannot fail on the seam's
+  // account. It earns its place by failing the moment a future edit parents
+  // `hullGroup` or unparents `hullMesh`, which would silently invalidate every
+  // world-space check above. It is NOT evidence that the seam is scene-isolated;
+  // the purity evidence is the shallow proxy check and the code read. (A
+  // read-recording trap on `.parent` was rejected: three.js's own
+  // `updateMatrixWorld` reads it internally, so the trap cannot tell the seam's
+  // read from the library's.)
   check(
-    'the seam cannot walk up to a scene',
+    'harness keeps the mount graph (tripwire)',
     spy.hullGroup.parent === null && spy.hullMesh.parent === spy.hullGroup,
     `hullGroup.parent = ${spy.hullGroup.parent}, hullMesh.parent is the group`,
   )
