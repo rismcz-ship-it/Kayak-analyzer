@@ -17,7 +17,6 @@ import {
   solveTrim,
   type TrimSolveResult,
 } from './lib/hydrostatics'
-import { viewerHeelDeg, viewerTrimDeg } from './lib/viewer-conventions'
 
 const fmt = (v: number, digits = 1) => v.toLocaleString('en-US', { maximumFractionDigits: digits })
 
@@ -177,17 +176,15 @@ export default function App() {
                   key={mesh.id}
                   geometry={mesh.geometry}
                   waterlineZ={trimResult?.waterlineZ ?? draftResult?.waterlineZ ?? null}
-                  trimDeg={viewerTrimDeg(trimResult?.trimDeg ?? 0)}
-                  heelDeg={viewerHeelDeg(
+                  trimDeg={trimResult?.trimDeg ?? 0}
+                  heelDeg={
                     trimResult?.heelDeg ??
-                      draftResult?.heelDeg ??
-                      (showHeelInput ? heelInputDeg : 0),
-                  )}
-                  waterlineCenterY={trimResult?.lcg.y ?? 0}
+                    draftResult?.heelDeg ??
+                    (showHeelInput ? heelInputDeg : 0)
+                  }
                   lcg={trimResult?.lcg ?? null}
                   lcb={trimResult?.lcb ?? draftResult?.lcb ?? null}
                   pivot={trimResult?.pivot ?? null}
-                  rotateHull={true}
                 />
               </div>
               <div className="flex items-center justify-end px-1 pb-1 pt-2">

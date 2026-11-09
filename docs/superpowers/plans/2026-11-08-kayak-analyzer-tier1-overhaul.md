@@ -233,6 +233,26 @@ in the mount body); every dispose from the old effect still happens on unmount; 
 
 **Proposed commit:** `refactor(viewer): build the WebGL scene once per mesh, drive results through refs`
 
+**Done (2026-11-09).** Split as specified: `applyResultToScene(refs, view)` is the pure seam,
+the mount effect deps are exactly `[geometry]`, the update effect deps are
+`[waterlineZ, trimDeg, heelDeg, lcg, lcb, pivot]`, and every old dispose still runs on
+unmount (plus `grid`/`axesHelper`, which the old code leaked). Four deviations from the
+literal step list, all reported to Richard: (a) `App.tsx` now passes **solver**-space
+`trimDeg`/`heelDeg` and the sign translation happens once inside the seam — the old code
+did it at the call site, where the prop JSDoc contradicted itself; (b) `waterlineCenterY`
+went with `rotateHull`, since the dead `false` branch was its only consumer; (c) the
+waterline plane and both markers are created at mount and toggled with `visible`, so the
+update pass is transform-only; (d) `tsconfig.test.json` gained `"jsx": "react-jsx"`, because
+the new suite imports the component module and the test program could not compile JSX.
+`tests/verify-viewer-scene.ts` is a tenth assertion suite (26 checks, wired into `npm test`
+and the AGENTS.md matrix). One latent pre-existing bug was found and **preserved verbatim**,
+not fixed: the waterline-plane and camera centring use `hullGroup.matrixWorld` on the bbox
+centre, but the centre is a *mesh* coordinate, so the correct transform is
+`mesh.matrixWorld` (the group matrix omits the mesh's `-pivot` offset). Measured on the test
+hull at 75 kg: 54.4 mm, 2.6 % of LWL — the plane and the camera aim at the pivot instead of
+the hull's rotated centre. A behaviour change like that needs a go-ahead, so it is a
+separate follow-up, not part of this refactor.
+
 ---
 
 # Task 3 — Clipper hot path (numeric weld index · fewer allocations)
