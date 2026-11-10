@@ -718,6 +718,82 @@ disable anything (it is an advisory, per the "no silent modification" rule).
 
 **Proposed commit:** `feat(app): gate on watertight meshes, fragmented waterplanes and implausible scale`
 
+**Done (2026-11-10).** `727d0af`'s successor on `main`, committed as `5e2e311`; gate green
+(`npm.cmd run ci` exit 0): typecheck, `biome check .` (46 files), all **thirteen** assertion suites
+(721 trim-search checks over 240 cases, 64 solve-extras, 41 clipper-perf/clipper cases, 25
+worker-protocol, 171 clipper identity checks, 30 in the new `tests/verify-upload-scale.ts`), build
+emitting `dist/assets/solver-worker-BFu7GqHX.js` (21.61 kB). Baseline intact: bounds
+`2714.4 × 613.1 × 325.1 mm`, trim `-1.90°`, LCB–LCG offset `1.637 mm`.
+
+Deviations from this plan's own steps:
+
+1. **Gate 3's thresholds are not the ones written above.** `maxDim < 1000` tells a real 900 mm
+   kayak it is metres, and it re-arms after a correct Apply: a metre-authored 5.4 m tandem scales
+   to 5400 mm and clears it, but anything under 1000 mm stays flagged, so a second Apply produced
+   900 000 mm. The shipped rule is `maxDim < 500` (no kayak is under half a metre long in mm — the
+   committed test hull is 2714) with `> 10 000` unchanged, and it does not re-arm: a rescaled mesh
+   is in mm by construction, so only `large` can survive a rescale.
+2. **`{ kind: 'large' }` carries no factor.** A variant whose job is "warn, do not fix" but which
+   carries `factor: 0` is one `rescaleMesh(mesh, advice.factor)` away from scaling to zero. The
+   discriminant only exists where it applies, and `applyScale` early-returns on anything that is
+   not `metres`.
+3. **The scale decision and its pure helpers live in `src/lib/geometry.ts`**, not `Upload.tsx`:
+   that file's header says it stays framework-free and it is where the mm convention is written
+   down, and the helpers had to be pure before they could be tested at all. `rescaleMesh` — three
+   glue that builds the `BufferGeometry` — stays in `Upload.tsx`, which already owns parsing.
+4. **`orientNote` labels the centring offsets in the file's units** rather than unconditionally
+   `mm`; on a metres-authored file they are metres and the note says so, and a rescale appends
+   `· ×1000 applied to reach mm` so the two statements cannot disagree.
+
+**Cross-review (MiniMax M3.1-Flash, 2026-11-10) — findings and dispositions.**
+
+- **MAJOR, fixed — the weld quantum was a unit bug, not a length.** `checkWatertight` welded on
+  a grid of 0.001 in the *array's* units: 0.001 mm on an mm file, 1 mm on the same hull authored
+  in metres, where the coarser bucket merges genuinely distinct vertices. Measured on the
+  committed hull, the metre spelling reported **1730 phantom open edges** — a hard block on a
+  closed, valid file, one banner away from another banner calling the same hull metres. The
+  quantum is now `maxDim × 1e-6` (0.0027 mm for the test hull, within a factor of three of the
+  old 0.001 mm for mm files), so both spellings weld identically. A real hole still counts as
+  exactly 3 open edges at either scale — the fix loosened the tolerance without making the check
+  vacuous. `weldVertices` keeps its own 0.001 mm grid by design (decimation numbers are already
+  published against it) and its comment now says so instead of claiming they match.
+- **MAJOR, fixed — scale thresholds false-positived and re-armed** (`< 1000`, see deviation 1),
+  and `large` carried `factor: 0` (see deviation 2). Both pinned by truth-table assertions at the
+  500 and 10 000 boundaries.
+- **MAJOR, fixed — `waterplaneLoopCount > 1` hid the worst case.** `=== 0` means the cut closed no
+  contour at all: area and second moment are 0, `BM` is 0, and `GM` reads `KB − KG`, a plausible
+  number out of nothing. The advisory is now `!== 1` with a distinct zero-loop message, lives in a
+  `role="status"` region (so a screen reader hears it about the numbers it is about to display),
+  and stays non-blocking, as the review focus requires. The solver's `ClippedBelow` doc now states
+  the `!== 1` rule rather than describing only `> 1`.
+- **MAJOR, fixed — Task 6 shipped with no assertions at all.** `tests/verify-upload-scale.ts`
+  (30 checks) covers the pure logic: the truth table, the watertight verdict as a property of the
+  mesh rather than its units, the 3-open-edge hole at both scales, the mm → ÷1000 → ×1000 round
+  trip through `rescalePositions`/`rescaleMesh`, and the no-re-arm rule.
+- **MINOR, fixed — `scaleAdviceFor` sat in a React component** and so was untestable and
+  unreachable from the test suite; it moved to `src/lib/geometry.ts` (deviation 3).
+- **MINOR, fixed — the metres notice understated the damage and mixed units.** It said "every
+  result would read 1000× too small", but volumes are off by 10⁹×, and the axis was printed with
+  no unit at all. Now `Largest axis 2.71 m — this looks like metres, not mm. Lengths would read
+  1000× too small and volumes 10⁹× too small.`
+- **MINOR, fixed — `orientNote` claimed mm on a file it had itself called metres**, and kept
+  claiming it after the ×1000 applied (deviation 4).
+- **NIT, fixed — `rescaleMesh` considered for `geometry.ts`**, but it builds a `BufferGeometry`,
+  and the file that holds the mm convention forbids three imports. The pure half moved; the glue
+  stayed.
+- **NIT, fixed — `Date.now()` mesh ids** collide for two loads in the same millisecond, reusing a
+  React `key`; a module-level counter cannot.
+- **NIT, fixed** — the Apply button said `×1000` and the note said `x1000`; both use `×`.
+
+**Coverage note, stated plainly.** This suite executes the decision functions and the rescale
+path. It does **not** execute the three gates as the user meets them: the banners, the disabled
+Calculate button, the Apply button's wiring and the `orientNote` wording are JSX in `App.tsx` /
+`Upload.tsx`, and `handleFile` needs a real `File` and an `STLLoader`. Those are covered by
+typecheck, `biome check` and a read-through — the same split the project already accepts for
+`verify-viewer-scene.ts` — and they need Richard's hands in the browser once before Task 7 lands:
+blocking banner on a non-watertight STL, Calculate genuinely disabled, the zero-loop advisory
+non-blocking, and Apply ×1000 remounting the viewer with corrected numbers.
+
 ---
 
 # Task 7 — Input handling + localStorage
