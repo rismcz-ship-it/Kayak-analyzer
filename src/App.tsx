@@ -8,7 +8,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
-import Upload, { type LoadedMesh } from './components/Upload'
+import Upload, { type LoadedMesh, rescaleMesh } from './components/Upload'
 import Viewer3D from './components/Viewer3D'
 import { DEFAULT_KG_MM, type TrimSolveResult } from './lib/hydrostatics'
 import { SolverClient } from './lib/solver-client'
@@ -103,6 +103,13 @@ export default function App() {
         if (positions.length === 0) {
           throw new Error('Empty mesh — the STL contained no triangles.')
         }
+        // Belt and braces with the disabled Calculate button: a hull with open
+        // edges cannot reach solveTrim, whatever path calls this.
+        if (!current.stats.watertight.watertight) {
+          throw new Error(
+            `${current.stats.watertight.openEdgeCount} open edges — the solver needs a closed hull.`,
+          )
+        }
         if (!Number.isFinite(weightKg) || weightKg <= 0) {
           throw new Error(`Target weight must be > 0 kg (got ${String(weightKg)}).`)
         }
@@ -194,8 +201,23 @@ export default function App() {
     setIsCalculating(false)
   }, [retireRun])
 
+  /**
+   * The only path that ever changes geometry: an explicit Apply on the
+   * metres notice. rescaleMesh copies into a new buffer (the viewer keeps
+   * drawing the old one until handleLoaded swaps it), and handleLoaded
+   * disposes that old geometry — so nothing is mutated in place, and the new
+   * mesh id remounts the viewer.
+   */
+  const applyScale = useCallback(() => {
+    const advice = mesh?.scaleAdvice
+    if (!mesh || !advice || advice.kind !== 'metres') return
+    handleLoaded(rescaleMesh(mesh, advice.factor))
+  }, [mesh, handleLoaded])
+
   const s = mesh?.stats
   const maxKg = s ? s.volumeLiters : null
+  // Largest extent in mm — the Hull section's unit notice reads this.
+  const maxDim = s ? Math.max(s.bounds.size.x, s.bounds.size.y, s.bounds.size.z) : 0
   const weightInvalid =
     !Number.isFinite(targetWeight) || targetWeight <= 0
       ? 'Enter a weight above 0 kg.'
@@ -256,6 +278,22 @@ export default function App() {
                 <p className="mt-2 text-xs text-zinc-500" title={mesh.orientNote}>
                   {mesh.orientNote}
                 </p>
+                {mesh.scaleAdvice && (
+                  <p className="mt-2 text-xs text-amber-400" role="note">
+                    {mesh.scaleAdvice.kind === 'metres'
+                      ? `Largest axis ${fmt(maxDim, 2)} m — this looks like metres, not mm. Lengths would read 1000× too small and volumes 10⁹× too small.`
+                      : `Largest axis ${fmt(maxDim)} mm — larger than 10 m. Check the STL's units; the app assumes mm.`}
+                    {mesh.scaleAdvice.kind === 'metres' && (
+                      <button
+                        type="button"
+                        onClick={applyScale}
+                        className="ml-2 rounded border border-amber-600/60 px-2 py-0.5 text-xs text-amber-300 hover:bg-amber-950/40"
+                      >
+                        Apply ×1000
+                      </button>
+                    )}
+                  </p>
+                )}
                 <div className="mt-3">
                   <Upload onLoaded={handleLoaded} compact />
                 </div>
@@ -263,6 +301,15 @@ export default function App() {
 
               <section className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-4">
                 <h2 className="mb-3 text-sm font-semibold text-zinc-200">Draft Calculation</h2>
+                {!s.watertight.watertight && (
+                  <p
+                    className="mb-2 rounded border border-amber-800 bg-amber-950/50 p-2 text-xs text-amber-300"
+                    role="note"
+                  >
+                    {s.watertight.openEdgeCount} open edges — the solver needs a closed hull, so
+                    Calculate is disabled.
+                  </p>
+                )}
                 <label htmlFor="target-weight" className="mb-1 block text-xs text-zinc-400">
                   Target weight (kg) — paddler + gear + boat
                 </label>
@@ -280,7 +327,7 @@ export default function App() {
                   <button
                     type="button"
                     onClick={calculateDraft}
-                    disabled={isCalculating || !mesh}
+                    disabled={isCalculating || !mesh || !s.watertight.watertight}
                     className="rounded bg-blue-500 px-4 py-2 text-white hover:bg-blue-600 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     {isCalculating ? 'Calculating…' : 'Calculate Draft'}
@@ -413,6 +460,21 @@ export default function App() {
                     role="alert"
                   >
                     {draftError}
+                  </p>
+                )}
+                {/* Anything other than exactly one loop leaves the waterplane
+                    sums untrustworthy: several loops means the contour
+                    fragmented, and NONE means the cut produced no closed water
+                    plane at all, so area and Ix are 0, BM is 0, and GM reads
+                    KB − KG — a plausible number out of nothing. */}
+                {trimResult && trimResult.waterplaneLoopCount !== 1 && (
+                  <p
+                    className="mb-2 rounded border border-amber-800 bg-amber-950/50 p-2 text-xs text-amber-300"
+                    role="status"
+                  >
+                    {trimResult.waterplaneLoopCount === 0
+                      ? 'no closed waterplane contour at this waterline — the mesh has holes, so BM and GM are meaningless.'
+                      : `waterplane split into ${trimResult.waterplaneLoopCount} loops — the mesh has holes; BM/GM are unreliable.`}
                   </p>
                 )}
                 <output className="block text-sm" id="draft-output" aria-live="polite">

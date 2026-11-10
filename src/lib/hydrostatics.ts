@@ -456,8 +456,9 @@ export interface ClippedBelow {
    * Number of distinct closed loops the waterplane contour resolved into.
    * A watertight hull cut by a single plane must give exactly 1. More than
    * one means the contour was fragmented (bad welding, or a genuinely
-   * multi-lobe waterplane), and the area/second-moment sums below are then
-   * not trustworthy.
+   * multi-lobe waterplane), and *none* means the cut closed no contour at
+   * all, so area and second moment are 0 and BM collapses to 0. Either way
+   * the numbers below are not trustworthy — callers must warn on `!== 1`.
    */
   waterplaneLoopCount: number
 }

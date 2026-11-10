@@ -448,13 +448,29 @@ export function computeSurfaceAreaMm2(positions: Float32Array): number {
   return area / 2
 }
 
-// Quantise to 0.001 mm so that duplicated STL vertices (identical coordinates,
-// separate indices) count as the same point, while remaining far cheaper than
-// true geometric welding.
-const QUANT = 1000
+/**
+ * Weld quantum for coordinate-keyed geometry, as a fraction of the mesh's own
+ * largest extent.
+ *
+ * The app is millimetres end to end, but an STL authored in metres arrives here
+ * a thousand times smaller. A quantum fixed in *array units* is therefore not a
+ * length: 0.001 in array units is 0.001 mm on an mm file and 1 mm on a metre
+ * file, and a 1 mm bucket merges vertices that are genuinely distinct — which
+ * made a closed, metre-authored hull report ~1700 phantom open edges. Taking the
+ * quantum from the mesh's own extent makes it scale-free, so both spellings of
+ * the same hull weld identically.
+ */
+const WELD_RELATIVE_QUANTUM = 1e-6
 
-function quantize(p: Vec3): string {
-  return `${Math.round(p.x * QUANT)}|${Math.round(p.y * QUANT)}|${Math.round(p.z * QUANT)}`
+/**
+ * Weld quantum for this array, in its own units. Zero-extent arrays have at
+ * most one distinct vertex, so any positive quantum welds them all; 1 keeps the
+ * keys integral instead of dividing by zero.
+ */
+function weldQuantum(positions: Float32Array): number {
+  const size = computeBounds(positions).size
+  const maxDim = Math.max(size.x, size.y, size.z)
+  return maxDim > 0 ? maxDim * WELD_RELATIVE_QUANTUM : 1
 }
 
 /**
@@ -464,6 +480,9 @@ function quantize(p: Vec3): string {
  * by quantised coordinates instead of indices.
  */
 export function checkWatertight(positions: Float32Array): WatertightResult {
+  const quantum = weldQuantum(positions)
+  const key = (x: number, y: number, z: number) =>
+    `${Math.round(x / quantum)}|${Math.round(y / quantum)}|${Math.round(z / quantum)}`
   const edges = new Map<string, { fwd: number; rev: number }>()
   let degenerate = 0
 
@@ -480,8 +499,10 @@ export function checkWatertight(positions: Float32Array): WatertightResult {
         degenerate++
         continue
       }
-      const dir = `${quantize(a)}|${quantize(b)}`
-      const rev = `${quantize(b)}|${quantize(a)}`
+      const ka = key(a.x, a.y, a.z)
+      const kb = key(b.x, b.y, b.z)
+      const dir = `${ka}|${kb}`
+      const rev = `${kb}|${ka}`
       const canonical = dir <= rev ? dir : rev
       const forward = dir <= rev
       const entry = edges.get(canonical)
@@ -994,6 +1015,55 @@ export function analyzeMesh(positions: Float32Array): MeshStats {
 }
 
 /**
+ * A unit sanity flag on the largest extent of an oriented hull, in mm.
+ *
+ * The app is mm end to end, so an STL authored in metres comes in a thousand
+ * times small: a 2.7 m kayak reads as a 2.7 mm one, its draft is a thousandth
+ * of the real value and its displacement is off by 10⁹×. `large` has no fix —
+ * a genuinely huge model, or a model in a nonsensical unit — so it only warns.
+ */
+export type ScaleAdvice = { kind: 'metres'; factor: 1000 } | { kind: 'large' }
+
+/**
+ * Smallest extent that could still be a millimetre hull.
+ *
+ * A kayak is thousands of millimetres long — the committed test hull is 2714 —
+ * so nothing under half a metre is a real boat in mm. The only honest reading
+ * of such a mesh is a file authored in metres (or a scale model, where the
+ * banner costs one click to ignore).
+ */
+const METRES_ADVICE_BELOW = 500
+
+/** Largest extent the app will accept without a comment: 10 m. */
+const PLAUSIBLE_MAX_DIM = 10_000
+
+/**
+ * Pure decision on the oriented bounds: see {@link ScaleAdvice}.
+ *
+ * Only ever a hint. The notice is advisory and dismissible by ignoring it; the
+ * one hard rule it feeds is that `metres` carries the ×1000 the Apply button
+ * applies, and `large` carries no factor at all — nothing may scale a mesh by
+ * an absent or zero factor.
+ */
+export function scaleAdviceFor(size: Vec3): ScaleAdvice | undefined {
+  const maxDim = Math.max(size.x, size.y, size.z)
+  if (maxDim < METRES_ADVICE_BELOW && maxDim > 0) return { kind: 'metres', factor: 1000 }
+  if (maxDim > PLAUSIBLE_MAX_DIM) return { kind: 'large' }
+  return undefined
+}
+
+/**
+ * Copy an array into a fresh one scaled by `factor`. Winding and normals are
+ * unaffected for any positive factor: it is a plain multiply about the origin,
+ * which is exactly why the viewer's own buffer is never scaled in place.
+ */
+export function rescalePositions(positions: Float32Array, factor: number): Float32Array {
+  const scaled = new Float32Array(positions.length)
+  for (let i = 0; i < positions.length; i++) scaled[i] = positions[i] * factor
+  return scaled
+}
+
+/**
  * True if a mesh is sound enough to run hydrostatics on.
  *
  * Two things disqualify it:
@@ -1118,9 +1188,10 @@ class CollapseHeap {
  * Collapse STL triangles into an indexed mesh.
  *
  * STL carries no shared indices, so the same physical vertex appears once per
- * triangle that touches it. Quantise to 0.001 mm — the same quantum
- * {@link checkWatertight} uses — so exact duplicates become one vertex while
- * genuinely distinct points stay apart.
+ * triangle that touches it. Quantise to 0.001 in array units — this file's own
+ * quantum, deliberately independent of {@link checkWatertight}'s scale-free one:
+ * decimation only ever runs on a mesh the solver has already accepted, and
+ * changing its grid would move every published decimation number.
  */
 function weldVertices(positions: Float32Array): WeldedMesh {
   const QUANT = 1000

@@ -1,5 +1,5 @@
 import { type DragEvent, useCallback, useRef, useState } from 'react'
-import type { BufferGeometry } from 'three'
+import { BufferAttribute, BufferGeometry } from 'three'
 import { STLLoader } from 'three/addons/loaders/STLLoader.js'
 import {
   analyzeMesh,
@@ -7,9 +7,20 @@ import {
   centerToOrigin,
   computeBounds,
   type MeshStats,
+  rescalePositions,
+  type ScaleAdvice,
+  scaleAdviceFor,
 } from '../lib/geometry'
 
 export const MAX_UPLOAD_BYTES = 25 * 1024 * 1024 // 25 MB cap, in-memory only
+
+/**
+ * Unique per loaded mesh. `Date.now()` collides for two loads in the same
+ * millisecond, which reused a React key; a counter cannot. The key only forces
+ * the viewer to remount (its mount effect is keyed on the geometry), so this is
+ * tidiness rather than a bug fix — but it is free.
+ */
+let nextMeshId = 1
 
 export interface LoadedMesh {
   id: number
@@ -18,6 +29,39 @@ export interface LoadedMesh {
   geometry: BufferGeometry
   stats: MeshStats
   orientNote: string
+  /** Unit sanity flag from the oriented bounds; undefined when nothing is off. */
+  scaleAdvice?: ScaleAdvice
+}
+
+/**
+ * Rebuild a mesh at a new scale, for the explicit "Apply ×1000" path only.
+ *
+ * The position array is copied into a fresh buffer and a new geometry built from
+ * it: rescaling the viewer's own array in place would rewrite the buffer it is
+ * drawing from, mid-frame, and the new `id` remounts the viewer (its `key`).
+ */
+export function rescaleMesh(mesh: LoadedMesh, factor: number): LoadedMesh {
+  const scaled = rescalePositions(
+    mesh.geometry.getAttribute('position').array as Float32Array,
+    factor,
+  )
+  const geometry = new BufferGeometry()
+  geometry.setAttribute('position', new BufferAttribute(scaled, 3))
+  geometry.computeVertexNormals()
+  const stats = analyzeMesh(scaled)
+  const fresh = scaleAdviceFor(stats.bounds.size)
+  return {
+    id: nextMeshId++,
+    fileName: mesh.fileName,
+    sizeBytes: mesh.sizeBytes,
+    geometry,
+    stats,
+    // The rescaled mesh is in mm by construction, so a metres flag from the new
+    // bounds would be advice about a mesh this user has already corrected. Only
+    // `large` can still apply.
+    scaleAdvice: fresh?.kind === 'large' ? fresh : undefined,
+    orientNote: `${mesh.orientNote} · ×${factor} applied to reach mm`,
+  }
 }
 
 interface UploadProps {
@@ -56,19 +100,22 @@ export default function Upload({ onLoaded, compact = false }: UploadProps) {
         // Center at origin so the model loads in view.
         const preCenter = computeBounds(positions).center
         centerToOrigin(positions)
-        const dx = -preCenter.x
-        const dy = -preCenter.y
-        const dz = -preCenter.z
-        const fullNote = `${orientNote} · centered by (${dx.toFixed(1)}, ${dy.toFixed(1)}, ${dz.toFixed(1)}) mm`
         geometry.computeVertexNormals()
 
         const stats = analyzeMesh(positions)
+        const scaleAdvice = scaleAdviceFor(stats.bounds.size)
+        // The centring offsets are in the FILE's units, which is mm only when
+        // nothing says otherwise — on a metres-authored file they are metres,
+        // and the note labels them so instead of quietly mislabelling them.
+        const unit = scaleAdvice?.kind === 'metres' ? 'm' : 'mm'
+        const fullNote = `${orientNote} · centered by (${(-preCenter.x).toFixed(1)}, ${(-preCenter.y).toFixed(1)}, ${(-preCenter.z).toFixed(1)}) ${unit}`
         onLoaded({
-          id: Date.now(),
+          id: nextMeshId++,
           fileName: file.name,
           sizeBytes: file.size,
           geometry,
           stats,
+          scaleAdvice,
           orientNote: fullNote,
         })
       } catch (err) {
