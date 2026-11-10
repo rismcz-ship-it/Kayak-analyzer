@@ -519,6 +519,77 @@ match Task 1's `total`; the worker is constructed with `type: 'module'`.
 
 **Proposed commit:** `feat(solver): run the hydrostatics solve in a Web Worker with progress and cancel`
 
+**Done (2026-11-10).** `884020f`'s successor on `main`, uncommitted at time of writing; gate green
+(`npm.cmd run ci` exit 0): 12 suites, the worker-protocol suite 25 checks / 0 failed in ~11 s, full
+CI ~215 s. Parity against a direct `solveTrim` on the same array is exact (deep-equal of the whole
+result object, not a tolerance): `trimDeg -2.7`, `draftMm 124.54425048828125`, `GM 85.1`,
+`displacementKg 75.03881900131594`, 974 planes. The run's options are deliberately NON-default
+(LCG 50%, KG 300 mm, heel 4°) so that every option the worker forwards changes the answer and a
+silently dropped one fails the parity check — with `kgMm: 280`, KG 280, LCG 52% and heel 0° the
+worker could have dropped `kgMm` outright and still matched. `kgMm` is the parameter this repo
+already shipped a unit bug in (the 272.9 GM in the published baseline), so that is the one that must
+never be invisible. The other checks: 108 000 request floats bit-identical after the run; 30 progress
+messages with indices 1..30 contiguous, 19 coarse + 11 fine, coarse-before-fine, |angle| <= 4.5°, final
+index === total, exactly one result message and it is last; and a thrown solve maps to
+`ok: false` — `"solveTrim: kgMm must be > 0 (got -1)"` — without escaping the handler.
+
+Two corrections to this plan's own spec:
+
+1. **The `onmessage` guard was wrong.** `typeof ctx.onmessage === 'undefined'` never fires inside a
+   real worker: a `DedicatedWorkerGlobalScope` defines `onmessage` (defaulting to `null`), so the
+   test is false and the handler would never attach. What shipped first was
+   `typeof ctx.postMessage === 'function' && !ctx.onmessage` — true under Node/tsx (both absent) and
+   inside a fresh worker — but that is *also* true on a fresh `window`, so the cross-review
+   replaced it with a worker-only test: `typeof ctx.importScripts === 'function' && !ctx.onmessage`.
+2. **The error-path trigger was wrong.** `targetKg = 1e9` does not throw: `solveTrim` catches a
+   failed angle and falls back, so a 1e9 kg request never raises (it reaches the fallback path
+   instead). The one deterministic throw is the `kgMm <= 0` guard, which fires *before* any sweep —
+   so the error test uses `kgMm: -1`: no heavy solve to reach it, and it cannot be confused with a
+   fallback the solver absorbed.
+
+One documented deviation. Step 4 asks to confirm the build log lists a worker asset; it does not,
+and cannot yet: nothing in the app graph imports `SolverClient` until Task 5 wires the App, and an
+unused import is tree-shaken — so the check moves to Task 5, where the client is actually
+instantiated. This task's build gate is the typecheck, which does cover both new files.
+`worker.postMessage(msg, { transfer: [buf] })` (the `StructuredSerializeOptions` form — TS 7's DOM
+lib accepts it) typechecks cleanly against the libs already in `tsconfig.app.json`; no `webworker`
+lib was added.
+
+`SolverClient` is no longer untested: section 5 of the protocol suite drives it against a fake
+`Worker` global in Node (records what was posted, emits messages on command), covering the happy
+path, cancel, replacement, a failed solve and a dying worker.
+
+**Cross-review (MiniMax M3.1-Flash, 2026-11-10) — findings and dispositions.**
+
+- **CRITICAL, fixed.** `cancel()` bumped `runId` *before* invoking the stored `cancel` closure, so
+  the closure's staleness guard (`myRun !== this.runId`) was always true: **the promise was never
+  settled** — it hung forever, on both the cancel path and the "a second `run()` replaced this one"
+  path. The client now stores the raw `reject` in `pending` and calls it directly after retiring
+  the run and terminating the worker. Proof the new suite bites: with the old client restored,
+  section 5 goes RED (3 failed checks — cancel, the replaced run, and the late-message check);
+  with the fix, green.
+- **SIGNIFICANT, fixed (comment honesty).** The worker's second copy of `positions` was justified by
+  "solveTrim rotates scratch over its input". It does not: `solveTrim` copies before pitching
+  (`hydrostatics.ts`, beside the cheap sweep) and `decimateMesh` never mutates. The copy is gone and
+  the worker solves its transferred buffer in place — which also makes check #1 bite again (with the
+  copy, "the request survives the run" was true by construction and could never fail).
+- **SIGNIFICANT, fixed.** The parity check could not see a dropped `kgMm`, `targetLcgPercentFromBow`
+  or `fixedHeelDeg` because the request's values equalled the solver's defaults. The request now
+  carries 50% / 300 mm / 4°, so each of those is pinned. `trimStepDeg` stays 0.1 (the app only ever
+  asks for 0.1, and the documented 19 + 11 ladder depends on it); `maxTrimDeg` was already pinned
+  at 4.5 against the solver's 3.5 fallback.
+- **MINOR, fixed.** The phase-order predicate (`findIndex(fine) >= coarseCount - 1`) still passed a
+  coarse message arriving after the first fine; it is now strict, and the ladder itself is pinned to
+  19 coarse + 11 fine = 30 rather than read off the message under test (the old `total` was
+  self-referential). `phase` is typed `'coarse' | 'fine'` rather than `string`; the unreachable
+  "worker closed without a result" branch and the never-read `pending.runId` are gone.
+- **MINOR, fixed.** The Node-importability guard (`typeof postMessage === 'function' && !onmessage`)
+  is equally true on a browser *main thread*, where it would have hijacked `window.onmessage` and run
+  a full solve on any posted message. It is now a worker-specific test (`importScripts` exists only
+  in a worker global; the DOM lib does not declare it, hence the optional member on the local cast).
+- **NIT, noted.** The working tree also touches `AGENTS.md` and this plan doc — documentation
+  upkeep (the new suite row, the suite count, the two new `src/lib/` layout lines), not drift.
+
 ---
 
 # Task 5 — App wiring: solve in the worker, drop the redundant first solve
