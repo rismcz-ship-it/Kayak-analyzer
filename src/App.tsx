@@ -10,13 +10,8 @@ import {
 } from 'recharts'
 import Upload, { type LoadedMesh } from './components/Upload'
 import Viewer3D from './components/Viewer3D'
-import {
-  DEFAULT_KG_MM,
-  type Draft0TrimResult,
-  findDraft0Trim,
-  solveTrim,
-  type TrimSolveResult,
-} from './lib/hydrostatics'
+import { DEFAULT_KG_MM, type TrimSolveResult } from './lib/hydrostatics'
+import { SolverClient } from './lib/solver-client'
 
 const fmt = (v: number, digits = 1) => v.toLocaleString('en-US', { maximumFractionDigits: digits })
 
@@ -45,88 +40,136 @@ function positionsOf(mesh: LoadedMesh): Float32Array {
 
 export default function App() {
   const [mesh, setMesh] = useState<LoadedMesh | null>(null)
-  const [draftResult, setDraftResult] = useState<Draft0TrimResult | null>(null)
   const [trimResult, setTrimResult] = useState<TrimSolveResult | null>(null)
   const [draftError, setDraftError] = useState<string | null>(null)
   const [isCalculating, setIsCalculating] = useState(false)
+  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null)
   const [targetWeight, setTargetWeight] = useState(75) // kg, fresh water 1 kg = 1 L
   const [targetLcgPercent, setTargetLcgPercent] = useState(52) // % from bow
   const [targetKgMm, setTargetKgMm] = useState(DEFAULT_KG_MM) // mm above the keel
   const [showHeelInput, setShowHeelInput] = useState(false) // toggle for fixed heel input
   const [heelInputDeg, setHeelInputDeg] = useState(0) // fixed heel angle in degrees
   const calcToken = useRef(0)
+  const clientRef = useRef<SolverClient | null>(null)
+  const mountedRef = useRef(true)
 
-  const handleLoaded = useCallback((next: LoadedMesh) => {
-    setMesh((prev) => {
-      if (prev) prev.geometry.dispose()
-      return next
-    })
-    // Invalidate stale hydrostatics immediately. No auto-calculation here —
-    // the user must orient the hull then click "Calculate Draft".
-    setDraftResult(null)
-    setTrimResult(null)
-    setDraftError(null)
+  /**
+   * Retire whatever is in flight: bump the token so its late continuation is
+   * dropped, and stop its worker. The promise rejects with 'cancelled', which
+   * the stale token check above discards.
+   */
+  const retireRun = useCallback(() => {
+    calcToken.current++
+    clientRef.current?.cancel()
+  }, [])
+
+  const handleLoaded = useCallback(
+    (next: LoadedMesh) => {
+      // A solve in flight now answers for a mesh that is no longer on screen.
+      retireRun()
+      setMesh((prev) => {
+        if (prev) prev.geometry.dispose()
+        return next
+      })
+      // Invalidate stale hydrostatics immediately. No auto-calculation here —
+      // the user must orient the hull then click "Calculate Draft".
+      setTrimResult(null)
+      setDraftError(null)
+      setProgress(null)
+      setIsCalculating(false)
+    },
+    [retireRun],
+  )
+
+  // The client owns the worker, so the worker dies with the component. The
+  // flag is re-armed on every mount because StrictMode mounts, unmounts and
+  // mounts again — without that, development would never apply a result.
+  useEffect(() => {
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+      clientRef.current?.cancel()
+    }
   }, [])
 
   const runCalculation = useCallback(
     (weightKg: number, lcgPercent: number, kgMm: number, heelDeg: number, current: LoadedMesh) => {
       const token = ++calcToken.current
       setIsCalculating(true)
+      setProgress(null)
       setDraftError(null)
-      // Yield one frame so the loading state paints before the (sync, heavy)
-      // 1 mm sweep blocks the main thread.
-      window.setTimeout(() => {
-        if (calcToken.current !== token) return
-        try {
-          const positions = positionsOf(current)
-          if (positions.length === 0) {
-            throw new Error('Empty mesh — the STL contained no triangles.')
-          }
-          if (!Number.isFinite(weightKg) || weightKg <= 0) {
-            throw new Error(`Target weight must be > 0 kg (got ${String(weightKg)}).`)
-          }
-          if (!Number.isFinite(kgMm) || kgMm <= 0) {
-            throw new Error(`KG must be > 0 mm (got ${String(kgMm)}).`)
-          }
-          const heelRad = (heelDeg * Math.PI) / 180
-          // First run zero-trim draft (with heel if set)
-          const draft = findDraft0Trim(positions, weightKg, kgMm, heelRad)
-          if (calcToken.current !== token) return
-          setDraftResult(draft)
-
-          // Then run full trim solver
-          const trim = solveTrim(positions, weightKg, {
-            targetLcgPercentFromBow: lcgPercent,
-            maxTrimDeg: 4.5,
-            trimStepDeg: 0.1,
-            fixedHeelDeg: heelDeg,
-            kgMm,
-          })
-          if (calcToken.current !== token) return
-          setTrimResult(trim)
-          setDraftError(null)
-        } catch (err) {
-          if (calcToken.current !== token) return
-          setDraftResult(null)
-          setTrimResult(null)
-          setDraftError(err instanceof Error ? err.message : 'Draft calculation failed.')
-        } finally {
-          if (calcToken.current === token) setIsCalculating(false)
+      try {
+        const positions = positionsOf(current)
+        if (positions.length === 0) {
+          throw new Error('Empty mesh — the STL contained no triangles.')
         }
-      }, 30)
+        if (!Number.isFinite(weightKg) || weightKg <= 0) {
+          throw new Error(`Target weight must be > 0 kg (got ${String(weightKg)}).`)
+        }
+        if (!Number.isFinite(kgMm) || kgMm <= 0) {
+          throw new Error(`KG must be > 0 mm (got ${String(kgMm)}).`)
+        }
+        // The solve runs in a worker: the main thread stays free to render the
+        // hull and the progress bar while the waterplane sweep works.
+        if (!clientRef.current) clientRef.current = new SolverClient()
+        const client = clientRef.current
+        client
+          .run(
+            {
+              // Copied so this seam never hands the viewer's live buffer to the
+              // client; SolverClient copies again inside run() and transfers
+              // only its own copy (pinned by section 5 of
+              // tests/verify-worker-protocol.ts), so the geometry's array is
+              // never detached and the viewer keeps rendering.
+              positions: new Float32Array(positions),
+              targetKg: weightKg,
+              targetLcgPercentFromBow: lcgPercent,
+              kgMm,
+              fixedHeelDeg: heelDeg,
+              maxTrimDeg: 4.5,
+              trimStepDeg: 0.1,
+            },
+            (p) => {
+              if (calcToken.current === token) setProgress({ done: p.done, total: p.total })
+            },
+          )
+          .then(
+            (trim) => {
+              if (calcToken.current !== token || !mountedRef.current) return
+              setTrimResult(trim)
+              setIsCalculating(false)
+              setProgress(null)
+            },
+            (err: unknown) => {
+              // Tested before the guard below, so it stays the single authority:
+              // a cancelled run clears the in-progress UI and nothing else —
+              // neither an error panel nor the previous result on screen.
+              // (retireRun also bumps the token, so this usually discards it
+              // earlier still; that redundancy is deliberate, not a bug.)
+              if (err instanceof Error && err.message === 'cancelled') {
+                if (calcToken.current === token && mountedRef.current) {
+                  setIsCalculating(false)
+                  setProgress(null)
+                }
+                return
+              }
+              if (calcToken.current !== token || !mountedRef.current) return
+              setTrimResult(null)
+              setDraftError(err instanceof Error ? err.message : 'Draft calculation failed.')
+              setIsCalculating(false)
+              setProgress(null)
+            },
+          )
+      } catch (err) {
+        if (!mountedRef.current) return
+        setTrimResult(null)
+        setDraftError(err instanceof Error ? err.message : 'Draft calculation failed.')
+        setIsCalculating(false)
+        setProgress(null)
+      }
     },
     [],
   )
-
-  // Clear stale results when hull changes — DO NOT auto-calculate.
-  // User must click "Calculate Draft" after rotating / setting weight / LCG.
-  useEffect(() => {
-    if (!mesh) return
-    setDraftResult(null)
-    setTrimResult(null)
-    setDraftError(null)
-    // NOTE: no auto-run here. User must click "Calculate Draft" after rotating.
-  }, [mesh])
 
   const calculateDraft = useCallback(() => {
     if (!mesh) {
@@ -144,6 +187,12 @@ export default function App() {
     heelInputDeg,
     runCalculation,
   ])
+
+  const cancelCalculation = useCallback(() => {
+    retireRun()
+    setProgress(null)
+    setIsCalculating(false)
+  }, [retireRun])
 
   const s = mesh?.stats
   const maxKg = s ? s.volumeLiters : null
@@ -175,15 +224,11 @@ export default function App() {
                 <Viewer3D
                   key={mesh.id}
                   geometry={mesh.geometry}
-                  waterlineZ={trimResult?.waterlineZ ?? draftResult?.waterlineZ ?? null}
+                  waterlineZ={trimResult?.waterlineZ ?? null}
                   trimDeg={trimResult?.trimDeg ?? 0}
-                  heelDeg={
-                    trimResult?.heelDeg ??
-                    draftResult?.heelDeg ??
-                    (showHeelInput ? heelInputDeg : 0)
-                  }
+                  heelDeg={trimResult?.heelDeg ?? (showHeelInput ? heelInputDeg : 0)}
                   lcg={trimResult?.lcg ?? null}
-                  lcb={trimResult?.lcb ?? draftResult?.lcb ?? null}
+                  lcb={trimResult?.lcb ?? null}
                   pivot={trimResult?.pivot ?? null}
                 />
               </div>
@@ -332,9 +377,35 @@ export default function App() {
                   </p>
                 )}
                 {isCalculating && (
-                  <p className="mb-2 text-xs text-zinc-400" role="status" aria-live="polite">
-                    Sweeping waterplanes in 1 mm steps…
-                  </p>
+                  <div className="mb-2">
+                    <div className="h-1.5 w-full overflow-hidden rounded-full bg-zinc-800">
+                      <div
+                        className="h-full rounded-full bg-blue-500 transition-[width] duration-150"
+                        style={{
+                          width:
+                            progress && progress.total > 0
+                              ? `${Math.min(100, Math.round((progress.done / progress.total) * 100))}%`
+                              : '4%',
+                        }}
+                      />
+                    </div>
+                    <div className="mt-1 flex items-center justify-between gap-2 text-xs text-zinc-400">
+                      {/* Live region on the text only: the bar ticks ~30 times,
+                          and the button belongs outside a polite live region. */}
+                      <span role="status" aria-live="polite">
+                        {progress
+                          ? `Solving… angle ${progress.done}/${progress.total}`
+                          : 'Starting solver…'}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={cancelCalculation}
+                        className="rounded border border-zinc-700 px-2 py-0.5 text-xs text-zinc-300 hover:bg-zinc-800"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
                 )}
                 {draftError && (
                   <p
@@ -451,25 +522,6 @@ export default function App() {
                           />
                         </LineChart>
                       </ResponsiveContainer>
-                    </dl>
-                  ) : draftResult ? (
-                    <dl className="space-y-1">
-                      {statRow('Draft', `${fmt(draftResult.draftMm)} mm`, true)}
-                      {statRow('Waterline Z', `${fmt(draftResult.waterlineZ)} mm`)}
-                      {statRow('Displacement', `${fmt(draftResult.displacementKg)} kg`)}
-                      {statRow('Target', `${fmt(draftResult.targetKg)} kg`)}
-                      {statRow(
-                        'Waterplane area',
-                        `${fmt(draftResult.waterplaneAreaMm2 / 1e6, 3)} m²`,
-                      )}
-                      {statRow('Bow freeboard', `${fmt(draftResult.bowFreeboardMm)} mm`)}
-                      {statRow('Stern freeboard', `${fmt(draftResult.sternFreeboardMm)} mm`)}
-                      {statRow(
-                        'Converged',
-                        draftResult.converged
-                          ? `yes (${draftResult.planesEvaluated} planes)`
-                          : `approx (${draftResult.planesEvaluated} planes)`,
-                      )}
                     </dl>
                   ) : !draftError && !isCalculating ? (
                     <span className="text-zinc-500">No results yet.</span>

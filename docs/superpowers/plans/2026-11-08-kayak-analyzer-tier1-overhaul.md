@@ -626,6 +626,55 @@ result applied after cancel/new mesh; the removed branch has no other reader of
 
 **Proposed commit:** `perf(app): solve in the worker with progress and cancel; drop the redundant draft0 solve`
 
+**Done (2026-11-10).** `884020f`'s successor on `main`; gate green (`npm.cmd run ci` exit 0): 12
+suites with the worker-protocol suite at 25 checks / 0 failed, and — closing Task 4's documented
+deviation — the build now emits the worker asset `dist/assets/solver-worker-CF7MvmHC.js` (21.53 kB),
+because `SolverClient` is finally instantiated by the app graph. The main thread no longer solves:
+`grep` over `src/` finds `solveTrim` imported only by `src/lib/solver-worker.ts`, and
+`draftResult` / `Draft0TrimResult` / `findDraft0Trim` have no reader in `src/` outside the library
+itself and the assertion suites, which keep `findDraft0Trim` as ground truth.
+
+Deviations from this plan's own steps:
+
+1. Step 2 says terminate the client on unmount. What ships is `mountedRef.current = false` plus
+   `clientRef.current?.cancel()`, with the flag **re-armed** rather than set once: `<StrictMode>`
+   mounts, unmounts and mounts again, so a one-shot effect would leave the dev-mode flag false and
+   no result would ever be applied.
+2. Step 5 says the Cancel button calls `client.cancel()`. It calls `retireRun()` — bump `calcToken`,
+   then cancel — because the token bump is what keeps a *late* `'cancelled'` rejection from clearing
+   anything, while the button itself clears `progress` / `isCalculating` directly.
+3. Step 4 asks for the `draftResult` UI branch to be deleted; the old `useEffect([mesh])` that cleared
+   results went with it, because `setMesh` has exactly one caller (`handleLoaded`) which clears the
+   same state — two paths doing one job is how they drift apart.
+
+**Cross-review (MiniMax M3.1-Flash, 2026-11-10) — findings and dispositions.**
+
+- **MINOR, fixed.** The `'cancelled'` rejection branch was unreachable dead code: every path that
+  produces that rejection also invalidates its own guard (`retireRun` bumps the token *before*
+  `cancel()` rejects; the unmount cleanup clears `mountedRef` first), so the branch never ran, while
+  its comment claimed the "cancel leaves the previous result untouched" guarantee — a guarantee that
+  in fact rested on the token bump. The branch now runs **before** the guard and is the single
+  authority for "a cancelled run clears the in-progress UI and nothing else". No live bug: the state
+  was already cleared directly by `cancelCalculation` / `handleLoaded`.
+- **MINOR, fixed.** The bar width divided by `progress.total` with no guard, so a `total` of 0
+  (impossible from the shipped worker: `coarseCount` and `fineCount` are each `Math.max(1, …)`) would
+  render `width: "NaN%"`, which the CSSOM rejects, dropping the declaration and leaving the bar fully
+  filled. Now guarded by `progress.total > 0` and clamped with `Math.min(100, …)`.
+- **NIT, fixed.** The comment on the App-side `positions` copy claimed "the client transfers this
+  buffer" — it does not: `SolverClient.run` copies again and transfers only its own copy (pinned by
+  section 5 of `tests/verify-worker-protocol.ts`, "run() transfers a copy, not the request array").
+  The copy stays (step 3 asks for it), but the comment now describes what actually happens; the cost
+  is one extra memcpy against a seconds-long solve.
+- **NIT, fixed.** `role="status" aria-live="polite"` wrapped the Cancel button along with text that
+  changes ~30 times, so a screen reader announced a burst of near-identical updates. The live region
+  moved onto the status `<span>`; the button sits beside it, outside it.
+- **Verified without change:** exactly one solve per click (button `disabled={isCalculating || !mesh}`,
+  one `client.run` call, and `SolverClient.run` cancels any previous run); cancel leaves the previous
+  result on screen (`trimResult` is never touched on that path); no stale result after a new mesh
+  (`handleLoaded` retires the run, then clears the hydrostatics); the viewer's position buffer is
+  never detached; no promise left pending and no worker leaked on any exit; the closures/deps and the
+  StrictMode double-mount are sound.
+
 ---
 
 # Task 6 — Validation gates (watertight · waterplane contour · scale)
