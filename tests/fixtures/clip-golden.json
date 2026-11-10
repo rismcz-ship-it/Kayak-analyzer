@@ -1,8 +1,8 @@
 {
-  "note": "Golden output of clipBelowPlane, captured BEFORE the Task 3 perf change (numeric weld buckets, scratch buffers, sqrt). Regenerate with a generator that orients + centrates + decimates tests/test-kayak.stl to 12000 tris, then clips at lo + (hi-lo)*(k+0.5)/20 over k=0..19 for heel 0 and 12 deg (applyRollX about bounds centre y/z).",
+  "note": "Golden output of clipBelowPlane, captured BEFORE the Task 3 perf change (numeric weld buckets, scratch buffers, sqrt). Regenerate with a generator that orients + centrates + decimates tests/test-kayak.stl to 12000 tris, then clips per case below. Case kinds: 'midpoint' -- 20 heights minZ + (maxZ-minZ)*(k+0.5)/20 over k=0..19; 'vertexZ' -- the height is exactly a vertex z of the rolled mesh (quantiles 0.05/0.35/0.65/0.95 of the sorted unique vertex z values), so h - az is exactly 0 for that vertex and every EPS comparison takes its boundary value; 'extremeZ' -- h = minZ and h = maxZ; 'degenerate' -- the mesh plus two near-degenerate vertical slivers at x=5000 (vertices (5000, 0, -2000), (5000, d, -2000), (5000, d, 2000) with d = 2e-13 and 3e-13), whose cross-product magnitude |d|*4000 is ~8e-10 mm^2 and ~1.2e-9 mm^2 (as float32), one either side of the 1e-9 mm^2 degenerate-triangle reject threshold. Heel 12 deg is applyRollX about the bounds centre y/z. Each case may carry extraTris: flat xyz triples appended to the rolled mesh, in the recorded order. Every expected number came from the pre-change clipper: src/lib/hydrostatics.ts at commit 56aabc3, blob b4a721b1d71f378258ab84780a4d4c0b31fd02c5. The generator itself is not kept in the repo, so to regenerate, check that blob out over the current module path and re-clip -- no stale copy of it lives under tests/ to rot.",
   "meshTriangles": 12000,
   "heelAnglesDeg": [0, 12],
-  "caseCount": 20,
+  "caseCount": 54,
   "clippedCases": [
     {
       "heelDeg": 0,
@@ -15,7 +15,7 @@
       "waterplaneIyyMm4": 1671254912.203,
       "waterplaneCentroidX": -255.176028,
       "waterplaneLoopCount": 1,
-      "ms": 5.4475
+      "kind": "midpoint"
     },
     {
       "heelDeg": 0,
@@ -28,7 +28,7 @@
       "waterplaneIyyMm4": 16821311741.939,
       "waterplaneCentroidX": -217.564748,
       "waterplaneLoopCount": 1,
-      "ms": 4.2266
+      "kind": "midpoint"
     },
     {
       "heelDeg": 0,
@@ -41,7 +41,7 @@
       "waterplaneIyyMm4": 40832791518.718,
       "waterplaneCentroidX": -205.828772,
       "waterplaneLoopCount": 1,
-      "ms": 5.0247
+      "kind": "midpoint"
     },
     {
       "heelDeg": 0,
@@ -54,7 +54,7 @@
       "waterplaneIyyMm4": 70073104720.601,
       "waterplaneCentroidX": -195.771323,
       "waterplaneLoopCount": 2,
-      "ms": 5.3153
+      "kind": "midpoint"
     },
     {
       "heelDeg": 0,
@@ -67,7 +67,7 @@
       "waterplaneIyyMm4": 103850846021.914,
       "waterplaneCentroidX": -179.834748,
       "waterplaneLoopCount": 2,
-      "ms": 4.5581
+      "kind": "midpoint"
     },
     {
       "heelDeg": 0,
@@ -80,7 +80,7 @@
       "waterplaneIyyMm4": 141308702914.586,
       "waterplaneCentroidX": -162.082412,
       "waterplaneLoopCount": 1,
-      "ms": 6.7371
+      "kind": "midpoint"
     },
     {
       "heelDeg": 0,
@@ -93,7 +93,7 @@
       "waterplaneIyyMm4": 181912133884.314,
       "waterplaneCentroidX": -142.333455,
       "waterplaneLoopCount": 1,
-      "ms": 9.839
+      "kind": "midpoint"
     },
     {
       "heelDeg": 0,
@@ -106,7 +106,7 @@
       "waterplaneIyyMm4": 226681968778.561,
       "waterplaneCentroidX": -120.358024,
       "waterplaneLoopCount": 1,
-      "ms": 5.9257
+      "kind": "midpoint"
     },
     {
       "heelDeg": 0,
@@ -119,7 +119,7 @@
       "waterplaneIyyMm4": 274842505520.53,
       "waterplaneCentroidX": -98.006433,
       "waterplaneLoopCount": 1,
-      "ms": 8.8548
+      "kind": "midpoint"
     },
     {
       "heelDeg": 0,
@@ -132,7 +132,7 @@
       "waterplaneIyyMm4": 324230870087.56,
       "waterplaneCentroidX": -77.18373,
       "waterplaneLoopCount": 1,
-      "ms": 5.0217
+      "kind": "midpoint"
     },
     {
       "heelDeg": 0,
@@ -145,7 +145,7 @@
       "waterplaneIyyMm4": 371602918922.478,
       "waterplaneCentroidX": -58.903313,
       "waterplaneLoopCount": 1,
-      "ms": 8.6873
+      "kind": "midpoint"
     },
     {
       "heelDeg": 0,
@@ -158,7 +158,7 @@
       "waterplaneIyyMm4": 412255843406.109,
       "waterplaneCentroidX": -44.783855,
       "waterplaneLoopCount": 1,
-      "ms": 5.3185
+      "kind": "midpoint"
     },
     {
       "heelDeg": 0,
@@ -171,7 +171,7 @@
       "waterplaneIyyMm4": 438853391086.121,
       "waterplaneCentroidX": -38.102126,
       "waterplaneLoopCount": 1,
-      "ms": 6.2337
+      "kind": "midpoint"
     },
     {
       "heelDeg": 0,
@@ -184,7 +184,7 @@
       "waterplaneIyyMm4": 434944252827.811,
       "waterplaneCentroidX": -50.677819,
       "waterplaneLoopCount": 1,
-      "ms": 5.6223
+      "kind": "midpoint"
     },
     {
       "heelDeg": 0,
@@ -197,7 +197,7 @@
       "waterplaneIyyMm4": 322533870900.865,
       "waterplaneCentroidX": -158.17367,
       "waterplaneLoopCount": 3,
-      "ms": 7.0512
+      "kind": "midpoint"
     },
     {
       "heelDeg": 0,
@@ -210,7 +210,7 @@
       "waterplaneIyyMm4": 130604803714.79,
       "waterplaneCentroidX": -346.885317,
       "waterplaneLoopCount": 2,
-      "ms": 5.9886
+      "kind": "midpoint"
     },
     {
       "heelDeg": 0,
@@ -223,7 +223,7 @@
       "waterplaneIyyMm4": 81111572616.302,
       "waterplaneCentroidX": -360.796031,
       "waterplaneLoopCount": 2,
-      "ms": 6.9438
+      "kind": "midpoint"
     },
     {
       "heelDeg": 0,
@@ -236,7 +236,7 @@
       "waterplaneIyyMm4": 8778147570.045,
       "waterplaneCentroidX": -334.222866,
       "waterplaneLoopCount": 2,
-      "ms": 5.7093
+      "kind": "midpoint"
     },
     {
       "heelDeg": 0,
@@ -249,7 +249,7 @@
       "waterplaneIyyMm4": 1029727287.676,
       "waterplaneCentroidX": -334.356315,
       "waterplaneLoopCount": 1,
-      "ms": 2.4887
+      "kind": "midpoint"
     },
     {
       "heelDeg": 0,
@@ -262,7 +262,7 @@
       "waterplaneIyyMm4": 7328180.561,
       "waterplaneCentroidX": -405.36138,
       "waterplaneLoopCount": 1,
-      "ms": 4.3054
+      "kind": "midpoint"
     },
     {
       "heelDeg": 12,
@@ -275,7 +275,7 @@
       "waterplaneIyyMm4": 985374655.452,
       "waterplaneCentroidX": -208.547779,
       "waterplaneLoopCount": 1,
-      "ms": 2.4808
+      "kind": "midpoint"
     },
     {
       "heelDeg": 12,
@@ -288,7 +288,7 @@
       "waterplaneIyyMm4": 10454924250.511,
       "waterplaneCentroidX": -187.871178,
       "waterplaneLoopCount": 1,
-      "ms": 1.1222
+      "kind": "midpoint"
     },
     {
       "heelDeg": 12,
@@ -301,7 +301,7 @@
       "waterplaneIyyMm4": 28086588890.385,
       "waterplaneCentroidX": -187.088622,
       "waterplaneLoopCount": 1,
-      "ms": 1.6932
+      "kind": "midpoint"
     },
     {
       "heelDeg": 12,
@@ -314,7 +314,7 @@
       "waterplaneIyyMm4": 53302404989.729,
       "waterplaneCentroidX": -185.009309,
       "waterplaneLoopCount": 1,
-      "ms": 1.4227
+      "kind": "midpoint"
     },
     {
       "heelDeg": 12,
@@ -327,7 +327,7 @@
       "waterplaneIyyMm4": 85486339527.487,
       "waterplaneCentroidX": -176.899468,
       "waterplaneLoopCount": 1,
-      "ms": 1.7298
+      "kind": "midpoint"
     },
     {
       "heelDeg": 12,
@@ -340,7 +340,7 @@
       "waterplaneIyyMm4": 123120891151.517,
       "waterplaneCentroidX": -164.670558,
       "waterplaneLoopCount": 1,
-      "ms": 1.7048
+      "kind": "midpoint"
     },
     {
       "heelDeg": 12,
@@ -353,7 +353,7 @@
       "waterplaneIyyMm4": 165510966680.155,
       "waterplaneCentroidX": -149.397874,
       "waterplaneLoopCount": 1,
-      "ms": 1.8564
+      "kind": "midpoint"
     },
     {
       "heelDeg": 12,
@@ -366,7 +366,7 @@
       "waterplaneIyyMm4": 210641204853.216,
       "waterplaneCentroidX": -130.923634,
       "waterplaneLoopCount": 2,
-      "ms": 2.5415
+      "kind": "midpoint"
     },
     {
       "heelDeg": 12,
@@ -379,7 +379,7 @@
       "waterplaneIyyMm4": 257995698188.862,
       "waterplaneCentroidX": -110.567429,
       "waterplaneLoopCount": 1,
-      "ms": 1.8861
+      "kind": "midpoint"
     },
     {
       "heelDeg": 12,
@@ -392,7 +392,7 @@
       "waterplaneIyyMm4": 302856490911.988,
       "waterplaneCentroidX": -93.798761,
       "waterplaneLoopCount": 1,
-      "ms": 2.009
+      "kind": "midpoint"
     },
     {
       "heelDeg": 12,
@@ -405,7 +405,7 @@
       "waterplaneIyyMm4": 344609265264.93,
       "waterplaneCentroidX": -78.520585,
       "waterplaneLoopCount": 1,
-      "ms": 2.0755
+      "kind": "midpoint"
     },
     {
       "heelDeg": 12,
@@ -418,7 +418,7 @@
       "waterplaneIyyMm4": 379300966216.053,
       "waterplaneCentroidX": -66.767251,
       "waterplaneLoopCount": 1,
-      "ms": 2.334
+      "kind": "midpoint"
     },
     {
       "heelDeg": 12,
@@ -431,7 +431,7 @@
       "waterplaneIyyMm4": 399607916320.793,
       "waterplaneCentroidX": -63.938457,
       "waterplaneLoopCount": 1,
-      "ms": 3.3194
+      "kind": "midpoint"
     },
     {
       "heelDeg": 12,
@@ -444,7 +444,7 @@
       "waterplaneIyyMm4": 392492240973.623,
       "waterplaneCentroidX": -76.535365,
       "waterplaneLoopCount": 1,
-      "ms": 2.4495
+      "kind": "midpoint"
     },
     {
       "heelDeg": 12,
@@ -457,7 +457,7 @@
       "waterplaneIyyMm4": 320586029487.125,
       "waterplaneCentroidX": -135.945069,
       "waterplaneLoopCount": 1,
-      "ms": 2.4839
+      "kind": "midpoint"
     },
     {
       "heelDeg": 12,
@@ -470,7 +470,7 @@
       "waterplaneIyyMm4": 126646182258.1,
       "waterplaneCentroidX": -338.70152,
       "waterplaneLoopCount": 2,
-      "ms": 2.2967
+      "kind": "midpoint"
     },
     {
       "heelDeg": 12,
@@ -483,7 +483,7 @@
       "waterplaneIyyMm4": 34037533186.967,
       "waterplaneCentroidX": -327.48308,
       "waterplaneLoopCount": 3,
-      "ms": 3.9008
+      "kind": "midpoint"
     },
     {
       "heelDeg": 12,
@@ -496,7 +496,7 @@
       "waterplaneIyyMm4": 12932518581.183,
       "waterplaneCentroidX": -225.428938,
       "waterplaneLoopCount": 2,
-      "ms": 1.9307
+      "kind": "midpoint"
     },
     {
       "heelDeg": 12,
@@ -509,7 +509,7 @@
       "waterplaneIyyMm4": 2991776745.29,
       "waterplaneCentroidX": -252.65718,
       "waterplaneLoopCount": 1,
-      "ms": 1.7994
+      "kind": "midpoint"
     },
     {
       "heelDeg": 12,
@@ -522,7 +522,197 @@
       "waterplaneIyyMm4": 64895046.734,
       "waterplaneCentroidX": -269.673607,
       "waterplaneLoopCount": 1,
-      "ms": 1.5008
+      "kind": "midpoint"
+    },
+    {
+      "heelDeg": 0,
+      "caseIndex": 20,
+      "kind": "vertexZ",
+      "h": -144.86505126953125,
+      "clippedLength": 7506,
+      "digest": "a97de619",
+      "waterplaneAreaMm2": 234752.63032792945,
+      "waterplaneIx": 2117094750.1992333,
+      "waterplaneIyyMm4": 9133969901.14985,
+      "waterplaneCentroidX": -227.44150623952115,
+      "waterplaneLoopCount": 1
+    },
+    {
+      "heelDeg": 0,
+      "caseIndex": 21,
+      "kind": "vertexZ",
+      "h": -31.411460876464844,
+      "clippedLength": 42588,
+      "digest": "c18b43d6",
+      "waterplaneAreaMm2": 979009.4497069635,
+      "waterplaneIx": 23087385283.318966,
+      "waterplaneIyyMm4": 255018336100.2312,
+      "waterplaneCentroidX": -106.93474568236896,
+      "waterplaneLoopCount": 1
+    },
+    {
+      "heelDeg": 0,
+      "caseIndex": 22,
+      "kind": "vertexZ",
+      "h": 70.02687072753906,
+      "clippedLength": 79542,
+      "digest": "a3999ae1",
+      "waterplaneAreaMm2": 917138.8525449273,
+      "waterplaneIx": 14714139808.53775,
+      "waterplaneIyyMm4": 356692425582.7435,
+      "waterplaneCentroidX": -124.83146503560681,
+      "waterplaneLoopCount": 2
+    },
+    {
+      "heelDeg": 0,
+      "caseIndex": 23,
+      "kind": "vertexZ",
+      "h": 130.7355499267578,
+      "clippedLength": 106092,
+      "digest": "7e5fb5ec",
+      "waterplaneAreaMm2": 152175.64788750402,
+      "waterplaneIx": 1342622344.6309175,
+      "waterplaneIyyMm4": 2789221032.8142586,
+      "waterplaneCentroidX": -311.83852303386817,
+      "waterplaneLoopCount": 1
+    },
+    {
+      "heelDeg": 0,
+      "caseIndex": 24,
+      "kind": "extremeZ",
+      "h": 161.43650817871094,
+      "clippedLength": 108000,
+      "digest": "9c47a49f",
+      "waterplaneAreaMm2": 0,
+      "waterplaneIx": 0,
+      "waterplaneIyyMm4": 0,
+      "waterplaneCentroidX": 0,
+      "waterplaneLoopCount": 0
+    },
+    {
+      "heelDeg": 0,
+      "caseIndex": 25,
+      "kind": "extremeZ",
+      "h": -162.51535034179688,
+      "clippedLength": 54,
+      "digest": "44e5941d",
+      "waterplaneAreaMm2": 0,
+      "waterplaneIx": 0,
+      "waterplaneIyyMm4": 0,
+      "waterplaneCentroidX": 0,
+      "waterplaneLoopCount": 0
+    },
+    {
+      "heelDeg": 0,
+      "caseIndex": 26,
+      "kind": "degenerate",
+      "h": -0.5394210815429688,
+      "clippedLength": 51840,
+      "digest": "a80777a1",
+      "waterplaneAreaMm2": 1076796.1951015883,
+      "waterplaneIx": 24573560484.499657,
+      "waterplaneIyyMm4": 348455515244.325,
+      "waterplaneCentroidX": -67.62427426288615,
+      "waterplaneLoopCount": 1,
+      "extraTris": [
+        5000, 0, -2000, 5000, 2e-13, -2000, 5000, 2e-13, 2000, 5000, 0, -2000, 5000, 3e-13, -2000,
+        5000, 3e-13, 2000
+      ]
+    },
+    {
+      "heelDeg": 12,
+      "caseIndex": 20,
+      "kind": "vertexZ",
+      "h": -161.90599060058594,
+      "clippedLength": 8064,
+      "digest": "43fe5a63",
+      "waterplaneAreaMm2": 155009.55927409226,
+      "waterplaneIx": 646791597.4472971,
+      "waterplaneIyyMm4": 6009208692.528635,
+      "waterplaneCentroidX": -190.3963302048981,
+      "waterplaneLoopCount": 1
+    },
+    {
+      "heelDeg": 12,
+      "caseIndex": 21,
+      "kind": "vertexZ",
+      "h": -30.998706817626953,
+      "clippedLength": 44055,
+      "digest": "06072aa8",
+      "waterplaneAreaMm2": 947676.7747458569,
+      "waterplaneIx": 20455511750.463165,
+      "waterplaneIyyMm4": 256346160378.1209,
+      "waterplaneCentroidX": -111.21385536120752,
+      "waterplaneLoopCount": 1
+    },
+    {
+      "heelDeg": 12,
+      "caseIndex": 22,
+      "kind": "vertexZ",
+      "h": 63.96701431274414,
+      "clippedLength": 77508,
+      "digest": "26c620e5",
+      "waterplaneAreaMm2": 939147.4558024213,
+      "waterplaneIx": 14514443350.160542,
+      "waterplaneIyyMm4": 381760772666.02545,
+      "waterplaneCentroidX": -84.80094464791117,
+      "waterplaneLoopCount": 1
+    },
+    {
+      "heelDeg": 12,
+      "caseIndex": 23,
+      "kind": "vertexZ",
+      "h": 145.6308135986328,
+      "clippedLength": 105363,
+      "digest": "33bd8f6f",
+      "waterplaneAreaMm2": 130560.05337087065,
+      "waterplaneIx": 653079352.7119219,
+      "waterplaneIyyMm4": 4017767300.014303,
+      "waterplaneCentroidX": -247.11095898338624,
+      "waterplaneLoopCount": 1
+    },
+    {
+      "heelDeg": 12,
+      "caseIndex": 24,
+      "kind": "extremeZ",
+      "h": 175.17274475097656,
+      "clippedLength": 108000,
+      "digest": "9ae3039e",
+      "waterplaneAreaMm2": 0,
+      "waterplaneIx": 0,
+      "waterplaneIyyMm4": 0,
+      "waterplaneCentroidX": 0,
+      "waterplaneLoopCount": 0
+    },
+    {
+      "heelDeg": 12,
+      "caseIndex": 25,
+      "kind": "extremeZ",
+      "h": -182.27659606933594,
+      "clippedLength": 54,
+      "digest": "7f245ef5",
+      "waterplaneAreaMm2": 0,
+      "waterplaneIx": 0,
+      "waterplaneIyyMm4": 0,
+      "waterplaneCentroidX": 0,
+      "waterplaneLoopCount": 0
+    },
+    {
+      "heelDeg": 12,
+      "caseIndex": 26,
+      "kind": "degenerate",
+      "h": -3.5519256591796875,
+      "clippedLength": 51588,
+      "digest": "4ccc74f3",
+      "waterplaneAreaMm2": 1019321.8300350321,
+      "waterplaneIx": 21504905796.139416,
+      "waterplaneIyyMm4": 324270615197.30774,
+      "waterplaneCentroidX": -85.94815386551093,
+      "waterplaneLoopCount": 1,
+      "extraTris": [
+        5000, 0, -2000, 5000, 2e-13, -2000, 5000, 2e-13, 2000, 5000, 0, -2000, 5000, 3e-13, -2000,
+        5000, 3e-13, 2000
+      ]
     }
   ]
 }

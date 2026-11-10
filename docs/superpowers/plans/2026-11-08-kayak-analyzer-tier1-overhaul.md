@@ -363,6 +363,67 @@ parameter and `Buffer` is just a `Uint8Array` — whose own `toString()` would r
 
 Step 6's deliberate omission stands: `out`/`seg*` are not preallocated into typed arrays.
 
+**Corrected (2026-11-10, cross-review of `f2cd124`)** — two claims in this section, and in `f2cd124`'s
+commit message, are overstated. Both are recorded here rather than deleted, so the record shows what
+was claimed and why it was wrong.
+
+- **F1 — "`verify-trim-search` stays bit-identical, which is the strongest end-to-end evidence that
+  no solver number moved" is self-referential.** All three paths that suite compares — the mirrored
+  `searchHalf`, `findDraft0Trim` and `solveDraftLcb` — clip through the *same* `clipBelowPlane`, so a
+  change inside the clipper propagates identically to all of them and `dd === 0` stays true even if
+  every solver number moved. The suite's own header makes the same point about its mirror. That suite
+  therefore proves the mirror is faithful, NOT that solver output is unchanged. What does anchor "no
+  solver number moved": the golden fixture, which is genuinely pre-change output, and the published
+  baseline in `verify-orientation` (trim `-1.90°`, LCB–LCG `1.64 mm`, both ±tight) plus
+  `verify-coefficients`' displacement closure. `verify-clipper-perf.ts`'s header now says this.
+- **F3 — "`Math.sqrt` threshold truly equivalent" is false.** Both sides round, so
+  `sqrt(nx²+ny²+nz²) < 1e-18` is not bit-identical to `hypot(...) < 1e-9`: a triangle whose
+  cross-product magnitude lands within ~1 ULP (relative ~1e-16) of the threshold can flip.
+  That is ~1e-25 mm² either side of the 1e-9 mm² threshold — a triangle degenerate to within
+  double precision either way, and the real hull has no triangle near it (smallest measured
+  cross-product magnitude on the decimated test hull: 3.95 mm², at both heel 0° and 12°). The
+  code comment at the threshold now states that instead of claiming equivalence.
+- **F2 — the fixture did not cover the boundary branches it was assumed to cover.** On the 40 sampled
+  mid-range heights it recorded 0 degenerate-triangle rejects, a smallest cross-product magnitude of
+  3.95 mm² against a 1e-9 mm² threshold, and 0 vertices within 1e-9 of a plane — so the accept/reject
+  branch and the in-plane `|dz| < EPS` clamps were never executed, and the FNV-1a-over-float32 digest
+  could not have seen a change confined to them. The fixture is extended to **54 cases** (20 midpoint
+  heights, 4 cut exactly on a vertex z, minZ and maxZ, and 2 carrying a near-degenerate triangle pair
+  straddling the threshold, at heel 0° and 12°), and the suite now *checks* that coverage from the
+  fixture's own numbers rather than asserting it — including that the two slivers really do split
+  one-rejected/one-accepted. `ms` is dropped from the fixture: a timing baseline recorded by the code
+  under test cannot gate the code under test, so the budget is now the fixed constant 120 ms. That
+  constant is a gross-regression trip-wire only — the pre-change worst clip of 9.84 ms was measured
+  on the original 40 sampled heights, so there is no same-case baseline to scale from, and a hard gate
+  closer than ~10× this machine's slowest clip would fail on loaded CI runners rather than on real
+  damage.
+
+**Second pass (2026-11-10, cross-review of `04b5a2d`, MiniMax M3.1-Flash)** — 12 findings, all
+addressed; the reviewer's plan.md holds the line-level record. Two were genuine defects in the
+remediation itself:
+
+- **F3 restated wrongly.** The comment put the disagreement band in absolute terms ("within ~1e-18
+  mm² of the threshold, i.e. an area of 5e-19 mm²"), which is false — a magnitude of 5e-19 mm² is
+  rejected by *both* versions, so it can never disagree. Now stated in relative terms (~1 ULP →
+  ~1e-25 mm² at the threshold).
+- **F4's fix did not slice.** `new Uint8Array(buf.buffer, …).buffer` still returns the whole pooled
+  ArrayBuffer, so the claimed protection did not exist. Replaced with the repo's
+  `buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength)` idiom.
+
+The rest were coverage, provenance and honesty fixes: `caseCount` said 27 against 54 cases and was
+never read (it is now asserted against the case list); the (a) vertex-plane check counted *any* case
+with a vertex within 1e-9 mm of `h`, so it passed with every vertexZ height broken and its comment
+named the wrong branch (the `|dz| < EPS` clamps run per edge; the boundary value a vertex-on-plane
+actually exercises is the classification `da <= EPS`); check (c) modelled the slivers in double
+precision while the clipper sees float32 (`d = 2e-13` is ~6e-8 relative), so it now reads them back
+out of the working `Float32Array`; the budget comment claimed a same-case baseline it did not have
+and 30 ms left only 2.3× headroom on the author's machine; the fixture's provenance was prose-only
+(the pre-change blob hash and commit are now in `note`, asserted non-empty — the generator is
+deliberately *not* kept, since regenerating requires the old module and committing a stale copy of
+`src/lib/hydrostatics.ts` under `tests/` would only rot); and the commit message's typing claim
+overstated what a readonly tuple buys (the fixed-slot contract is enforced by the constructor and
+by the callers reading the head/tail directly, not by the type system).
+
 ---
 
 # Task 4 — Web Worker + client

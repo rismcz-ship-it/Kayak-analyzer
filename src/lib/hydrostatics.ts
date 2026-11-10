@@ -384,17 +384,20 @@ class WeldIndex {
 
 /**
  * Per-plane staging scratch for {@link clipBelowPlane}, reused across calls.
- * A straddling triangle used to build `[[x,y,z] x3]` + a flags array + two
- * intersection tuples every time, i.e. ~7 small allocations per clipped facet;
- * at ~10k clipped facets that is 70k throwaway objects per waterline and the
- * garbage collector became the second most expensive thing in the solve.
+ * A straddling triangle used to build `[[x,y,z] x3]` + a flags array every time,
+ * i.e. ~4 small allocations per clipped facet; at ~10k clipped facets that is
+ * 40k throwaway objects per waterline and the garbage collector became the
+ * second most expensive thing in the solve.
  *
  * Safe to share at module scope: the solver is single-threaded, and
  * clipBelowPlane never re-enters itself (it calls nothing but local helpers).
+ * Both are fixed-length and fully rewritten on every use, so a stale slot can
+ * never be read; the intersection tuple is deliberately NOT here (see ix).
  */
-const CLIP_VERTS = [0, 0, 0, 0, 0, 0, 0, 0, 0] // 3 vertices, xyz interleaved
-const CLIP_FLAGS = [false, false, false] // "vertex is in the below-plane region"
-const CLIP_POINT = [0, 0] // last ix() result, 2-tuple slot
+const CLIP_VERTS: [number, number, number, number, number, number, number, number, number] = [
+  0, 0, 0, 0, 0, 0, 0, 0, 0,
+] // 3 vertices, xyz interleaved
+const CLIP_FLAGS: [boolean, boolean, boolean] = [false, false, false] // vertex is in the below region
 
 function toPositions(mesh: MeshLike): Float32Array {
   return mesh instanceof Float32Array ? mesh : mesh.positions
@@ -493,10 +496,17 @@ export function clipBelowPlane(positions: Float32Array, h: number): ClippedBelow
     out.push(ax, ay, az, bx, by, bz, cx, cy, cz)
   }
 
+  // One 2-tuple per clipBelowPlane call, not per crossing. A crossing result is
+  // only valid until the next ix() call, so every call site destructures it
+  // immediately; scoping the slot to the call keeps that constraint local to
+  // this function instead of hiding it at module scope, where nothing at the
+  // call site hints that the tuple is shared.
+  const clipPoint: [number, number] = [0, 0]
+
   // Intersection of edge p->q with the plane z=h (caller guarantees straddle).
-  // Writes into the shared CLIP_POINT slot and returns it, so the result stays
-  // valid only until the next ix() call: destructure it at the call site (or
-  // copy both coordinates out) before computing the second intersection.
+  // Writes into clipPoint and returns it, so the result stays valid only until
+  // the next ix() call: destructure it at the call site before computing the
+  // second intersection.
   const ix = (
     ax: number,
     ay: number,
@@ -504,21 +514,21 @@ export function clipBelowPlane(positions: Float32Array, h: number): ClippedBelow
     bx: number,
     by: number,
     bz: number,
-  ): readonly number[] => {
+  ): readonly [number, number] => {
     // Both endpoints can sit exactly in the cutting plane (a facet coplanar
     // with the waterline, which happens routinely on a heeled hull). That
     // makes bz - az zero and t = inf/NaN, and a single NaN node poisons the
     // whole contour walk. Clamp t to the endpoints in that case.
     const dz = bz - az
     if (Math.abs(dz) < EPS) {
-      CLIP_POINT[0] = ax
-      CLIP_POINT[1] = ay
-      return CLIP_POINT
+      clipPoint[0] = ax
+      clipPoint[1] = ay
+      return clipPoint
     }
     const t = (h - az) / dz
-    CLIP_POINT[0] = lerp(ax, bx, t)
-    CLIP_POINT[1] = lerp(ay, by, t)
-    return CLIP_POINT
+    clipPoint[0] = lerp(ax, bx, t)
+    clipPoint[1] = lerp(ay, by, t)
+    return clipPoint
   }
 
   for (let i = 0; i < positions.length; i += 9) {
@@ -550,10 +560,11 @@ export function clipBelowPlane(positions: Float32Array, h: number): ClippedBelow
     // Squared magnitude against the SQUARED threshold, instead of
     // Math.hypot() against the linear one. hypot is a non-inlined runtime call
     // that spends its effort defending against over/underflow this loop cannot
-    // produce (hull coordinates are millimetres), and sqrt(x^2+y^2+z^2) makes
-    // the same accept/reject decision up to a final rounding bit -- which can
-    // only differ for a triangle within one ULP of 1e-9 mm^2 of area, i.e. one
-    // that is degenerate to within double precision anyway.
+    // produce (hull coordinates are millimetres), and sqrt(x^2+y^2+z^2) is
+    // equivalent to it to within one rounding step. That is NOT bit-identity:
+    // the decision can differ only for a magnitude landing within ~1 ULP
+    // (relative ~1e-16, so ~1e-25 mm^2 either side of the 1e-9 mm^2 threshold)
+    // -- a triangle degenerate to within double precision anyway.
     const nx2 = nx * nx + ny * ny + nz * nz
     if (nx2 < 1e-18) continue
 
