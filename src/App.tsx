@@ -10,6 +10,7 @@ import {
 } from 'recharts'
 import Upload, { type LoadedMesh, rescaleMesh } from './components/Upload'
 import Viewer3D from './components/Viewer3D'
+import type { ScaleAdvice } from './lib/geometry'
 import { DEFAULT_KG_MM, type TrimSolveResult } from './lib/hydrostatics'
 import { SolverClient } from './lib/solver-client'
 
@@ -36,6 +37,35 @@ function sectionTitle(title: string) {
 
 function positionsOf(mesh: LoadedMesh): Float32Array {
   return mesh.geometry.getAttribute('position').array as Float32Array
+}
+
+/**
+ * The scale notice wording, one line per band of `scaleAdviceFor`.
+ *
+ * Deliberately reports the extent in the file's own units rather than naming a
+ * unit the app cannot know: an inch-authored hull (120 units) is caught by the
+ * same rule as a metres-authored one, and printing "120.00 m" would state a
+ * false magnitude.
+ */
+function scaleNotice(advice: ScaleAdvice, maxDim: number): string {
+  if (advice.kind === 'metres') {
+    return (
+      `Largest axis ${fmt(maxDim, 2)} in the file's own units — a kayak is thousands of mm ` +
+      'long, so this is probably a metres file: lengths would read 1000× too small and ' +
+      'volumes 10⁹× too small.'
+    )
+  }
+  if (advice.kind === 'small') {
+    return (
+      `Largest axis ${fmt(maxDim)} in the file's own units — too short for a kayak in mm, ` +
+      'and too long to be metres. If the STL is in cm or inches its lengths read 10× / 25.4× ' +
+      'too small; rescale the mesh to mm.'
+    )
+  }
+  return (
+    `Largest axis ${fmt(maxDim)} mm — larger than 10 m. Check the STL's units; the app ` +
+    'assumes mm.'
+  )
 }
 
 export default function App() {
@@ -67,10 +97,13 @@ export default function App() {
     (next: LoadedMesh) => {
       // A solve in flight now answers for a mesh that is no longer on screen.
       retireRun()
-      setMesh((prev) => {
-        if (prev) prev.geometry.dispose()
-        return next
-      })
+      // Released at the call site rather than inside the updater below. Updaters
+      // must be pure, and React double-invokes them under StrictMode, so a
+      // release in there runs twice per load in development. three.js dispose
+      // is idempotent, so nothing is broken today — but Viewer3D deliberately
+      // leaves the hull geometry alone, so this is the only owner it has.
+      if (mesh) mesh.geometry.dispose()
+      setMesh(next)
       // Invalidate stale hydrostatics immediately. No auto-calculation here —
       // the user must orient the hull then click "Calculate Draft".
       setTrimResult(null)
@@ -78,7 +111,7 @@ export default function App() {
       setProgress(null)
       setIsCalculating(false)
     },
-    [retireRun],
+    [retireRun, mesh],
   )
 
   // The client owns the worker, so the worker dies with the component. The
@@ -280,9 +313,7 @@ export default function App() {
                 </p>
                 {mesh.scaleAdvice && (
                   <p className="mt-2 text-xs text-amber-400" role="note">
-                    {mesh.scaleAdvice.kind === 'metres'
-                      ? `Largest axis ${fmt(maxDim, 2)} m — this looks like metres, not mm. Lengths would read 1000× too small and volumes 10⁹× too small.`
-                      : `Largest axis ${fmt(maxDim)} mm — larger than 10 m. Check the STL's units; the app assumes mm.`}
+                    {scaleNotice(mesh.scaleAdvice, maxDim)}
                     {mesh.scaleAdvice.kind === 'metres' && (
                       <button
                         type="button"
@@ -466,15 +497,21 @@ export default function App() {
                     sums untrustworthy: several loops means the contour
                     fragmented, and NONE means the cut produced no closed water
                     plane at all, so area and Ix are 0, BM is 0, and GM reads
-                    KB − KG — a plausible number out of nothing. */}
+                    KB − KG — a plausible number out of nothing.
+
+                    Neither branch may blame holes: a holed mesh cannot reach
+                    the solver (Calculate is disabled and runCalculation throws),
+                    and a closed twin hull or a tunnel legitimately splits the
+                    waterplane into two. The wording states the numbers, not a
+                    cause the app has already excluded. */}
                 {trimResult && trimResult.waterplaneLoopCount !== 1 && (
                   <p
                     className="mb-2 rounded border border-amber-800 bg-amber-950/50 p-2 text-xs text-amber-300"
                     role="status"
                   >
                     {trimResult.waterplaneLoopCount === 0
-                      ? 'no closed waterplane contour at this waterline — the mesh has holes, so BM and GM are meaningless.'
-                      : `waterplane split into ${trimResult.waterplaneLoopCount} loops — the mesh has holes; BM/GM are unreliable.`}
+                      ? 'no closed waterplane contour at this waterline — its area and Ix are 0, so BM is 0 and GM reads KB − KG.'
+                      : `waterplane contour split into ${trimResult.waterplaneLoopCount} loops — BM and GM assume a single closed waterplane, so treat them as unreliable. A genuinely two-lobed waterplane (twin hull, tunnel) does this legitimately.`}
                   </p>
                 )}
                 <output className="block text-sm" id="draft-output" aria-live="polite">

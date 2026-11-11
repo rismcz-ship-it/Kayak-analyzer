@@ -1021,18 +1021,31 @@ export function analyzeMesh(positions: Float32Array): MeshStats {
  * times small: a 2.7 m kayak reads as a 2.7 mm one, its draft is a thousandth
  * of the real value and its displacement is off by 10⁹×. `large` has no fix —
  * a genuinely huge model, or a model in a nonsensical unit — so it only warns.
+ * `small` has no fix either, because which factor is right depends on the unit
+ * the STL claims (cm is ×10, inches ×25.4) and that is not knowable here.
  */
-export type ScaleAdvice = { kind: 'metres'; factor: 1000 } | { kind: 'large' }
+export type ScaleAdvice = { kind: 'metres'; factor: 1000 } | { kind: 'small' } | { kind: 'large' }
+
+/**
+ * Largest extent that could still be a millimetre file authored in metres.
+ *
+ * A kayak is thousands of millimetres long — the committed test hull is 2714 —
+ * so nothing under half a metre is a real boat in mm. Below this the honest
+ * reading is a file authored in metres (or a scale model, where the notice
+ * costs one click to ignore). Above it a whole-metre hull is impossible: the
+ * file would have to describe a 500 m boat.
+ */
+const METRES_ADVICE_BELOW = 500
 
 /**
  * Smallest extent that could still be a millimetre hull.
  *
- * A kayak is thousands of millimetres long — the committed test hull is 2714 —
- * so nothing under half a metre is a real boat in mm. The only honest reading
- * of such a mesh is a file authored in metres (or a scale model, where the
- * banner costs one click to ignore).
+ * What is left between the two bounds cannot be metres (too long for a boat)
+ * and cannot be mm (too short for a hull): a centimetre- or inch-authored STL
+ * lands here, and silently labelling it mm would make every length ten or
+ * twenty-five times too small and every volume wrong by a thousand or more.
  */
-const METRES_ADVICE_BELOW = 500
+const PLAUSIBLE_MIN_DIM = 1000
 
 /** Largest extent the app will accept without a comment: 10 m. */
 const PLAUSIBLE_MAX_DIM = 10_000
@@ -1042,14 +1055,17 @@ const PLAUSIBLE_MAX_DIM = 10_000
  *
  * Only ever a hint. The notice is advisory and dismissible by ignoring it; the
  * one hard rule it feeds is that `metres` carries the ×1000 the Apply button
- * applies, and `large` carries no factor at all — nothing may scale a mesh by
- * an absent or zero factor.
+ * applies, and `small` / `large` carry no factor at all — nothing may scale a
+ * mesh by an absent or zero factor.
  */
 export function scaleAdviceFor(size: Vec3): ScaleAdvice | undefined {
   const maxDim = Math.max(size.x, size.y, size.z)
-  if (maxDim < METRES_ADVICE_BELOW && maxDim > 0) return { kind: 'metres', factor: 1000 }
   if (maxDim > PLAUSIBLE_MAX_DIM) return { kind: 'large' }
-  return undefined
+  if (maxDim >= METRES_ADVICE_BELOW) {
+    return maxDim < PLAUSIBLE_MIN_DIM ? { kind: 'small' } : undefined
+  }
+  // A zero extent is empty geometry, not a unit problem.
+  return maxDim > 0 ? { kind: 'metres', factor: 1000 } : undefined
 }
 
 /**

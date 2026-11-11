@@ -16,15 +16,20 @@
 //     would have caught it.
 //
 //  2. THE ADVICE FALSE-POSITIVED ON SUB-METRE HULLS AND RE-ARMED. A threshold
-//     of "under 1000" told a real 900 mm kayak it was metres; and a metre file
-//     scaled to 900 mm was told so again, so a second Apply produced 900 000 mm.
-//     Both are pinned by the truth table and by the rescale checks.
+//     of "under 1000" told a real 900 mm kayak it was metres and offered a
+//     ×1000 that made it a 900 m kayak; and a metre file scaled to 900 mm was
+//     told so again, so a second Apply produced 900 000 mm. Both are pinned by
+//     the truth table and by the rescale checks. The same threshold then went
+//     SILENT on a centimetre file (a 540 cm tandem reads 540 units), which the
+//     app would have analysed as a 540 mm kayak — lengths ten times too small,
+//     volumes a thousand times too small. The `small` band covers that gap.
 //
 //  3. ZERO LOOPS WAS INVISIBLE. `waterplaneLoopCount === 0` leaves BM = 0 and
 //     GM = KB − KG: a plausible number out of nothing. That is an App-level
-//     banner condition, so it is not executed here — but the solver contract
-//     that makes 0 meaningful (`!== 1`, not `> 1`) is asserted against the
-//     analytic box, whose waterplane at every draft is exactly one loop.
+//     banner condition, so it is not executed here; the solver contract that
+//     makes 0 meaningful (`!== 1`, not `> 1`) is asserted against the analytic
+//     box in `verify-solve-extras.ts`, whose waterplane at every draft is
+//     exactly one loop.
 //
 // What this suite does NOT cover, and says so rather than pretending: the
 // banners themselves, the disabled Calculate button, the Apply button's wiring
@@ -123,8 +128,18 @@ const advice = (maxDim: number) => scaleAdviceFor({ x: maxDim, y: maxDim, z: max
 
 check(advice(0) === undefined, 'zero extent is not metres', 'degenerate mesh ignored')
 check(advice(499)?.kind === 'metres', '499 mm reads as metres')
-check(advice(500) === undefined, '500 mm is a plausible mm hull', 'boundary is exclusive')
-check(advice(900) === undefined, 'a real 900 mm kayak is not flagged', 'the old < 1000 did')
+// 500 … 999 cannot be metres (a 500 m hull is not a hull) yet too short for a
+// millimetre one: that is where a cm- or inch-authored STL lands, so the notice
+// names the gap instead of silently trusting the numbers.
+check(advice(500)?.kind === 'small', '500 begins the small band', 'boundary is exclusive')
+check(advice(540)?.kind === 'small', 'a 540 cm tandem is flagged small', 'was silently accepted')
+check(
+  advice(900)?.kind === 'small',
+  '900 is too short for a mm kayak',
+  'the old < 1000 said metres',
+)
+check(advice(999)?.kind === 'small', '999 is still the small band', 'boundary is exclusive')
+check(advice(1000) === undefined, '1000 mm is the smallest silent size', 'boundary is exclusive')
 check(advice(2714) === undefined, 'the test hull is not flagged')
 check(advice(10_000) === undefined, '10 m is the last silent size', 'boundary is exclusive')
 check(advice(10_001)?.kind === 'large', 'over 10 m is flagged large')
@@ -134,6 +149,9 @@ check(advice(10_001)?.kind === 'large', 'over 10 m is flagged large')
 const large = advice(12_345)
 check(large?.kind === 'large', 'large carries no factor', JSON.stringify(large))
 check(!('factor' in (large ?? {})), 'no factor key on the large variant')
+const small = advice(540)
+check(small?.kind === 'small', 'small carries no factor', JSON.stringify(small))
+check(!('factor' in (small ?? {})), 'no factor key on the small variant')
 
 // --- 2. the weld quantum is scale-free -------------------------------------
 
@@ -141,8 +159,14 @@ console.log('\n=== watertight verdict is a property of the mesh, not its units =
 
 // The real hull, oriented and centred exactly as Upload.tsx does on load.
 const STL = new URL('./test-kayak.stl', import.meta.url)
-const raw = new STLLoader().parse(readFileSync(STL).buffer as ArrayBuffer).getAttribute('position')
-  .array as Float32Array
+// Sliced out of the Buffer explicitly: Node's readFileSync can hand back a view
+// into a larger pooled ArrayBuffer, whose tail a parser would then read.
+const stlBytes = readFileSync(STL)
+const stlBuffer = stlBytes.buffer.slice(
+  stlBytes.byteOffset,
+  stlBytes.byteOffset + stlBytes.byteLength,
+) as ArrayBuffer
+const raw = new STLLoader().parse(stlBuffer).getAttribute('position').array as Float32Array
 const mm = new Float32Array(raw)
 autoOrientToZUp(mm)
 centerToOrigin(mm)
@@ -254,7 +278,7 @@ check(
   'Apply ×1000 leaves a watertight hull',
   `${rescaled.stats.watertight.openEdgeCount} open edges`,
 )
-check(rescaled.scaleAdvice === undefined, 'a real kayak clears the metres flag on Apply')
+check(rescaled.scaleAdvice === undefined, 'a mm kayak raises no flag after Apply')
 check(
   rescaled.geometry !== metreMesh.geometry,
   'Apply ×1000 builds a new geometry, so the viewer is remounted',
@@ -267,8 +291,9 @@ check(
 
 // The re-arm case the truth table alone cannot catch: a model-sized kayak
 // authored in metres (0.4 m) rescales to 400 mm, which is still under the
-// metres threshold. It must NOT be flagged again — the mesh is in mm by
-// construction once the user has applied the fix.
+// metres threshold. It must NOT be flagged metres again — the mesh is in mm by
+// construction once the user has applied the fix, and offering ×1000 a second
+// time would make it 400 000 mm.
 const smallMetre = asMesh(asMetres(boxPositions(400, 200, 100)))
 check(smallMetre.scaleAdvice?.kind === 'metres', 'a 0.4 m mesh is flagged metres')
 const smallRescaled = rescaleMesh(smallMetre, 1000)
@@ -281,6 +306,29 @@ check(
   smallRescaled.stats.watertight.watertight,
   'the small metre mesh stays watertight through the rescale',
   `${smallRescaled.stats.watertight.openEdgeCount} open edges`,
+)
+
+// The other half of the same rule: a 0.9 m file rescales to 900 mm, which is
+// too short for a boat. That is a true statement about the mesh the user now
+// has, so `small` survives the Apply while `metres` does not — and no button is
+// offered, because which factor a 900 mm hull needs is not knowable here.
+const underMetre = asMesh(asMetres(boxPositions(900, 400, 150)))
+check(underMetre.scaleAdvice?.kind === 'metres', 'a 0.9 m mesh is flagged metres')
+const underRescaled = rescaleMesh(underMetre, 1000)
+check(
+  underRescaled.scaleAdvice?.kind === 'small',
+  'a 900 mm rescaled mesh is still told it is too short for a kayak',
+  `advising ${JSON.stringify(underRescaled.scaleAdvice)}`,
+)
+check(
+  !('factor' in (underRescaled.scaleAdvice ?? {})),
+  'the surviving small advice offers no Apply button',
+  JSON.stringify(underRescaled.scaleAdvice),
+)
+check(
+  underRescaled.stats.watertight.watertight,
+  'the 0.9 m mesh stays watertight through the rescale',
+  `${underRescaled.stats.watertight.openEdgeCount} open edges`,
 )
 
 console.log(

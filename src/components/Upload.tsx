@@ -56,10 +56,12 @@ export function rescaleMesh(mesh: LoadedMesh, factor: number): LoadedMesh {
     sizeBytes: mesh.sizeBytes,
     geometry,
     stats,
-    // The rescaled mesh is in mm by construction, so a metres flag from the new
-    // bounds would be advice about a mesh this user has already corrected. Only
-    // `large` can still apply.
-    scaleAdvice: fresh?.kind === 'large' ? fresh : undefined,
+    // The rescaled mesh is mm by construction, so re-offering the ×1000 button
+    // would be advice about a mesh this user has already corrected. `small` and
+    // `large` describe the resulting geometry itself and are worth keeping: a
+    // 0.9 m file really is a 900 mm hull after the conversion, and that is too
+    // short for a boat.
+    scaleAdvice: fresh?.kind === 'metres' ? undefined : fresh,
     orientNote: `${mesh.orientNote} · ×${factor} applied to reach mm`,
   }
 }
@@ -104,10 +106,12 @@ export default function Upload({ onLoaded, compact = false }: UploadProps) {
 
         const stats = analyzeMesh(positions)
         const scaleAdvice = scaleAdviceFor(stats.bounds.size)
-        // The centring offsets are in the FILE's units, which is mm only when
-        // nothing says otherwise — on a metres-authored file they are metres,
-        // and the note labels them so instead of quietly mislabelling them.
-        const unit = scaleAdvice?.kind === 'metres' ? 'm' : 'mm'
+        // The centring offsets are in the FILE's units. mm is the only one the
+        // app can vouch for, and only when the bounds raise no flag; `metres`
+        // names its own unit, and the rest are labelled unresolved instead of
+        // quietly mislabelled mm.
+        const unit =
+          scaleAdvice === undefined ? 'mm' : scaleAdvice.kind === 'metres' ? 'm' : 'file units'
         const fullNote = `${orientNote} · centered by (${(-preCenter.x).toFixed(1)}, ${(-preCenter.y).toFixed(1)}, ${(-preCenter.z).toFixed(1)}) ${unit}`
         onLoaded({
           id: nextMeshId++,

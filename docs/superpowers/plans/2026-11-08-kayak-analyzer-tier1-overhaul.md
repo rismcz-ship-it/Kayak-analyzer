@@ -727,12 +727,18 @@ emitting `dist/assets/solver-worker-BFu7GqHX.js` (21.61 kB). Baseline intact: bo
 
 Deviations from this plan's own steps:
 
-1. **Gate 3's thresholds are not the ones written above.** `maxDim < 1000` tells a real 900 mm
-   kayak it is metres, and it re-arms after a correct Apply: a metre-authored 5.4 m tandem scales
-   to 5400 mm and clears it, but anything under 1000 mm stays flagged, so a second Apply produced
-   900 000 mm. The shipped rule is `maxDim < 500` (no kayak is under half a metre long in mm — the
-   committed test hull is 2714) with `> 10 000` unchanged, and it does not re-arm: a rescaled mesh
-   is in mm by construction, so only `large` can survive a rescale.
+1. **Gate 3's thresholds are not the ones written above, and the rule is three bands, not two.**
+   `maxDim < 1000` tells a real 900 mm kayak it is metres, and it re-arms after a correct Apply: a
+   metre-authored 5.4 m tandem scales to 5400 mm and clears it, but anything under 1000 mm stays
+   flagged, so a second Apply produced 900 000 mm. The shipped rule is `maxDim < 500` (no kayak is
+   under half a metre long in mm — the committed test hull is 2714) with `> 10 000` unchanged. The
+   second review pass then found the gap between them: a 540 cm tandem reads 540 units, over the
+   metres threshold and under the plausible-mm one, so it was silent — and the app would have
+   analysed a 540 mm kayak. That 500 … 999 band is `small` now: advisory, dismissible, and with no
+   `factor`, because whether it is cm or inches (×10, ×25.4) is not knowable from the bounds. The
+   no-re-arm rule changed with it: only `metres` is suppressed after an Apply (the mesh is mm by
+   construction once the user has corrected it), while `small` and `large` survive — they describe
+   the resulting geometry, and a 0.9 m file rescaled to 900 mm really is too short for a boat.
 2. **`{ kind: 'large' }` carries no factor.** A variant whose job is "warn, do not fix" but which
    carries `factor: 0` is one `rescaleMesh(mesh, advice.factor)` away from scaling to zero. The
    discriminant only exists where it applies, and `applyScale` early-returns on anything that is
@@ -743,7 +749,9 @@ Deviations from this plan's own steps:
    glue that builds the `BufferGeometry` — stays in `Upload.tsx`, which already owns parsing.
 4. **`orientNote` labels the centring offsets in the file's units** rather than unconditionally
    `mm`; on a metres-authored file they are metres and the note says so, and a rescale appends
-   `· ×1000 applied to reach mm` so the two statements cannot disagree.
+   `· ×1000 applied to reach mm` so the two statements cannot disagree. Once `small` existed the
+   third case followed: bands other than `metres` print `file units`, because "mm" is a claim the
+   bounds do not support.
 
 **Cross-review (MiniMax M3.1-Flash, 2026-11-10) — findings and dispositions.**
 
@@ -775,7 +783,9 @@ Deviations from this plan's own steps:
 - **MINOR, fixed — the metres notice understated the damage and mixed units.** It said "every
   result would read 1000× too small", but volumes are off by 10⁹×, and the axis was printed with
   no unit at all. Now `Largest axis 2.71 m — this looks like metres, not mm. Lengths would read
-  1000× too small and volumes 10⁹× too small.`
+  1000× too small and volumes 10⁹× too small.` (The second pass then replaced the asserted `m`
+  with "in the file's own units" — see below — because an inch-authored hull is caught by the
+  same rule and 120 is not 120 m.)
 - **MINOR, fixed — `orientNote` claimed mm on a file it had itself called metres**, and kept
   claiming it after the ×1000 applied (deviation 4).
 - **NIT, fixed — `rescaleMesh` considered for `geometry.ts`**, but it builds a `BufferGeometry`,
@@ -784,6 +794,48 @@ Deviations from this plan's own steps:
 - **NIT, fixed — `Date.now()` mesh ids** collide for two loads in the same millisecond, reusing a
   React `key`; a module-level counter cannot.
 - **NIT, fixed** — the Apply button said `×1000` and the note said `x1000`; both use `×`.
+
+### Second review pass (`884020f..HEAD`) — 0 MAJOR, 3 MINOR, 3 NIT, all fixed
+
+Re-reviewed after the first pass's fixes, over Tasks 5 and 6 together, on the NIM MiniMax lane.
+
+- **MINOR, fixed — the loop advisory named a cause the app has already excluded.** Both messages
+  said "the mesh has holes". A holed mesh cannot reach `solveTrim` (the banner, the disabled
+  button and the belt-and-braces throw in `runCalculation` all stop it first), and a closed
+  twin hull or tunnel legitimately produces two loops — the solver's own doc says so. The copy
+  now states what the numbers mean: zero loops reports `area and Ix are 0, so BM is 0 and GM
+  reads KB − KG`; two-or-more reports that `BM and GM assume a single closed waterplane` and
+  names the two-lobe case as legitimate. The zero-loop case is a degenerate or tangent cut
+  (over-mass throws earlier), not a hole.
+- **MINOR, fixed — `AGENTS.md` overstated the worker suite.** It claimed every forwarded option
+  was set to a non-default value, but the suite sends `trimStepDeg: 0.1`, which **is** the
+  solver default, so parity could not detect a dropped `trimStepDeg` and neither could the
+  count assertion. The row now says `kgMm/LCG/heel` are non-default and that `trimStepDeg`
+  stays at the app's 0.1, with the 19 + 11 ladder as what proves it is forwarded.
+- **MINOR, fixed — the scale gate only knew about metres, so a centimetre file was silent and an
+  inch file mislabelled.** A 540 cm tandem reads 540 units: over the 500 threshold, so no
+  notice at all, and the app analysed a 540 mm kayak (lengths 10× too small, volumes 1000× too
+  small). A 120-unit inch hull was flagged `metres` and printed `Largest axis 120.00 m` — a
+  false magnitude — and Apply ×1000 left it at 120 m with only a `large` warning. Two changes:
+  a third band, `small`, for 500 … 999 (too long for metres, too short for mm), which is
+  advisory only and carries no factor; and the notice now reports the extent *in the file's own
+  units* rather than asserting a unit the app cannot know. The rescale rule changed with it:
+  only `metres` is suppressed after an Apply (the mesh is mm by construction), while `small`
+  and `large` survive because they describe the resulting geometry — a 0.9 m file rescaled to
+  900 mm is genuinely too short for a boat, and that is worth saying.
+- **NIT, fixed — `geometry.dispose()` ran inside a state updater**, which must be pure and which
+  StrictMode double-invokes in development. Moved to the `handleLoaded` call site; three.js's
+  dispose is idempotent, so nothing was broken, but `Viewer3D` deliberately does not dispose
+  the hull geometry, making this the only owner it has.
+- **NIT, fixed — the suite header pointed at an assertion that lives in another file.** The
+  `!== 1` contract claim referenced the analytic box, whose `waterplaneLoopCount = 1` assertions
+  are in `verify-solve-extras.ts`; the header now names that file.
+- **NIT, fixed — `readFileSync(STL).buffer` was passed unsliced.** It is unpooled for this exact
+  file (verified), so no defect, but the worker suite slices and this now matches, so a future
+  small-fixture case cannot quietly parse a pool.
+- Suite grew to 43 checks (truth table now pins the 500/540/900/999/1000 boundaries and that
+  both `small` and `large` carry no factor; the rescale section pins the 0.9 m → 900 mm case
+  where `small` survives an Apply while `metres` never does).
 
 **Coverage note, stated plainly.** This suite executes the decision functions and the rescale
 path. It does **not** execute the three gates as the user meets them: the banners, the disabled
