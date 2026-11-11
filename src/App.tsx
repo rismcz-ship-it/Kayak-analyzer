@@ -68,17 +68,209 @@ function scaleNotice(advice: ScaleAdvice, maxDim: number): string {
   )
 }
 
+/**
+ * Bounds for the three numeric inputs. Outside them there is no honest answer
+ * to give: under 20 kg is not a paddler plus gear plus boat, over 200 kg is,
+ * and a KG above 1000 mm puts the centre of gravity above the deck of any
+ * kayak, where GM stops describing anything real.
+ */
+const WEIGHT_MIN = 20
+const WEIGHT_MAX = 200
+const LCG_MIN = 0
+const LCG_MAX = 100
+const KG_MIN = 0
+const KG_MAX = 1000
+/** The heel slider's own range, enforced on the restored value too. */
+const HEEL_MIN = -30
+const HEEL_MAX = 30
+
+/** Versioned so a future schema change can tell its own entries apart. */
+const STORAGE_KEY = 'kayak-analyzer.inputs.v1'
+
+type NumericInputs = {
+  weightInput: string
+  lcgInput: string
+  kgInput: string
+}
+
+/** All input state, raw strings plus the fixed-heel toggle behind them. */
+type InputFields = NumericInputs & {
+  heelDeg: number
+  showHeelInput: boolean
+}
+
+type ParsedInputs = {
+  /** Each field's number — null only when THAT field alone is unusable. */
+  weightKg: number | null
+  lcgPercent: number | null
+  kgMm: number | null
+  /** Each field's own reason, so it can sit under the control it names. */
+  weightError: string | null
+  lcgError: string | null
+  kgError: string | null
+  /** The first failure in weight → LCG → KG order; null only when all three are usable. */
+  inputError: string | null
+}
+
+/**
+ * `Number('')` is 0 — the exact bug this replaces: clearing a field solved a
+ * 0 kg kayak and returned a number anyway. Empty, whitespace and anything
+ * non-finite are "no number", never 0.
+ */
+function toNumber(raw: string): number | null {
+  const trimmed = raw.trim()
+  if (trimmed === '') return null
+  const value = Number(trimmed)
+  return Number.isFinite(value) ? value : null
+}
+
+function inRange(value: number, min: number, max: number): boolean {
+  return value >= min && value <= max
+}
+
+/**
+ * One named predicate per field, shared by the input validation and the
+ * restore path. When the two disagreed, a stored value the form rejects — a
+ * KG of 0 — booted the app with Calculate permanently disabled.
+ */
+const weightUsable = (value: number): boolean => inRange(value, WEIGHT_MIN, WEIGHT_MAX)
+const lcgUsable = (value: number): boolean => inRange(value, LCG_MIN, LCG_MAX)
+const heelUsable = (value: number): boolean => inRange(value, HEEL_MIN, HEEL_MAX)
+// KG is a height above the keel, so 0 is not merely out of range: it puts the
+// centre of gravity in the keel, and solveTrim refuses it.
+const kgUsable = (value: number): boolean => value > KG_MIN && value <= KG_MAX
+
+/** One field: either a number the solver can consume, or why it cannot. */
+function parseField(
+  raw: string,
+  usable: (value: number) => boolean,
+  notANumber: string,
+  outOfRange: string,
+): { value: number | null; error: string | null } {
+  const value = toNumber(raw)
+  if (value === null) return { value: null, error: notANumber }
+  if (!usable(value)) return { value: null, error: outOfRange }
+  return { value, error: null }
+}
+
+/**
+ * The single validation point for the three inputs. Everything that needs to
+ * know whether a solve is currently legitimate goes through it — the render,
+ * the disabled condition, the persist effect and the click handler — so the
+ * button's state and the run cannot disagree about what is valid. Each field
+ * is judged on its own, so a cleared weight neither blanks the KG nor hides
+ * the warning about it.
+ */
+function parseInputs(fields: NumericInputs): ParsedInputs {
+  const weight = parseField(
+    fields.weightInput,
+    weightUsable,
+    'Target weight: enter a number.',
+    `Target weight must be ${WEIGHT_MIN}–${WEIGHT_MAX} kg.`,
+  )
+  const lcg = parseField(
+    fields.lcgInput,
+    lcgUsable,
+    'LCG: enter a number.',
+    `LCG must be ${LCG_MIN}–${LCG_MAX} %.`,
+  )
+  const kg = parseField(
+    fields.kgInput,
+    kgUsable,
+    'KG: enter a number.',
+    `KG must be above ${KG_MIN} mm and at most ${KG_MAX} mm.`,
+  )
+  return {
+    weightKg: weight.value,
+    lcgPercent: lcg.value,
+    kgMm: kg.value,
+    weightError: weight.error,
+    lcgError: lcg.error,
+    kgError: kg.error,
+    inputError: weight.error ?? lcg.error ?? kg.error ?? null,
+  }
+}
+
+/**
+ * Read the persisted inputs once, at mount. Anything untrustworthy — no
+ * localStorage at all, malformed JSON, a value out of today's range — falls
+ * back per field, and a throw falls back entirely. A stored value the current
+ * rules reject is not better than the default, and a note written into the
+ * browser's storage must never stop the app from booting.
+ */
+function readStoredInputs(): InputFields {
+  let stored: Record<string, unknown> = {}
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY)
+    if (raw !== null) {
+      const parsed: unknown = JSON.parse(raw)
+      if (typeof parsed === 'object' && parsed !== null) {
+        stored = parsed as Record<string, unknown>
+      }
+    }
+  } catch {
+    // Private mode, a disabled storage API, hand-edited JSON: keep the
+    // defaults below instead of failing the boot.
+  }
+  const numIn = (key: string, usable: (value: number) => boolean, fallback: number): number => {
+    const value = stored[key]
+    return typeof value === 'number' && Number.isFinite(value) && usable(value) ? value : fallback
+  }
+  const weightKg = numIn('weightKg', weightUsable, 75)
+  const lcgPercent = numIn('lcgPercent', lcgUsable, 52)
+  const kgMm = numIn('kgMm', kgUsable, DEFAULT_KG_MM)
+  const heelDeg = numIn('heelDeg', heelUsable, 0)
+  return {
+    weightInput: String(weightKg),
+    lcgInput: String(lcgPercent),
+    kgInput: String(kgMm),
+    heelDeg,
+    // A non-zero heel only exists because the toggle was on when it was
+    // saved. Restoring it in the off state would silently not apply it.
+    showHeelInput: heelDeg !== 0,
+  }
+}
+
 export default function App() {
   const [mesh, setMesh] = useState<LoadedMesh | null>(null)
   const [trimResult, setTrimResult] = useState<TrimSolveResult | null>(null)
   const [draftError, setDraftError] = useState<string | null>(null)
   const [isCalculating, setIsCalculating] = useState(false)
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null)
-  const [targetWeight, setTargetWeight] = useState(75) // kg, fresh water 1 kg = 1 L
-  const [targetLcgPercent, setTargetLcgPercent] = useState(52) // % from bow
-  const [targetKgMm, setTargetKgMm] = useState(DEFAULT_KG_MM) // mm above the keel
-  const [showHeelInput, setShowHeelInput] = useState(false) // toggle for fixed heel input
-  const [heelInputDeg, setHeelInputDeg] = useState(0) // fixed heel angle in degrees
+  // Raw strings: what the user typed is state, the numbers are derived from
+  // it. That is what stops an empty field becoming 0.
+  const [inputs, setInputs] = useState<InputFields>(readStoredInputs)
+  const parsedInputs = parseInputs(inputs)
+  const weightKg = parsedInputs.weightKg
+  const lcgPercent = parsedInputs.lcgPercent
+  const kgMm = parsedInputs.kgMm
+  const inputError = parsedInputs.inputError
+
+  // Persist the valid values whenever they change. An incomplete form keeps
+  // the last good set rather than writing the empty one. Storage can throw
+  // (private mode, quota) and the app works identically without it, so the
+  // failure is swallowed here and nowhere else.
+  useEffect(() => {
+    if (weightKg === null || lcgPercent === null || kgMm === null) return
+    try {
+      localStorage.setItem(
+        STORAGE_KEY,
+        JSON.stringify({
+          weightKg,
+          lcgPercent,
+          kgMm,
+          // The APPLIED heel, not the slider's leftover: with the toggle off
+          // the fixed heel is 0 whatever the slider still reads. Storing the
+          // slider value instead would resurrect a heel the user switched off
+          // on the next reload.
+          heelDeg: inputs.showHeelInput ? inputs.heelDeg : 0,
+        }),
+      )
+    } catch {
+      // No localStorage, or it is full: carry on without memory.
+    }
+  }, [weightKg, lcgPercent, kgMm, inputs.showHeelInput, inputs.heelDeg])
+
   const calcToken = useRef(0)
   const clientRef = useRef<SolverClient | null>(null)
   const mountedRef = useRef(true)
@@ -216,15 +408,23 @@ export default function App() {
       setDraftError('Load an STL hull first.')
       return
     }
-    const appliedHeel = showHeelInput ? heelInputDeg : 0
-    runCalculation(targetWeight, targetLcgPercent, targetKgMm, appliedHeel, mesh)
+    // Belt and braces with the disabled button. The values are non-null here
+    // exactly when the button is enabled, so this branch only runs if the
+    // form is called by something else.
+    if (weightKg === null || lcgPercent === null || kgMm === null) {
+      setDraftError(inputError ?? 'The inputs must be numbers.')
+      return
+    }
+    const appliedHeel = inputs.showHeelInput ? inputs.heelDeg : 0
+    runCalculation(weightKg, lcgPercent, kgMm, appliedHeel, mesh)
   }, [
     mesh,
-    targetWeight,
-    targetLcgPercent,
-    targetKgMm,
-    showHeelInput,
-    heelInputDeg,
+    inputs.showHeelInput,
+    inputs.heelDeg,
+    weightKg,
+    lcgPercent,
+    kgMm,
+    inputError,
     runCalculation,
   ])
 
@@ -251,12 +451,19 @@ export default function App() {
   const maxKg = s ? s.volumeLiters : null
   // Largest extent in mm — the Hull section's unit notice reads this.
   const maxDim = s ? Math.max(s.bounds.size.x, s.bounds.size.y, s.bounds.size.z) : 0
-  const weightInvalid =
-    !Number.isFinite(targetWeight) || targetWeight <= 0
-      ? 'Enter a weight above 0 kg.'
-      : maxKg !== null && targetWeight > maxKg
-        ? `Heavier than the hull's ${fmt(maxKg)} L volume — it would sink.`
-        : null
+
+  // Warnings, not errors: both still produce a solve, just one whose numbers
+  // nobody should trust. Neither blocks Calculate, per the plan.
+  const weightOverCapacity =
+    weightKg !== null && maxKg !== null && weightKg > maxKg
+      ? `Heavier than the hull's ${fmt(maxKg)} L volume — it would sink.`
+      : null
+  // KG is a height above the keel, so the hull's depth is the only ceiling
+  // that means anything, and it is read from this mesh rather than assumed.
+  const kgAboveDeck =
+    kgMm !== null && s !== undefined && kgMm > s.bounds.size.z
+      ? `KG ${fmt(kgMm)} mm is above the deck (${fmt(s.bounds.size.z)} mm of hull) — GM stops meaning anything up there.`
+      : null
 
   return (
     <div className="flex h-full flex-col">
@@ -281,7 +488,7 @@ export default function App() {
                   geometry={mesh.geometry}
                   waterlineZ={trimResult?.waterlineZ ?? null}
                   trimDeg={trimResult?.trimDeg ?? 0}
-                  heelDeg={trimResult?.heelDeg ?? (showHeelInput ? heelInputDeg : 0)}
+                  heelDeg={trimResult?.heelDeg ?? (inputs.showHeelInput ? inputs.heelDeg : 0)}
                   lcg={trimResult?.lcg ?? null}
                   lcb={trimResult?.lcb ?? null}
                   pivot={trimResult?.pivot ?? null}
@@ -347,77 +554,99 @@ export default function App() {
                 <div className="mb-2 flex items-center gap-2">
                   <input
                     id="target-weight"
-                    type="number"
-                    min={0}
-                    step="any"
-                    value={Number.isFinite(targetWeight) ? targetWeight : ''}
-                    onChange={(e) => setTargetWeight(Number(e.target.value))}
+                    type="text"
+                    inputMode="decimal"
+                    value={inputs.weightInput}
+                    onChange={(e) =>
+                      setInputs((prev) => ({ ...prev, weightInput: e.target.value }))
+                    }
                     placeholder="Enter Target Weight (kg)"
                     className="w-32 rounded border border-zinc-700 bg-zinc-800 p-2 text-white"
                   />
                   <button
                     type="button"
                     onClick={calculateDraft}
-                    disabled={isCalculating || !mesh || !s.watertight.watertight}
+                    disabled={isCalculating || inputError !== null || !s.watertight.watertight}
                     className="rounded bg-blue-500 px-4 py-2 text-white hover:bg-blue-600 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     {isCalculating ? 'Calculating…' : 'Calculate Draft'}
                   </button>
                 </div>
+                {/* A disabled button explains itself: each reason sits under
+                    the control it names, not in a tooltip nobody can read. */}
+                {parsedInputs.weightError && (
+                  <p className="mb-3 text-xs text-rose-300" role="alert">
+                    {parsedInputs.weightError}
+                  </p>
+                )}
                 <label htmlFor="target-lcg" className="mb-1 block text-xs text-zinc-400">
                   LCG from bow (%) — 52% = midship
                 </label>
                 <div className="mb-4 flex items-center gap-2">
                   <input
                     id="target-lcg"
-                    type="number"
-                    min={0}
-                    max={100}
-                    step={0.1}
-                    value={Number.isFinite(targetLcgPercent) ? targetLcgPercent : ''}
-                    onChange={(e) => setTargetLcgPercent(Number(e.target.value))}
+                    type="text"
+                    inputMode="decimal"
+                    value={inputs.lcgInput}
+                    onChange={(e) => setInputs((prev) => ({ ...prev, lcgInput: e.target.value }))}
                     className="w-32 rounded border border-zinc-700 bg-zinc-800 p-2 text-white"
                   />
                 </div>
+                {parsedInputs.lcgError && (
+                  <p className="mb-3 -mt-2 text-xs text-rose-300" role="alert">
+                    {parsedInputs.lcgError}
+                  </p>
+                )}
                 <label htmlFor="target-kg" className="mb-1 block text-xs text-zinc-400">
                   KG above keel (mm) — sets GM
                 </label>
                 <div className="mb-4 flex items-center gap-2">
                   <input
                     id="target-kg"
-                    type="number"
-                    min={0}
-                    step={1}
-                    value={Number.isFinite(targetKgMm) ? targetKgMm : ''}
-                    onChange={(e) => setTargetKgMm(Number(e.target.value))}
+                    type="text"
+                    inputMode="decimal"
+                    value={inputs.kgInput}
+                    onChange={(e) => setInputs((prev) => ({ ...prev, kgInput: e.target.value }))}
                     className="w-32 rounded border border-zinc-700 bg-zinc-800 p-2 text-white"
                   />
                   <span className="text-xs text-zinc-500">
                     height above the keel, not an absolute Z
                   </span>
                 </div>
+                {parsedInputs.kgError && (
+                  <p className="mb-3 -mt-2 text-xs text-rose-300" role="alert">
+                    {parsedInputs.kgError}
+                  </p>
+                )}
+                {kgAboveDeck && (
+                  <p className="mb-3 -mt-2 text-xs text-amber-400" role="note">
+                    {kgAboveDeck}
+                  </p>
+                )}
 
                 <div className="mb-4 space-y-2">
                   <label className="flex items-center gap-2 cursor-pointer group">
                     <div
-                      className={`w-8 h-4 rounded-full transition-colors border border-zinc-700 ${showHeelInput ? 'bg-blue-600 border-blue-400' : 'bg-zinc-800'}`}
+                      className={`w-8 h-4 rounded-full transition-colors border border-zinc-700 ${inputs.showHeelInput ? 'bg-blue-600 border-blue-400' : 'bg-zinc-800'}`}
                     >
                       <div
-                        className={`w-3 h-3 m-0.5 rounded-full bg-white transition-transform ${showHeelInput ? 'translate-x-4' : 'translate-x-0'}`}
+                        className={`w-3 h-3 m-0.5 rounded-full bg-white transition-transform ${inputs.showHeelInput ? 'translate-x-4' : 'translate-x-0'}`}
                       />
                     </div>
                     <input
                       type="checkbox"
                       className="hidden"
-                      checked={showHeelInput}
-                      onChange={(e) => setShowHeelInput(e.target.checked)}
+                      checked={inputs.showHeelInput}
+                      onChange={(e) =>
+                        setInputs((prev) => ({ ...prev, showHeelInput: e.target.checked }))
+                      }
                     />
                     <span className="text-xs text-zinc-400 group-hover:text-zinc-300">
                       Set fixed heel angle
                     </span>
                   </label>
 
-                  {showHeelInput && (
+                  {inputs.showHeelInput && (
                     <div className="animate-in fade-in slide-in-from-top-1 duration-200">
                       <label
                         htmlFor="heel-input"
@@ -430,15 +659,17 @@ export default function App() {
                         <input
                           id="heel-input"
                           type="range"
-                          min={-30}
-                          max={30}
+                          min={HEEL_MIN}
+                          max={HEEL_MAX}
                           step={1}
-                          value={heelInputDeg}
-                          onChange={(e) => setHeelInputDeg(Number(e.target.value))}
+                          value={inputs.heelDeg}
+                          onChange={(e) =>
+                            setInputs((prev) => ({ ...prev, heelDeg: Number(e.target.value) }))
+                          }
                           className="flex-1 h-1.5 bg-zinc-700 appearance-none rounded-lg cursor-pointer accent-blue-500"
                         />
                         <span className="text-xs font-mono text-zinc-300 w-8 text-right">
-                          {heelInputDeg}°
+                          {inputs.heelDeg}°
                         </span>
                       </div>
                     </div>
@@ -449,9 +680,9 @@ export default function App() {
                     Hull capacity ≈ {fmt(maxKg)} kg (volume {fmt(maxKg)} L).
                   </p>
                 )}
-                {weightInvalid && (
+                {weightOverCapacity && (
                   <p className="mb-2 text-xs text-amber-400" role="note">
-                    {weightInvalid}
+                    {weightOverCapacity}
                   </p>
                 )}
                 {isCalculating && (
