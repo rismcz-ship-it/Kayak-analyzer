@@ -950,7 +950,7 @@ Deviations from this plan's own design:
 **Purpose:** App.tsx stops being a 500-line file and the layout works on a narrow window.
 
 **Files:** `src/components/ResultsPanel.tsx` (new), `src/components/GzChart.tsx` (new),
-`src/App.tsx`.
+`src/App.tsx`, `src/lib/format.ts` (new — `fmt` extracted from App, deviation 1).
 
 **Interfaces**
 
@@ -986,6 +986,66 @@ being squeezed to nothing.
 
 **Proposed commit:** `refactor(ui): extract ResultsPanel and GzChart; stack the layout on narrow viewports`
 
+**Done (2026-11-11).** Uncommitted at time of writing; gate green (`npm.cmd run ci` exit 0,
+re-run after the cross-review fixes below): typecheck, `biome check .` (49 files), all thirteen
+assertion suites, build. That is this task's own verification step — a pure move changes no
+number, so no new suite is warranted (grep: no test references the moved markup). The move
+itself was checked mechanically, with a throwaway script comparing HEAD's `<dl>` block against
+the two new files whitespace- and trailing-comma-insensitively under the
+`trimResult.` → `result.` / `trimResult.gzCurve` → `curve` renames: stat rows + section titles
+"IDENTICAL", chart markup "IDENTICAL". Baseline untouched: bounds
+`2714.4 × 613.1 × 325.1 mm`, trim `-1.90°`, LCB–LCG offset `1.637 mm`.
+
+Deviations from this plan's own design:
+
+1. **`fmt` left App for its own module** — a fourth file, not in the Files list above. Three
+   consumers now (App's Hull line, ResultsPanel, GzChart's tooltip) and exactly one definition
+   repo-wide; because the panels must read identically before and after the split, that has to
+   be a property of the code rather than of a habit.
+2. **The interfaces block's props were narrowed, not widened.** `ResultsPanel` takes
+   `result: TrimSolveResult` only and `GzChart` takes `curve: GZPoint[]` only. No moved row
+   reads a mesh-derived boolean — the waterplane-loop-count banner already lives in App, which
+   is where Task 9 step 4 also says to keep it — and `currentHeelDeg` arrives in Task 9 together
+   with the annotations that read it. Both props are now named `interface`s hoisted above the
+   component (`ResultsPanelProps` / `GzChartProps`) to match `UploadProps` / `Viewer3DProps`.
+3. **`statRow` is exported from ResultsPanel and imported by App** for the Hull section: one
+   definition, so the two panels cannot drift. Task 9 step 1's "StatRow component" means this
+   same helper; it is deliberately not renamed, and Task 9 does not add a second one.
+4. **Step 5's recipe was itself the bug.** It carried the viewer's `flex-1` over from the old row
+   layout into a `flex-col` — see cross-review finding 1. As built: viewer
+   `min-h-0 h-[45vh] min-w-0 flex-none … lg:h-auto lg:flex-1`, row `flex flex-col min-h-0 flex-1
+   gap-4 lg:flex-row`, aside `min-h-0 w-full … overflow-y-auto lg:w-80 lg:shrink-0` exactly as
+   specified.
+
+**Cross-review (MiniMax M3.1-Flash, 2026-11-11) — findings and dispositions.** 1 MAJOR / 2 MINOR /
+2 NIT. The MAJOR and the NITs are fixed in code; the two MINORs are documentation drift and are
+fixed by this block.
+
+- **MAJOR, fixed — the viewer collapsed to 0 px below `lg`.** In the column row `flex-1` is
+  `1 1 0%`, and a non-`auto` flex-basis overrides `height` on the main axis (CSS Flexbox §9.2),
+  so `h-[45vh]` was inert while `min-h-0` removed the automatic minimum: once the aside's content
+  exceeded the row — i.e. right after Calculate, on any viewport under 1024 px — the viewer's
+  scaled shrink was `shrink × basis = 0` and the 3D hull vanished. Now `flex-none` (0 0 auto)
+  keeps `h-[45vh]` as the real base size below `lg` and only `lg:flex-1` grows it at ≥1024 px,
+  where `lg:h-auto` plus the cross-axis stretch restores the HEAD layout exactly. The aside, the
+  only item that may shrink, absorbs the rest and scrolls internally; and since the row is
+  `100vh − header − padding` while the viewer wants 45vh, the viewer can never outgrow the row,
+  so the aside cannot be squeezed away either.
+- **MINOR, fixed by this block — the plan was stale on its own interfaces** (deviation 2) and on
+  its file list (deviation 1: `src/lib/format.ts`).
+- **NITs, fixed:** the prop types are named and hoisted (deviation 2); Task 9 step 1's
+  `StatRow component` wording now reads as the existing `statRow` helper (deviation 3), so
+  nothing "adds a StatRow component" next to it.
+- **Confirmed sound:** the moved markup is byte-identical apart from indentation and the two
+  renames; every unit, per-field digit count and the `+` prefix for trim/heel survive; the live
+  region (`<output id="draft-output" aria-live="polite">`), all four banners, the "No results
+  yet." branch, the Hull section and the `Viewer3D` props are untouched; `verbatimModuleSyntax`
+  is honoured with `import type` throughout; no new dependency, no schema change, and no frozen
+  convention (trim `+` = bow up, heel `+` = the −Y side down, KG a height above the keel, mm
+  units) altered. Above `lg` the layout is equivalent to HEAD. The responsive verdict is a
+  static trace of the flex chain plus the ratio argument above — **not** an observed browser
+  render, which this session did not do.
+
 ---
 
 # Task 9 — Render the new solver fields + annotate the GZ curve
@@ -993,7 +1053,9 @@ being squeezed to nothing.
 **Purpose:** show the numbers Task 1 produces and the stability quantities a reviewer asks
 for, with honest caveats.
 
-**Files:** `src/components/ResultsPanel.tsx`, `src/components/GzChart.tsx`.
+**Files:** `src/components/ResultsPanel.tsx`, `src/components/GzChart.tsx`, `src/App.tsx` (the
+current-heel reference line), plus the solver files only if a field turns out not to be on
+`TrimSolveResult` yet.
 
 **Steps**
 
@@ -1002,7 +1064,7 @@ for, with honest caveats.
    midship with its own label), `TPC` (`tpcTonnesPerCm`, label "Tonnes per cm immersion
    (fresh water)"), and `I_y` in the Stability section (mm⁴, labelled
    "Waterplane longitudinal second moment"). Every row follows the existing
-   `StatRow` component and formatting style; no new units are invented.
+   `statRow` helper and formatting style; no new units are invented.
 2. Add "End-tip immersion ≈ X°" to Stability, from
    `result.endTipImmersionDeg`, with the label carrying the resolution caveat
    ("deck end freeboard reaches 0 mm; interpolated between 5° GZ samples"); render
@@ -1012,7 +1074,8 @@ for, with honest caveats.
    - `ReferenceDot` at the **GZ_max** point with a label "GZ_max".
    - `ReferenceLine`/`ReferenceDot` at the **AVS** (first GZ ≤ 0 after GZ_max, if any) —
      "no AVS within 45°" when absent.
-   - `ReferenceLine` at the **current fixed heel** (`result.heelDeg`) — dashed, muted.
+   - `ReferenceLine` at the **current fixed heel** (`result.heelDeg`, threaded in as a prop by
+      App — Task 8 deferred it) — dashed, muted.
    - `ReferenceLine` at `endTipImmersionDeg` when present — dashed, labelled.
    - A caption line under the chart: "GM₀ = {GM} mm is the small-angle initial stability;
      the curve above ~15–20° is the sinkage-limited wall-shape estimate." (Keep GM₀ as the
