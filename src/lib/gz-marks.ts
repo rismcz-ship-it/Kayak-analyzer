@@ -23,7 +23,7 @@ export interface GzMarks {
    * there is no positive arm to vanish from.
    */
   avsDeg: number | null
-  /** Largest heel angle the curve samples, degrees. */
+  /** Largest heel angle the curve samples, degrees; 0 when it samples none. */
   maxHeelDeg: number
 }
 
@@ -55,9 +55,50 @@ export function gzMarks(curve: GZPoint[]): GzMarks {
       }
     }
   }
+  // Seeded from the first sample rather than from 0: the field promises the
+  // largest angle the curve SAMPLES, and a 0 seed would clamp a curve whose
+  // samples all sit below zero to an angle it never measured.
+  let maxHeelDeg = curve.length > 0 ? curve[0].heelDeg : 0
+  for (const p of curve) if (p.heelDeg > maxHeelDeg) maxHeelDeg = p.heelDeg
   return {
     gzMax: hasPositiveArm ? curve[peak] : null,
     avsDeg,
-    maxHeelDeg: curve.reduce((max, p) => Math.max(max, p.heelDeg), 0),
+    maxHeelDeg,
   }
+}
+
+/**
+ * The two angles of a curve where an end wets before the arm vanishes, both
+ * non-null by construction. The panel's warning formats both of them, so
+ * returning the pair it compared means the message is built from values
+ * TypeScript already knows are real.
+ */
+export interface EndTipFirst {
+  /** Angle at which a stem tip reaches the water, degrees. */
+  endTipDeg: number
+  /** Angle at which the righting arm comes back down to zero, degrees. */
+  avsDeg: number
+}
+
+/**
+ * Whether a stem tip wets BEFORE the righting arm vanishes — the one ordering
+ * of the two angles that changes how the curve reads. Null when it does not.
+ *
+ * Both angles must exist for the answer to be yes: with no AVS there is no
+ * vanishing angle to be early against, and with no end-tip angle nothing wets
+ * at all. Strictly before, so an end that wets exactly at the vanishing angle
+ * coincides with it rather than warning.
+ *
+ * It lives here rather than in the panel's JSX because this ordering is what
+ * the Task 9 cross-review's BLOCKER was about: the warning used to fire
+ * whenever both numbers existed, so a hull whose end stayed dry well PAST its
+ * vanishing angle was still told "an end immerses before the vanishing angle"
+ * — a false safety claim, asserted from a branch no test could reach.
+ */
+export function endTipWetsBeforeVanishing(
+  endTipDeg: number | null,
+  marks: GzMarks,
+): EndTipFirst | null {
+  if (endTipDeg === null || marks.avsDeg === null || endTipDeg >= marks.avsDeg) return null
+  return { endTipDeg, avsDeg: marks.avsDeg }
 }

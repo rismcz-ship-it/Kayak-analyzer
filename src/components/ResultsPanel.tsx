@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
-import { fmt } from '../lib/format'
-import { gzMarks } from '../lib/gz-marks'
+import { fmt, signed } from '../lib/format'
+import { endTipWetsBeforeVanishing, gzMarks } from '../lib/gz-marks'
 import type { TrimSolveResult } from '../lib/hydrostatics'
 import GzChart from './GzChart'
 
@@ -75,13 +75,17 @@ export default function ResultsPanel({ result }: ResultsPanelProps) {
   // One scan, shared with the chart below: `gzMarks` is pure, so the warning
   // and the markers read the same angles from the same points.
   const marks = gzMarks(result.gzCurve)
-  const { avsDeg, maxHeelDeg } = marks
+  const { maxHeelDeg } = marks
   const endTip = result.endTipImmersionDeg
+  // The ordering question, asked of the pure module and answered with the two
+  // angles it compared: the warning below prints those, and they are non-null
+  // because the rule that produced them says so — TypeScript can see that.
+  const endTipFirst = endTipWetsBeforeVanishing(endTip, marks)
   return (
     <div>
       {sectionTitle('Equilibrium')}
       <dl className="space-y-1">
-        {statRow('Trim', `${result.trimDeg >= 0 ? '+' : ''}${fmt(result.trimDeg)}°`, true)}
+        {statRow('Trim', `${signed(result.trimDeg)}°`, true)}
         {statRow('Draft (center)', `${fmt(result.draftMm)} mm`)}
         {statRow('Waterline Z', `${fmt(result.waterlineZ)} mm`)}
         {statRow('Displacement', `${fmt(result.displacementKg)} kg`)}
@@ -94,12 +98,7 @@ export default function ResultsPanel({ result }: ResultsPanelProps) {
         {statRow('LCB–LCG offset', `${fmt(result.lcbLcgOffsetMm)} mm`, true)}
         {statRow('Bow freeboard', `${fmt(result.bowFreeboardMm)} mm`)}
         {statRow('Stern freeboard', `${fmt(result.sternFreeboardMm)} mm`)}
-        {result.heelDeg !== 0 &&
-          statRow(
-            'Fixed heel angle',
-            `${result.heelDeg >= 0 ? '+' : ''}${fmt(result.heelDeg)}°`,
-            true,
-          )}
+        {result.heelDeg !== 0 && statRow('Fixed heel angle', `${signed(result.heelDeg)}°`, true)}
         {statRow(
           'Converged',
           result.converged
@@ -122,10 +121,7 @@ export default function ResultsPanel({ result }: ResultsPanelProps) {
          * neighbours are labelled rather than claiming an origin it does not
          * have; the sign is printed because the direction is the point.
          */}
-        {statRow(
-          'LCF X',
-          `${result.waterplaneCentroidX >= 0 ? '+' : ''}${fmt(result.waterplaneCentroidX)} mm`,
-        )}
+        {statRow('LCF X', `${signed(result.waterplaneCentroidX)} mm`)}
         {statRow('Tonnes per cm immersion (fresh water)', fmt(result.tpcTonnesPerCm, 4))}
       </dl>
 
@@ -142,10 +138,13 @@ export default function ResultsPanel({ result }: ResultsPanelProps) {
         )}
         {/*
          * The stem-tip immersion angle with its caveats on screen instead of in
-         * a tooltip: what goes under is the stem TIP, not the deck edge, and
-         * the angle is interpolated between the 5° samples of the curve below.
-         * The caveat is carried inside the row's own value so it stays valid
-         * inside a `<dl>` and stays next to the number it qualifies.
+         * a tooltip: what goes under is the stem TIP, not the deck edge; the
+         * angle is interpolated between the 5° samples of the curve below; and
+         * it is measured on the UPRIGHT, untrimmed hull — while the rows above
+         * it are the trimmed solve's, so the two must not be read as one
+         * condition. The caveat is carried inside the row's own value so it
+         * stays valid inside a `<dl>` and stays next to the number it
+         * qualifies.
          */}
         {statRow(
           'End-tip immersion ≈',
@@ -155,8 +154,9 @@ export default function ResultsPanel({ result }: ResultsPanelProps) {
             </span>
             <span className="block text-[10px] font-normal leading-snug text-zinc-500">
               {endTip === null
-                ? 'a stem tip never reaches the water at any sampled angle'
-                : 'stem-tip clearance reaches 0 mm; interpolated between 5° GZ samples'}
+                ? 'no stem tip reaches the water at any sampled angle (upright, untrimmed hull)'
+                : 'stem-tip clearance reaches 0 mm on the upright, untrimmed curve; ' +
+                  'interpolated between its 5° samples'}
             </span>
           </span>,
           true,
@@ -164,16 +164,25 @@ export default function ResultsPanel({ result }: ResultsPanelProps) {
       </dl>
       {result.GM < 100 &&
         warnBox(
-          result.GM <= 0
+          result.GM < 0
             ? `Negative GM ${fmt(result.GM)} mm — the hull does not right itself from upright.`
-            : `Low initial stability — GM ${fmt(result.GM)} mm is under 100 mm.`,
+            : result.GM === 0
+              ? `GM is 0 mm — neutrally stable: the hull holds upright but ` +
+                'has no righting arm to return to.'
+              : `Low initial stability — GM ${fmt(result.GM)} mm is under 100 mm.`,
         )}
-      {endTip !== null &&
-        avsDeg !== null &&
-        endTip < avsDeg &&
+      {/*
+       * The ORDERING of the two angles, not merely their existence, and it is
+       * asked of the pure module so the suite can assert it. This branch was
+       * the cross-review's BLOCKER: it fired whenever both numbers existed,
+       * so a hull whose end stayed dry well past its vanishing angle was
+       * still told "an end immerses before the vanishing angle".
+       */}
+      {endTipFirst !== null &&
         warnBox(
-          `An end immerses at ${fmt(endTip)}°, before the ${fmt(avsDeg)}° ` +
-            'vanishing angle — reserve buoyancy at that end is lost.',
+          `An end immerses at ${fmt(endTipFirst.endTipDeg)}°, before the ` +
+            `${fmt(endTipFirst.avsDeg)}° vanishing angle — the stem tip is ` +
+            'at the waterline while the hull still has a righting arm to lose.',
         )}
 
       {sectionTitle('Righting Arm (GZ)')}

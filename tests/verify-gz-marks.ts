@@ -3,7 +3,7 @@
 //
 // Both consumers call it, so a wrong answer here is either a false safety
 // statement in the warning box or a marker drawn where stability does not
-// vanish. Three properties are pinned:
+// vanish. Four properties are pinned:
 //
 //   1. AVS is the INTERPOLATED zero crossing after the peak, not the first
 //      sample at or below zero. Reporting the sample would overstate the
@@ -14,6 +14,10 @@
 //      does not have.
 //   3. The scan starts AFTER the peak. The 0 deg anchor is itself GZ = 0, so a
 //      scan from the start would report zero heel as the vanishing angle.
+//   4. The end-tip warning fires only when the end-tip angle is genuinely
+//      EARLIER than the vanishing angle, and only when both angles exist. That
+//      ordering is the cross-review's BLOCKER: it lived in the panel's JSX, so
+//      no suite could reach it, and it now lives in this module instead.
 //
 // The committed hull supplies one real curve: at 75 kg it peaks at 20 deg and
 // crosses zero between 40 and 45 deg.
@@ -23,7 +27,7 @@
 import { readFileSync } from 'node:fs'
 import { STLLoader } from 'three/addons/loaders/STLLoader.js'
 import { autoOrientToZUp, centerToOrigin, decimateMesh } from '../src/lib/geometry.js'
-import { gzMarks } from '../src/lib/gz-marks.js'
+import { endTipWetsBeforeVanishing, type GzMarks, gzMarks } from '../src/lib/gz-marks.js'
 import type { GZPoint } from '../src/lib/hydrostatics.js'
 import { DEFAULT_KG_MM, solveTrim } from '../src/lib/hydrostatics.js'
 
@@ -216,6 +220,55 @@ console.log('=== 5. the committed hull, 75 kg ===')
     `AVS ${marks.avsDeg}`,
   )
   check('maxHeelDeg is 45', marks.maxHeelDeg === 45, `${marks.maxHeelDeg}`)
+}
+
+// ---------------------------------------------------------------------------
+console.log('=== 6. the end-tip warning predicate ===')
+{
+  // The BLOCKER regression, pinned. It used to be an inline JSX branch, so
+  // nothing failed when it fired on hulls it should not have.
+  const marksAt = (avsDeg: number | null): GzMarks => ({
+    gzMax: { heelDeg: 5, GZ: 10 },
+    avsDeg,
+    maxHeelDeg: 45,
+  })
+  const before = endTipWetsBeforeVanishing(38.4, marksAt(40.7))
+  check(
+    'end tip before the AVS warns',
+    before !== null && before.endTipDeg === 38.4 && before.avsDeg === 40.7,
+    `${before?.endTipDeg} before ${before?.avsDeg}`,
+  )
+  check(
+    'end tip after the AVS is silent',
+    endTipWetsBeforeVanishing(41, marksAt(40.7)) === null,
+    '41 is not before 40.7',
+  )
+  check(
+    'coinciding angles are silent',
+    endTipWetsBeforeVanishing(40.7, marksAt(40.7)) === null,
+    '40.7 is not BEFORE 40.7',
+  )
+  check(
+    'no AVS -> no warning',
+    endTipWetsBeforeVanishing(38.4, marksAt(null)) === null,
+    'nothing to be early against',
+  )
+  check(
+    'no end-tip angle -> no warning',
+    endTipWetsBeforeVanishing(null, marksAt(40.7)) === null,
+    'nothing wets',
+  )
+
+  // maxHeelDeg promises the largest angle the curve samples; the old 0 seed
+  // clamped an all-negative curve to an angle it never measured.
+  const negative = gzMarks(
+    curve([
+      [-20, 3],
+      [-10, 5],
+      [-5, 1],
+    ]),
+  )
+  check('maxHeelDeg is the sampled max', negative.maxHeelDeg === -5, `${negative.maxHeelDeg}`)
 }
 
 console.log(fails === 0 ? `\nALL ${checks} CHECKS PASS` : `\n${fails} OF ${checks} CHECK(S) FAILED`)

@@ -9,7 +9,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
-import { fmt } from '../lib/format'
+import { fmt, signed } from '../lib/format'
 import type { GzMarks } from '../lib/gz-marks'
 import type { GZPoint } from '../lib/hydrostatics'
 
@@ -61,9 +61,13 @@ export default function GzChart({
   if (avsDeg !== null) parts.push(`AVS ≈ ${fmt(avsDeg)}°`)
   else if (gzMax) parts.push(`no AVS within ${fmt(maxHeelDeg)}°`)
   if (endTipImmersionDeg !== null) parts.push(`end tip wets at ${fmt(endTipImmersionDeg)}°`)
-  // Recharts discards a reference line outside the axis domain, so a negative
-  // fixed heel would vanish without a word. State it instead.
-  if (currentHeelDeg < 0) parts.push(`fixed heel ${fmt(currentHeelDeg)}° (outside this range)`)
+  // Recharts discards a reference line outside the axis domain, so a fixed heel
+  // outside the curve's own range would vanish without a word. State it instead.
+  // The ±30° slider can only leave the domain on its negative half, but the rule
+  // is the domain and not the sign, so it reads as the domain here.
+  if (currentHeelDeg < 0 || currentHeelDeg > maxHeelDeg) {
+    parts.push(`fixed heel ${signed(currentHeelDeg)}° (outside this range)`)
+  }
   const caption = parts.join(' · ')
   return (
     <div>
@@ -88,7 +92,7 @@ export default function GzChart({
               stroke={MUTED}
               strokeDasharray="4 3"
               label={{
-                value: `fixed heel ${fmt(currentHeelDeg)}°`,
+                value: `fixed heel ${signed(currentHeelDeg)}°`,
                 position: 'insideTopLeft',
                 fill: MUTED,
                 fontSize: 10,
@@ -181,8 +185,9 @@ export default function GzChart({
       <p className="text-[10px] leading-snug text-zinc-500">{caption}</p>
       <p className="text-[10px] leading-snug text-zinc-500">
         {`GM₀ = ${fmt(gmMm)} mm is the small-angle initial stability of the trimmed solve; ` +
-          'the curve is the upright, untrimmed hull — above ~15–20° it is the ' +
-          'sinkage-limited wall-shape estimate.'}
+          'the curve is the upright, untrimmed hull re-floated at each heel — ' +
+          'measured, not the wall-sided closed form — so past ~15–20° what ' +
+          'limits the arm is sinkage, not the arm formula.'}
       </p>
     </div>
   )
