@@ -1,39 +1,11 @@
-import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react'
-import {
-  CartesianGrid,
-  Line,
-  LineChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from 'recharts'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import ResultsPanel, { statRow } from './components/ResultsPanel'
 import Upload, { type LoadedMesh, rescaleMesh } from './components/Upload'
 import Viewer3D from './components/Viewer3D'
+import { fmt } from './lib/format'
 import type { ScaleAdvice } from './lib/geometry'
 import { DEFAULT_KG_MM, type TrimSolveResult } from './lib/hydrostatics'
 import { SolverClient } from './lib/solver-client'
-
-const fmt = (v: number, digits = 1) => v.toLocaleString('en-US', { maximumFractionDigits: digits })
-
-function statRow(label: string, value: string | ReactNode, accent = false) {
-  return (
-    <div className="flex items-baseline justify-between gap-3">
-      <dt className="text-zinc-400">{label}</dt>
-      <dd className={`font-medium ${accent ? 'text-sky-300' : 'text-zinc-100'}`}>{value}</dd>
-    </div>
-  )
-}
-
-function sectionTitle(title: string) {
-  return (
-    <div className="flex items-center gap-2 my-2">
-      <span className="h-0.5 flex-1 bg-zinc-700" />
-      <span className="text-xs font-semibold text-zinc-300 uppercase tracking-wider">{title}</span>
-      <span className="h-0.5 flex-1 bg-zinc-700" />
-    </div>
-  )
-}
 
 function positionsOf(mesh: LoadedMesh): Float32Array {
   return mesh.geometry.getAttribute('position').array as Float32Array
@@ -480,8 +452,14 @@ export default function App() {
 
       <main className="flex min-h-0 flex-1 flex-col p-4">
         {mesh && s ? (
-          <div className="flex min-h-0 flex-1 gap-4">
-            <section className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-lg border border-zinc-800 bg-zinc-900/40 p-2">
+          <div className="flex flex-col min-h-0 flex-1 gap-4 lg:flex-row">
+            {/*
+             * flex-none below lg, on purpose: in this column flex a non-auto basis (flex-1 =
+             * 1 1 0%) overrides h-[45vh] and, with min-h-0, lets the viewer collapse to 0 px
+             * once the aside fills the row. At lg the row is a flex-row again and lg:flex-1 +
+             * lg:h-auto restore the old stretch-to-fill height.
+             */}
+            <section className="flex min-h-0 h-[45vh] min-w-0 flex-none flex-col overflow-hidden rounded-lg border border-zinc-800 bg-zinc-900/40 p-2 lg:h-auto lg:flex-1">
               <div className="min-h-0 flex-1">
                 <Viewer3D
                   key={mesh.id}
@@ -502,7 +480,7 @@ export default function App() {
               </div>
             </section>
 
-            <aside className="flex w-80 shrink-0 flex-col gap-3 overflow-y-auto">
+            <aside className="flex min-h-0 w-full flex-col gap-3 overflow-y-auto lg:w-80 lg:shrink-0">
               <section className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-4">
                 <h2 className="mb-1 text-sm font-semibold text-zinc-200">Hull</h2>
                 <dl className="space-y-1 text-sm">
@@ -747,112 +725,7 @@ export default function App() {
                 )}
                 <output className="block text-sm" id="draft-output" aria-live="polite">
                   {trimResult ? (
-                    <dl className="space-y-1">
-                      {sectionTitle('Equilibrium')}
-                      {statRow(
-                        'Trim',
-                        `${trimResult.trimDeg >= 0 ? '+' : ''}${fmt(trimResult.trimDeg)}°`,
-                        true,
-                      )}
-                      {statRow('Draft (center)', `${fmt(trimResult.draftMm)} mm`)}
-                      {statRow('Waterline Z', `${fmt(trimResult.waterlineZ)} mm`)}
-                      {statRow('Displacement', `${fmt(trimResult.displacementKg)} kg`)}
-                      {statRow('Target', `${fmt(trimResult.targetKg)} kg`)}
-                      {statRow(
-                        'Waterplane area',
-                        `${fmt(trimResult.waterplaneAreaMm2 / 1e6, 3)} m²`,
-                      )}
-                      {statRow('Waterline length (LWL)', `${fmt(trimResult.LWL)} mm`)}
-                      {statRow('Waterline beam (BWL)', `${fmt(trimResult.BWL)} mm`)}
-                      {statRow('LCG X', `${fmt(trimResult.lcg.x)} mm`)}
-                      {statRow('LCB X', `${fmt(trimResult.lcb.x)} mm`)}
-                      {statRow('LCB–LCG offset', `${fmt(trimResult.lcbLcgOffsetMm)} mm`, true)}
-                      {statRow('Bow freeboard', `${fmt(trimResult.bowFreeboardMm)} mm`)}
-                      {statRow('Stern freeboard', `${fmt(trimResult.sternFreeboardMm)} mm`)}
-                      {trimResult.heelDeg !== 0 &&
-                        statRow(
-                          'Fixed heel angle',
-                          `${trimResult.heelDeg >= 0 ? '+' : ''}${fmt(trimResult.heelDeg)}°`,
-                          true,
-                        )}
-                      {statRow(
-                        'Converged',
-                        trimResult.converged
-                          ? `yes (${trimResult.planesEvaluated} planes)`
-                          : `approx (${trimResult.planesEvaluated} planes)`,
-                      )}
-
-                      {sectionTitle('Form Coefficients')}
-                      {statRow('Block Coeff (Cb)', fmt(trimResult.Cb, 4))}
-                      {statRow('Prismatic Coeff (Cp)', fmt(trimResult.Cp, 4))}
-                      {statRow('Midship Coeff (Cm)', fmt(trimResult.Cm, 4))}
-
-                      {sectionTitle('Stability')}
-                      {statRow('KB (Keel→Buoyancy)', `${fmt(trimResult.KB)} mm`)}
-                      {statRow('BM (Metacentric Radius)', `${fmt(trimResult.BM)} mm`)}
-                      {statRow('KM (Keel→Metacenter)', `${fmt(trimResult.KM)} mm`, true)}
-                      {statRow('KG (Keel→Gravity)', `${fmt(trimResult.kgMm)} mm`)}
-                      {statRow('GM (Metacentric Height)', `${fmt(trimResult.GM)} mm`, true)}
-
-                      {sectionTitle('Righting Arm (GZ)')}
-                      <ResponsiveContainer width="100%" height={180}>
-                        <LineChart
-                          data={trimResult.gzCurve.map((p) => ({
-                            angle: p.heelDeg,
-                            GZ: p.GZ,
-                          }))}
-                          margin={{ top: 5, right: 5, left: 0, bottom: 0 }}
-                        >
-                          <CartesianGrid strokeDasharray="3 3" stroke="#3f3f46" vertical={false} />
-                          <XAxis
-                            dataKey="angle"
-                            type="number"
-                            tick={{ fill: '#71717a', fontSize: 10 }}
-                            axisLine={{ stroke: '#52525b' }}
-                            label={{
-                              value: 'Heel (°)',
-                              position: 'insideRight',
-                              offset: -10,
-                              fill: '#71717a',
-                              fontSize: 10,
-                            }}
-                          />
-                          <YAxis
-                            type="number"
-                            tick={{ fill: '#71717a', fontSize: 10 }}
-                            axisLine={{ stroke: '#52525b' }}
-                            label={{
-                              value: 'GZ (mm)',
-                              angle: -90,
-                              position: 'insideLeft',
-                              offset: 10,
-                              fill: '#71717a',
-                              fontSize: 10,
-                            }}
-                          />
-                          <Tooltip
-                            contentStyle={{
-                              backgroundColor: '#18181b',
-                              border: '1px solid #3f3f46',
-                              borderRadius: '4px',
-                              color: '#fafafa',
-                            }}
-                            formatter={(value, name) => [
-                              value != null ? `${fmt(Number(value))} mm` : '—',
-                              name,
-                            ]}
-                          />
-                          <Line
-                            type="monotone"
-                            dataKey="GZ"
-                            stroke="#0ea5e9"
-                            strokeWidth={2}
-                            dot={false}
-                            activeDot={{ r: 4, fill: '#0ea5e9' }}
-                          />
-                        </LineChart>
-                      </ResponsiveContainer>
-                    </dl>
+                    <ResultsPanel result={trimResult} />
                   ) : !draftError && !isCalculating ? (
                     <span className="text-zinc-500">No results yet.</span>
                   ) : null}
