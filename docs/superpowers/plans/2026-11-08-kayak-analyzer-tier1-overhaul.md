@@ -883,6 +883,66 @@ break boot.
 
 **Proposed commit:** `feat(app): validate numeric inputs and persist them in localStorage`
 
+**Done (2026-11-11).** Uncommitted at time of writing; gate green (`npm.cmd run ci` exit 0,
+re-run after the cross-review fixes below): typecheck, `biome check .` (46 files), all thirteen
+assertion suites, build. That is this task's own verification step — a `localStorage` round-trip
+cannot be unit-tested without a DOM, so the `try/catch` plus the shape check is the reliability
+measure. Baseline intact: bounds `2714.4 × 613.1 × 325.1 mm`, trim `-1.90°`, LCB–LCG offset
+`1.637 mm`.
+
+Deviations from this plan's own design:
+
+1. **One message per field, printed under its own control.** The plan's wording is `'Enter a
+   number'`; a bare string that way cannot say which of three fields is empty. `parseInputs` names
+   the field — `'Target weight: enter a number.'` / `'LCG: enter a number.'` / `'KG: enter a
+   number.'` — plus one range message per field, and each renders under the input it names instead
+   of in one shared paragraph, so a KG message is not printed above the LCG control.
+2. **`showHeelInput` is inferred from `heelDeg`, not stored.** The schema is the four documented
+   keys, so a saved non-zero heel restores the toggle _on_ — restoring it _off_ would silently
+   drop the value — and a saved 0° restores it _off_, which is the same solve either way. The
+   value written is the **applied** heel (`showHeelInput ? heelDeg : 0`), not the slider's
+   leftover: writing the slider would resurrect a heel the user had switched off.
+3. **Over-capacity weight stays a warning, not an error.** `weightKg > volumeLiters` still gets
+   an answer from the solver (a bad one), so it does not block Calculate; only the plan's own
+   ranges and the Task-6 gates do.
+4. **The three inputs are `type="text" inputMode="decimal"`, with no `min`/`max`.** A controlled
+   `type="number"` input reports `""` while the user is typing `52.` — the browser sanitises it
+   as an invalid float — so a raw-string design loses decimals exactly where it needs them (LCG's
+   step is 0.1). Text with a decimal keypad keeps the string the truth, and the ranges are
+   enforced by `parseInputs` alone, which is the rule the run actually uses.
+5. **Validation is one pure function shared by every consumer.** `parseInputs` feeds the render,
+   the disabled condition, the persist effect and the click handler, so the button and the run
+   cannot disagree about what is valid. That now holds for the restore path too: the same four
+   named predicates (`weightUsable`, `lcgUsable`, `kgUsable`, `heelUsable`) are passed to
+   `readStoredInputs` instead of a hand-copied range check, so a stored value the form rejects —
+   `kgMm: 0` — cannot boot the app with Calculate permanently disabled.
+6. **Each field is parsed on its own.** The three values no longer null out together, so the
+   KG-above-deck warning no longer disappears because the weight field is half-typed.
+
+**Cross-review (MiniMax M3.1-Flash, 2026-11-11) — findings and dispositions.** 1 MAJOR / 2 MINOR /
+4 NIT, all fixed, gate re-run green afterwards.
+
+- **MAJOR, fixed — a stale heel could resurrect itself.** The effect persisted `inputs.heelDeg`,
+  the slider's value, so switching the fixed heel off and reloading brought it back — a heel the
+  user had explicitly disabled. Now the *applied* heel is written (`showHeelInput ? heelDeg : 0`)
+  with `showHeelInput` in the dep list, which is the inverse of the restore's own inference.
+- **MINOR, fixed — the restore accepted a value the form refuses.** `readStoredInputs` range-checked
+  `kgMm` with `KG_MIN ≤ v` while `parseInputs` demanded `> KG_MIN`, so a stored `kgMm: 0` shipped
+  a form that silently substituted the 280 mm default while the KG box read `0` and Calculate
+  stayed dead with no reason on screen. Both sides now call one `kgUsable` predicate (deviation 5).
+- **MINOR, fixed — the reason was printed away from the control it named** (deviation 1).
+- **NITs, fixed:** the heel slider hard-coded `-30`/`30` next to `HEEL_MIN`/`HEEL_MAX` (now uses
+  them); three `setInputs({ ...inputs, … })` calls read the closed-over state (now functional
+  updaters); `type="number"` cannot hold a decimal point mid-typing, which is what switched the
+  three inputs to `type="text" inputMode="decimal"` (deviation 4); and the KG-above-deck warning
+  vanished whenever any of the three fields was momentarily invalid (deviation 6).
+- **Confirmed sound:** KG stays a height above the keel (the deck ceiling is `bounds.size.z`, read
+  from this mesh, and the messages say so); the heel sign reaches the viewer through the existing
+  `viewerHeelDeg` identity rather than a new negation; the four schema keys and the plan's focus
+  points are met; no new state, no new dependency, no leak of the raw-string wiring into the
+  solver. Gate after the fixes: `npm.cmd run ci` exit 0 (typecheck, `biome check .` 46 files,
+  thirteen assertion suites, build). Baseline unchanged.
+
 ---
 
 # Task 8 — Extract the result panel + GZ chart + responsive layout
