@@ -1203,5 +1203,41 @@ below.
   the axis whenever the curve goes negative, and the "Heel (°)" axis label is anchored
   insideRight, so the two do not overlap in the normal case.
 
+**Second pass, post-push (MiniMax M3.1-Flash, NIM lane, 2026-11-11) — findings and dispositions.**
+Verdict SHIP, 4 minor + 3 nit against the committed `2032268`/`6573f3f` tree. All seven adjudicated
+as real and fixed at `db6a4bc`; none rebutted. The pass also REBUTted a stale section-3 comment
+finding of its own, correctly — that wording was already corrected before the commits.
+
+- **minor, fixed — the end-tip warning claimed "reserve buoyancy at that end is lost"** for a
+  measurement the solver defines as *stem-tip* clearance, and explicitly not the sheer/deck-edge
+  immersion angle (`src/lib/hydrostatics.ts`, `endTipImmersionDeg`). The warning now states what was
+  measured — the stem tip is at the waterline while the hull still has a righting arm — rather than
+  the consequence it could not support.
+- **minor, fixed — the chart caption called the plotted curve "the sinkage-limited wall-shape
+  estimate."** The curve is `compute_gz_curve_geometric`, whose doc says *no* wall-sided assumption
+  is involved, so the caption described a model the solver rejects; the wording was inherited from
+  this plan's step-2 caption and was shown to the user as fact. It now names the measured curve,
+  sinkage-limited past ~15–20°, with no wall-sided formula.
+- **minor, fixed — `GM <= 0` labelled GM of exactly 0 "Negative GM 0 mm".** `verify-gz.ts` reaches
+  GM = 0, so the branch is live. Split into `< 0` negative / `=== 0` neutral / `> 0` low.
+- **minor, fixed — the BLOCKER's condition was untestable JSX.** It now lives in
+  `src/lib/gz-marks.ts` as `endTipWetsBeforeVanishing`, returning the `EndTipFirst` pair it compared;
+  the panel formats that pair, so TypeScript enforces the non-null narrowing the old branch faked
+  (which is what the first gate run on the change caught). Pinned by `verify-gz-marks.ts` section 6,
+  including both null cases, so the suite is now 30 checks.
+- **nit, fixed — the chart's fixed-heel label dropped the sign the panel row prints, and the
+  out-of-range note only tested the negative half of the axis domain.** `signed()` was added to
+  `src/lib/format.ts` and now carries the sign for trim, fixed heel, LCF X and the chart label
+  (three copies of the ternary collapsed into one definition); the note tests the domain.
+- **nit, fixed — `maxHeelDeg` seeded from 0** clamped a curve whose samples all sit below zero to an
+  angle it never measured. Seeded from the first sample, empty case guarded.
+- **nit, fixed — the end-tip row's caveat did not say the angle is measured on the upright,
+  untrimmed hull**, while the rows beside it carry the trimmed solve's numbers. The row says so now.
+
+Evidence: `npm.cmd run ci` exit 0 on the remediated tree; `verify-gz-marks.ts` 30 checks; a
+throwaway probe on the real hull showed the new rule silent at 75 / 150 / 190 kg and the false claim
+arising only where a curve keeps an arm past the wetting angle — the shape section 6 now pins, so
+that regression cannot return silently.
+
 **Still Richard's to sign off:** the manual owner check above — it needs a browser, which this
 session does not have.
