@@ -1106,7 +1106,7 @@ chaining that hides a missing field in tests; Recharts `ReferenceDot` needs expl
 | 6 | — | typecheck + build |
 | 7 | — | typecheck + build |
 | 8 | — (pure move) | typecheck + build |
-| 9 | — | typecheck + build |
+| 9 | `verify-gz-marks.ts` (assert) | `npm test` (14 suites) + build |
 
 Every task ends with `npm.cmd run ci` exit 0 (typecheck → biome → tests → build) before the
 commit is proposed. Local hulls in `~/Downloads` are optional (`verify-trim-search` runs 80
@@ -1117,3 +1117,91 @@ and confirm — one WebGL context instead of a new one per solve, the progress b
 to 30, Cancel leaves the last result on screen, clearing the weight field shows an error
 instead of `0`, and the GZ curve renders with the GZ_max/AVS/deck markers. This cannot be
 run from this session's toolset (browser lane off), so it is Richard's to sign off.
+---
+
+# Task 9 — Done
+
+**Verification (re-run after the cross-review fixes below):** typecheck (`tsc -b`, three programs),
+`biome check .`, all fourteen assertion suites — the new `verify-gz-marks.ts` (24 checks) included,
+the other thirteen unchanged — then the Vite build. The gate is `npm.cmd run ci` exit 0.
+
+Deviations from this plan's own design:
+
+1. **A fourth file, `src/lib/gz-marks.ts`.** Step 3's markers and step 4's "an end immerses first"
+   warning read the same two angles off the same points. Scanning twice in two components lets them
+   drift, so the scan is one pure function that both call. `npm test` gained a fourteenth suite for
+   it, because the branchy cases are exactly the ones the cross-review found wrong.
+2. **App.tsx is unchanged; ResultsPanel threads the chart props.** App renders ResultsPanel, not
+   GzChart, and the result already carries `heelDeg` / `endTipImmersionDeg` / `GM`, so the props
+   pass down from the panel that holds them instead of being copied through App.
+3. **AVS is the interpolated zero crossing, and its marker sits on the GZ = 0 line.** Step 3's
+   "first GZ ≤ 0 after GZ_max" says where to look; reporting that SAMPLE as the angle overstates
+   the vanishing angle by up to one 5° step (45° reported against a 40.7° crossing on this hull),
+   which is the unsafe direction for a stability number, and the dot was drawn at an arbitrary
+   negative arm below the zero line. The crossing is now linearly interpolated between the last
+   positive and the first non-positive sample, and drawn at y = 0.
+4. **A curve with no positive arm reports that instead of a peak.** Its 0° anchor is GZ = 0 by
+   construction, so the sample-based peak rule labelled a sinking hull "GZ_max 0 mm". `gzMax` is
+   null there, and the caption reads "no positive righting arm within 45°".
+5. **LCF is labelled "LCF X", not "from midship".** `waterplaneCentroidX` is hull-frame X, and the
+   mesh is centred on its BOUNDING box at upload (`centerToOrigin`) — 50 % from the bow, not the
+   app's 52 % midship and not the waterplane's amidships. The claim in step 1 cannot be made
+   honestly, so the row is labelled like its LCB/LCG neighbours.
+6. **The end-tip caveat names the stem tip, not the deck edge.** The solver documents
+   `endTipImmersionDeg` as a stem-tip clearance and states "What this is NOT: a sheer or deck-edge
+   immersion angle"; step 2's wording would have told the reader a deck edge submerges at 38.4° when
+   it is the stem tip. The caveat also only renders alongside a non-null value, because
+   "not reached within 45°" and "freeboard reaches 0 mm" contradict each other.
+7. **I_y is printed in scientific form (2.79e11 mm⁴).** `fmt(v, 0)` printed twelve significant
+   digits — false precision for a moment taken off a decimated mesh.
+8. **A non-positive GM gets its own wording.** "Low initial stability — GM −18.7 mm is under
+   100 mm" understates a hull that does not right itself.
+9. **The fixed-heel marker's absence is stated in words.** Recharts discards a reference line
+   outside the axis domain, so a negative fixed heel (the slider's lower half) vanished silently;
+   the caption line now names it.
+10. **The panel's markup is now valid `<dl>`.** Each section is its own list, with the titles, the
+    warnings and the chart as siblings, so no `<p>` or `<div>` sits inside a `<dl>`, which admits
+    only title/value pairs.
+11. **Mixed area units, and TPC in tonnes, accepted on purpose.** Waterplane area stays in m² (the
+    existing row) while wetted surface is mm² (step 1); TPC stays in tonnes/cm (step 1), the one
+    deliberate exception to AGENTS.md's "all UI output is mm and kg". Recorded here so a later task
+    does not flip one of them by accident.
+12. **No opposite-case warning.** The review suggested a second box for an end that immerses AFTER
+    the vanishing angle; step 4 defines only the "<" case and the row itself states both numbers, so
+    the extra box was left out.
+
+**Cross-review (MiniMax M3.1-Flash, 2026-11-11) — findings and dispositions.** 1 BLOCKER / 4 MAJOR /
+8 MINOR / 6 NIT, all raised against the first working-tree draft of this task. Every one is fixed in
+the code above except the three recorded as decisions (items 5, 6, 11) and the one NIT accepted
+below.
+
+- **BLOCKER, fixed — the end-tip warning never compared the two angles.** Step 4's condition
+  (`endTipImmersionDeg < AVS`) had been coded as "the end-tip angle is not null and an AVS exists",
+  so at 150 kg the panel printed "An end immerses at 38.4°, before the 5° vanishing angle" — a
+  self-contradicting false safety claim about a hull that was already unstable well before it. The
+  comparison is now made.
+- **MAJOR, fixed — LCF's origin and the code comment behind it (item 5).**
+- **MAJOR, fixed — the AVS sample angle, and a marker drawn below the zero line (item 3).**
+- **MAJOR, fixed — the 0° anchor promoted to GZ_max on a hull with no positive arm (item 4).**
+- **MAJOR, fixed — the caveat said "deck end freeboard" for a stem-tip measurement (item 6).**
+- **MINOR, fixed —** I_y false precision (7); the caveat under "not reached" (6); the GM₀ caption,
+  which now states that the curve is the upright, untrimmed hull while the GM is the trimmed
+  solve's, so the two are not read as one condition; the silently discarded negative-heel marker
+  (9); the negative-GM wording (8); the duplicated scan, now one shared object with a comment that
+  no longer claims the chart sits "above" the panel it is rendered under; and the `<p>`-inside-
+  `<dl>` markup (10).
+- **NIT, fixed —** the over-long caption line is wrapped; the chart's top margin gives the dot
+  labels headroom; the end-tip label moved to the opposite vertical anchor from the fixed-heel
+  label, so the two cannot collide; and GZ_max's number is stated in the caption instead of only in
+  the tooltip.
+- **NIT, fixed by this commit —** `src/lib/gz-marks.ts` was untracked and is added with it.
+- **NIT, addressed by item 1 —** `gzMarks` is new pure branchy logic, so it now has
+  `verify-gz-marks.ts` (24 checks: empty, single-point, all-zero and all-negative curves, a tie on
+  the maximum, a peak as the last sample, the scan starting after the peak, the interpolated
+  crossing, and the committed hull's real curve).
+- **NIT, accepted —** the `GZ = 0` line keeps its `insideBottomLeft` label. The zero line sits above
+  the axis whenever the curve goes negative, and the "Heel (°)" axis label is anchored
+  insideRight, so the two do not overlap in the normal case.
+
+**Still Richard's to sign off:** the manual owner check above — it needs a browser, which this
+session does not have.
