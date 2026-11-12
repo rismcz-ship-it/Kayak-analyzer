@@ -3,204 +3,21 @@ import ResultsPanel, { statRow } from './components/ResultsPanel'
 import Upload, { type LoadedMesh, rescaleMesh } from './components/Upload'
 import Viewer3D from './components/Viewer3D'
 import { fmt } from './lib/format'
-import type { ScaleAdvice } from './lib/geometry'
-import { DEFAULT_KG_MM, type TrimSolveResult } from './lib/hydrostatics'
+import type { TrimSolveResult } from './lib/hydrostatics'
+import {
+  encodeStoredInputs,
+  HEEL_MAX,
+  HEEL_MIN,
+  INPUTS_STORAGE_KEY,
+  type InputFields,
+  parseInputs,
+  readStoredInputs,
+  scaleNotice,
+} from './lib/inputs'
 import { SolverClient } from './lib/solver-client'
 
 function positionsOf(mesh: LoadedMesh): Float32Array {
   return mesh.geometry.getAttribute('position').array as Float32Array
-}
-
-/**
- * The scale notice wording, one line per band of `scaleAdviceFor`.
- *
- * Deliberately reports the extent in the file's own units rather than naming a
- * unit the app cannot know: an inch-authored hull (120 units) is caught by the
- * same rule as a metres-authored one, and printing "120.00 m" would state a
- * false magnitude.
- */
-function scaleNotice(advice: ScaleAdvice, maxDim: number): string {
-  if (advice.kind === 'metres') {
-    return (
-      `Largest axis ${fmt(maxDim, 2)} in the file's own units — a kayak is thousands of mm ` +
-      'long, so this is probably a metres file: lengths would read 1000× too small and ' +
-      'volumes 10⁹× too small.'
-    )
-  }
-  if (advice.kind === 'small') {
-    return (
-      `Largest axis ${fmt(maxDim)} in the file's own units — too short for a kayak in mm, ` +
-      'and too long to be metres. If the STL is in cm or inches its lengths read 10× / 25.4× ' +
-      'too small; rescale the mesh to mm.'
-    )
-  }
-  return (
-    `Largest axis ${fmt(maxDim)} mm — larger than 10 m. Check the STL's units; the app ` +
-    'assumes mm.'
-  )
-}
-
-/**
- * Bounds for the three numeric inputs. Outside them there is no honest answer
- * to give: under 20 kg is not a paddler plus gear plus boat, over 200 kg is,
- * and a KG above 1000 mm puts the centre of gravity above the deck of any
- * kayak, where GM stops describing anything real.
- */
-const WEIGHT_MIN = 20
-const WEIGHT_MAX = 200
-const LCG_MIN = 0
-const LCG_MAX = 100
-const KG_MIN = 0
-const KG_MAX = 1000
-/** The heel slider's own range, enforced on the restored value too. */
-const HEEL_MIN = -30
-const HEEL_MAX = 30
-
-/** Versioned so a future schema change can tell its own entries apart. */
-const STORAGE_KEY = 'kayak-analyzer.inputs.v1'
-
-type NumericInputs = {
-  weightInput: string
-  lcgInput: string
-  kgInput: string
-}
-
-/** All input state, raw strings plus the fixed-heel toggle behind them. */
-type InputFields = NumericInputs & {
-  heelDeg: number
-  showHeelInput: boolean
-}
-
-type ParsedInputs = {
-  /** Each field's number — null only when THAT field alone is unusable. */
-  weightKg: number | null
-  lcgPercent: number | null
-  kgMm: number | null
-  /** Each field's own reason, so it can sit under the control it names. */
-  weightError: string | null
-  lcgError: string | null
-  kgError: string | null
-  /** The first failure in weight → LCG → KG order; null only when all three are usable. */
-  inputError: string | null
-}
-
-/**
- * `Number('')` is 0 — the exact bug this replaces: clearing a field solved a
- * 0 kg kayak and returned a number anyway. Empty, whitespace and anything
- * non-finite are "no number", never 0.
- */
-function toNumber(raw: string): number | null {
-  const trimmed = raw.trim()
-  if (trimmed === '') return null
-  const value = Number(trimmed)
-  return Number.isFinite(value) ? value : null
-}
-
-function inRange(value: number, min: number, max: number): boolean {
-  return value >= min && value <= max
-}
-
-/**
- * One named predicate per field, shared by the input validation and the
- * restore path. When the two disagreed, a stored value the form rejects — a
- * KG of 0 — booted the app with Calculate permanently disabled.
- */
-const weightUsable = (value: number): boolean => inRange(value, WEIGHT_MIN, WEIGHT_MAX)
-const lcgUsable = (value: number): boolean => inRange(value, LCG_MIN, LCG_MAX)
-const heelUsable = (value: number): boolean => inRange(value, HEEL_MIN, HEEL_MAX)
-// KG is a height above the keel, so 0 is not merely out of range: it puts the
-// centre of gravity in the keel, and solveTrim refuses it.
-const kgUsable = (value: number): boolean => value > KG_MIN && value <= KG_MAX
-
-/** One field: either a number the solver can consume, or why it cannot. */
-function parseField(
-  raw: string,
-  usable: (value: number) => boolean,
-  notANumber: string,
-  outOfRange: string,
-): { value: number | null; error: string | null } {
-  const value = toNumber(raw)
-  if (value === null) return { value: null, error: notANumber }
-  if (!usable(value)) return { value: null, error: outOfRange }
-  return { value, error: null }
-}
-
-/**
- * The single validation point for the three inputs. Everything that needs to
- * know whether a solve is currently legitimate goes through it — the render,
- * the disabled condition, the persist effect and the click handler — so the
- * button's state and the run cannot disagree about what is valid. Each field
- * is judged on its own, so a cleared weight neither blanks the KG nor hides
- * the warning about it.
- */
-function parseInputs(fields: NumericInputs): ParsedInputs {
-  const weight = parseField(
-    fields.weightInput,
-    weightUsable,
-    'Target weight: enter a number.',
-    `Target weight must be ${WEIGHT_MIN}–${WEIGHT_MAX} kg.`,
-  )
-  const lcg = parseField(
-    fields.lcgInput,
-    lcgUsable,
-    'LCG: enter a number.',
-    `LCG must be ${LCG_MIN}–${LCG_MAX} %.`,
-  )
-  const kg = parseField(
-    fields.kgInput,
-    kgUsable,
-    'KG: enter a number.',
-    `KG must be above ${KG_MIN} mm and at most ${KG_MAX} mm.`,
-  )
-  return {
-    weightKg: weight.value,
-    lcgPercent: lcg.value,
-    kgMm: kg.value,
-    weightError: weight.error,
-    lcgError: lcg.error,
-    kgError: kg.error,
-    inputError: weight.error ?? lcg.error ?? kg.error ?? null,
-  }
-}
-
-/**
- * Read the persisted inputs once, at mount. Anything untrustworthy — no
- * localStorage at all, malformed JSON, a value out of today's range — falls
- * back per field, and a throw falls back entirely. A stored value the current
- * rules reject is not better than the default, and a note written into the
- * browser's storage must never stop the app from booting.
- */
-function readStoredInputs(): InputFields {
-  let stored: Record<string, unknown> = {}
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    if (raw !== null) {
-      const parsed: unknown = JSON.parse(raw)
-      if (typeof parsed === 'object' && parsed !== null) {
-        stored = parsed as Record<string, unknown>
-      }
-    }
-  } catch {
-    // Private mode, a disabled storage API, hand-edited JSON: keep the
-    // defaults below instead of failing the boot.
-  }
-  const numIn = (key: string, usable: (value: number) => boolean, fallback: number): number => {
-    const value = stored[key]
-    return typeof value === 'number' && Number.isFinite(value) && usable(value) ? value : fallback
-  }
-  const weightKg = numIn('weightKg', weightUsable, 75)
-  const lcgPercent = numIn('lcgPercent', lcgUsable, 52)
-  const kgMm = numIn('kgMm', kgUsable, DEFAULT_KG_MM)
-  const heelDeg = numIn('heelDeg', heelUsable, 0)
-  return {
-    weightInput: String(weightKg),
-    lcgInput: String(lcgPercent),
-    kgInput: String(kgMm),
-    heelDeg,
-    // A non-zero heel only exists because the toggle was on when it was
-    // saved. Restoring it in the off state would silently not apply it.
-    showHeelInput: heelDeg !== 0,
-  }
 }
 
 export default function App() {
@@ -210,8 +27,12 @@ export default function App() {
   const [isCalculating, setIsCalculating] = useState(false)
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null)
   // Raw strings: what the user typed is state, the numbers are derived from
-  // it. That is what stops an empty field becoming 0.
-  const [inputs, setInputs] = useState<InputFields>(readStoredInputs)
+  // it. That is what stops an empty field becoming 0. The reader is built here,
+  // not inside the module, so a browser whose storage throws on ACCESS still
+  // throws inside the module's own try/catch and the boot survives.
+  const [inputs, setInputs] = useState<InputFields>(() =>
+    readStoredInputs((key) => localStorage.getItem(key)),
+  )
   const parsedInputs = parseInputs(inputs)
   const weightKg = parsedInputs.weightKg
   const lcgPercent = parsedInputs.lcgPercent
@@ -221,23 +42,20 @@ export default function App() {
   // Persist the valid values whenever they change. An incomplete form keeps
   // the last good set rather than writing the empty one. Storage can throw
   // (private mode, quota) and the app works identically without it, so the
-  // failure is swallowed here and nowhere else.
+  // failure is swallowed here and nowhere else. What gets written — including
+  // the applied heel rather than the slider's leftover — is `encodeStoredInputs`
+  // in `lib/inputs.ts`, where `verify-inputs.ts` can reach it.
   useEffect(() => {
-    if (weightKg === null || lcgPercent === null || kgMm === null) return
+    const record = encodeStoredInputs({
+      weightKg,
+      lcgPercent,
+      kgMm,
+      heelDeg: inputs.heelDeg,
+      showHeelInput: inputs.showHeelInput,
+    })
+    if (record === null) return
     try {
-      localStorage.setItem(
-        STORAGE_KEY,
-        JSON.stringify({
-          weightKg,
-          lcgPercent,
-          kgMm,
-          // The APPLIED heel, not the slider's leftover: with the toggle off
-          // the fixed heel is 0 whatever the slider still reads. Storing the
-          // slider value instead would resurrect a heel the user switched off
-          // on the next reload.
-          heelDeg: inputs.showHeelInput ? inputs.heelDeg : 0,
-        }),
-      )
+      localStorage.setItem(INPUTS_STORAGE_KEY, record)
     } catch {
       // No localStorage, or it is full: carry on without memory.
     }

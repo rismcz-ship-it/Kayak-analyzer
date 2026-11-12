@@ -61,7 +61,7 @@ that always holds.
 | `npm run build`      | Typecheck (`tsc -b`) then production build                                       |
 | `npm run preview`    | Serve the production build                                                       |
 | `npm run typecheck`  | Types only, no emit — covers `src`, `vite.config.ts` and `tests`                 |
-| `npm test`           | The eight assertion suites — see [tests/README.md](tests/README.md)              |
+| `npm test`           | The fifteen assertion suites — see [tests/README.md](tests/README.md)            |
 | `npm run test:print` | Diagnostic scripts that only print numbers                                       |
 | `npm run ci`         | The full gate: typecheck → Biome (format + lint) → `npm test` → production build |
 
@@ -100,6 +100,7 @@ LF in the repo and worktree (`.gitattributes`), which keeps the Biome line-endin
 src/lib/geometry.ts      mesh utilities, orientation, decimation, section measurement
 src/lib/hydrostatics.ts  the solver: clipping, coefficients, stability, trim sweep
 src/lib/viewer-conventions.ts  solver -> Three.js sign translation (trim, heel)
+src/lib/inputs.ts          the input layer: parsing, bounds, validation, localStorage restore/persist, scale notices
 src/components/          Upload, Viewer3D
 tests/                   assertion suites + diagnostic scripts + the test mesh
 references/              target schemas for saved runs (nothing emits them yet)
