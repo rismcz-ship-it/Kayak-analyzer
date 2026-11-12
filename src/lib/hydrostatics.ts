@@ -37,7 +37,13 @@ export type MeshLike = Mesh | Float32Array
 export interface Draft0TrimResult {
   /** Draft above keel (bbox min Z) in mm — linearly interpolated between planes. */
   draftMm: number
-  /** Absolute waterline height (Z) in mesh coordinates, = minZ + draftMm. */
+  /**
+   * Absolute waterline height (Z) in the coordinates of the `positions` this
+   * call was given — NOT necessarily the hull's own, because callers hand in a
+   * rotated copy. `minZ` is that copy's lowest point, so this is
+   * `minZ + draftMm` in the same frame. `solveTrim` rotates its reported
+   * waterline back into the hull frame; see {@link TrimSolveResult.waterlineZ}.
+   */
   waterlineZ: number
   /** Displaced volume at the interpolated waterline, mm^3. */
   displacedVolumeMm3: number
@@ -140,9 +146,20 @@ export interface GZPoint {
 export interface TrimSolveResult {
   /** Equilibrium trim angle in degrees (+ = bow up, - = bow down). */
   trimDeg: number
-  /** Equilibrium draft at hull center (above keel) in mm. */
+  /**
+   * Equilibrium draft at midship, in mm, measured from the hull's own keel
+   * (its lowest, un-rotated Z — see `waterlineZ`).
+   */
   draftMm: number
-  /** Waterline Z at center in mesh coordinates. */
+  /**
+   * Height of the waterline at midship, in HULL coordinates: the mesh as
+   * uploaded, not the trim-rotated copy the solver solved on. The keel is the
+   * hull's lowest Z in that same frame, so `draftMm` is exactly
+   * `waterlineZ - keel` and the two move together — a hull that floats deeper
+   * raises its waterline by precisely the draft's increase. Anything the viewer
+   * or a saved run compares against hull coordinates needs this number, not
+   * the tilted-frame plane the solver clipped.
+   */
   waterlineZ: number
   /** Displaced volume in mm^3. */
   displacedVolumeMm3: number
@@ -189,9 +206,14 @@ export interface TrimSolveResult {
   GM: number
   /** Righting arm curve points at standard heel angles (0°, 5°, 10°, 15°, 20°, 25°, 30°) */
   gzCurve: GZPoint[]
-  /** Bow freeboard: vertical distance from waterline to bow tip (+ = bow above water) */
+  /**
+   * Bow freeboard: the bow stem tip's height above the waterline, measured in
+   * hull coordinates at the bow's own station (+ = bow above water). The
+   * waterline is tilted in that frame, so a bow-down trim LOWERS this value and
+   * raises the stern's.
+   */
   bowFreeboardMm: number
-  /** Stern freeboard: vertical distance from waterline to stern tip (+ = stern above water) */
+  /** Stern freeboard, same frame and station convention as the bow's. */
   sternFreeboardMm: number
   /** Fixed heel angle used in solver (degrees). + = the -Y side goes down. */
   heelDeg: number
@@ -1660,10 +1682,6 @@ export function solveTrim(
       BM: fallback.BM,
       KM: fallback.KM,
       GM: fallback.GM,
-      bowFreeboardMm: Number((bowTipZ - (fallback.waterlineZ - bowX * Math.tan(0))).toFixed(1)),
-      sternFreeboardMm: Number(
-        (sternTipZ - (fallback.waterlineZ - sternX * Math.tan(0))).toFixed(1),
-      ),
       heelDeg: fixedHeelDeg,
     }
     bestAngleDeg = 0
@@ -1680,10 +1698,48 @@ export function solveTrim(
   // shave off by reusing a wrong-basis anchor.
   const gzCurve = compute_gz_curve_geometric(solveMesh, target_kg, KG_MM)
 
+  // --- Report in the hull's own frame ---------------------------------------
+  // The solve above ran on a copy of the hull pitched by bestRad about
+  // (targetLcgX, bounds.center.y, bounds.center.z), so findDraft0Trim's
+  // `minZ`, `draftMm` and `waterlineZ` all belong to that tilted copy: the
+  // draft is measured from the tilted hull's lowest point and the waterline is
+  // that point plus the draft. Rotating a hull about a pivot that sits above the
+  // keel lifts the keel by (x_keel - pivot.x) * |sin(trim)| — the tilted hull's
+  // lowest point sits 5.8 mm above the keel at -1.90 deg on the test hull, and
+  // it climbs as the trim deepens — so the datum the draft is measured from
+  // moves with the answer. On this hull at 75 kg that made the reported draft
+  // 7.6 mm short of the true keel-to-waterline distance. It also drifts between
+  // loads: the lift is proportional to sin(trim), so a hull that trims further
+  // under a heavier load carries the extra lift on top of its real sinkage and
+  // reports a waterline that climbed while it floated deeper — which is how
+  // this looked wrong to begin with. The viewer's waterline plane is placed
+  // from that number, so it rode along. LCB and LCF above are already rotated
+  // back into the hull frame; the waterplane needs the same inverse, evaluated
+  // at the station it is reported from:
+  //     z' = (z - pz) * c + (x - px) * s + pz  =>  z = pz + (W - pz - (x - px) * s) / c
+  const sinT = Math.sin(bestRad)
+  const cosT = Math.cos(bestRad)
+  const hullWaterlineAt = (stationX: number): number =>
+    bounds.center.z +
+    (bestResult.waterlineZ - bounds.center.z - (stationX - targetLcgX) * sinT) / cosT
+
+  // Waterline at midship, and the draft referenced to the hull's keel
+  // (bounds.min.z) in the same frame, so the pair is additive: the waterline
+  // moves by exactly the draft's increase.
+  const waterlineZ = hullWaterlineAt(bounds.center.x)
+  const draftMm = waterlineZ - bounds.min.z
+
+  // The freeboards read the waterline at each end's own station, so they
+  // inherit the tilt: at a bow-down trim the plane stands higher at the bow end
+  // and the bow freeboard DROPS. The old form shifted the plane the opposite
+  // way round (`waterlineZ + x * tan(trim)`), putting it 45 mm too low at the
+  // bow end here, which let a bow-down trim GROW the bow freeboard to 153 mm
+  // against the true 61 mm.
+
   return {
     trimDeg: Number(bestAngleDeg.toFixed(2)),
-    draftMm: bestResult.draftMm,
-    waterlineZ: bestResult.waterlineZ,
+    draftMm,
+    waterlineZ,
     displacedVolumeMm3: bestResult.displacedVolumeMm3,
     displacementKg: bestResult.displacementKg,
     targetKg: target_kg,
@@ -1704,17 +1760,8 @@ export function solveTrim(
     BM: bestResult.BM,
     KM: bestResult.KM,
     GM: bestResult.GM,
-    bowFreeboardMm: Number(
-      (bowTipZ - (bestResult.waterlineZ + bowX * Math.tan((bestAngleDeg * Math.PI) / 180))).toFixed(
-        1,
-      ),
-    ),
-    sternFreeboardMm: Number(
-      (
-        sternTipZ -
-        (bestResult.waterlineZ + sternX * Math.tan((bestAngleDeg * Math.PI) / 180))
-      ).toFixed(1),
-    ),
+    bowFreeboardMm: Number((bowTipZ - hullWaterlineAt(bowX)).toFixed(1)),
+    sternFreeboardMm: Number((sternTipZ - hullWaterlineAt(sternX)).toFixed(1)),
     gzCurve,
     heelDeg: fixedHeelDeg,
     kgMm: KG_MM,

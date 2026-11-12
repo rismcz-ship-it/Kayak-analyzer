@@ -41,6 +41,7 @@ import {
   applyRollX,
   autoOrientToZUp,
   centerToOrigin,
+  computeBounds,
   DEFAULT_SOLVER_TRIANGLES,
   decimateMesh,
   isMeshUsableForHydrostatics,
@@ -312,7 +313,9 @@ const APP_WINDOW = {
 
 console.log('=== 5. solveTrim extras on the real hull (75 kg) ===')
 {
-  const r = solveTrim(openHull(), 75, APP_WINDOW)
+  const hull = openHull()
+  const hullBounds = computeBounds(hull)
+  const r = solveTrim(hull, 75, APP_WINDOW)
 
   check('waterplaneLoopCount = 1', r.waterplaneLoopCount === 1, `${r.waterplaneLoopCount} loop(s)`)
   check(
@@ -372,6 +375,48 @@ console.log('=== 5. solveTrim extras on the real hull (75 kg) ===')
     'freeboard is positive at the solved trim',
     r.bowFreeboardMm > 0 && r.sternFreeboardMm > 0,
     `bow ${r.bowFreeboardMm.toFixed(1)}, stern ${r.sternFreeboardMm.toFixed(1)} mm`,
+  )
+  // The solver works on a copy of the hull PITCHED about a pivot above the
+  // keel, so the tilted copy's lowest point drifts up with the trim — which is
+  // how a heavier hull came to report a waterline 20 mm higher while floating
+  // 14 mm deeper. The reported heights must all live in the hull's own frame,
+  // and the plainest statement of that is the draft being exactly keel to
+  // waterline. solveTrim decimates internally while this suite holds the full
+  // mesh, hence the 0.1 mm envelope on the keel it reads here.
+  check(
+    'draftMm = waterlineZ - keel (all three in one frame)',
+    Math.abs(r.draftMm - (r.waterlineZ - hullBounds.min.z)) < 0.1,
+    `draft ${r.draftMm.toFixed(3)} vs waterline ${r.waterlineZ.toFixed(3)} ` +
+      `- keel ${hullBounds.min.z.toFixed(3)}`,
+  )
+  // The freeboards inherit that same waterline, so in the hull frame it must be
+  // TILTED by the trim: at -1.9 deg the bow end of the plane stands 90 mm above
+  // the stern end. The old formula applied the tilt the wrong way round, which
+  // let a bow-down trim GROW the bow freeboard by 92 mm.
+  let maxX = -Infinity
+  let minX = Infinity
+  let bowTipZ = 0
+  let sternTipZ = 0
+  for (let i = 0; i < hull.length; i += 3) {
+    if (hull[i] > maxX) {
+      maxX = hull[i]
+      bowTipZ = hull[i + 2]
+    }
+    if (hull[i] < minX) {
+      minX = hull[i]
+      sternTipZ = hull[i + 2]
+    }
+  }
+  const waterlineAtBow = bowTipZ - r.bowFreeboardMm
+  const waterlineAtStern = sternTipZ - r.sternFreeboardMm
+  const trimRad = (r.trimDeg * Math.PI) / 180
+  check(
+    'the freeboards carry the waterline tilt with the right sign',
+    Math.abs(waterlineAtBow - waterlineAtStern + hullBounds.size.x * Math.tan(trimRad)) < 0.5,
+    `waterline ${waterlineAtBow.toFixed(2)}@bow to ${waterlineAtStern.toFixed(2)}@stern ` +
+      `= ${(waterlineAtBow - waterlineAtStern).toFixed(2)} mm spread vs ` +
+      `${(-hullBounds.size.x * Math.tan(trimRad)).toFixed(2)} mm from the ` +
+      `${r.trimDeg.toFixed(2)} deg trim`,
   )
 }
 
