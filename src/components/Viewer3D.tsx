@@ -334,10 +334,6 @@ export default function Viewer3D({
     hullGroup.add(lcbSphere)
     const lcbLine = createLeader(hullGroup, 0x22c55e)
 
-    // Add coordinate axes helper (Red=X, Green=Y, Blue=Z) - world axes
-    const axesHelper = new THREE.AxesHelper(500)
-    scene.add(axesHelper)
-
     const radius = (Math.max(size.x, size.y, size.z) || 1) * 0.6
 
     // 3/4 bow view from above: length along X, beam along Y, up along Z.
@@ -433,8 +429,6 @@ export default function Viewer3D({
 
       grid.geometry.dispose()
       ;(grid.material as THREE.Material).dispose()
-      axesHelper.geometry.dispose()
-      ;(axesHelper.material as THREE.Material).dispose()
 
       renderer.dispose()
       if (renderer.domElement.parentNode === mount) {
