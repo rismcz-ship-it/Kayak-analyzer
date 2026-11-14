@@ -71,31 +71,6 @@ export function computeBounds(positions: Float32Array): BoundingBox {
   }
 }
 
-/**
- * Normalise Fusion 360 export axes (Y-up / Z-forward / X-side) to Z-up
- * internally:
- *
- *     new X = old Z   (forward / LOA direction)
- *     new Y = old X   (side     / BOA direction)
- *     new Z = old Y   (up       / depth direction)
- *
- * This is a proper rotation (det = 1), so triangle winding order — and hence
- * normals / signed-volume orientation — is preserved. Z-up makes the mesh
- * directly sliceable by horizontal waterplanes in the hydrostatics solver.
- *
- * Mutates `positions` in place.
- */
-export function transformToZUp(positions: Float32Array): void {
-  for (let i = 0; i < positions.length; i += 3) {
-    const side = positions[i] // old X
-    const up = positions[i + 1] // old Y
-    const fwd = positions[i + 2] // old Z
-    positions[i] = fwd
-    positions[i + 1] = side
-    positions[i + 2] = up
-  }
-}
-
 type AxisKey = 'x' | 'y' | 'z'
 
 const AXIS_INDEX: Record<AxisKey, number> = { x: 0, y: 1, z: 2 }
@@ -156,36 +131,6 @@ export function applyFlipZ(positions: Float32Array): void {
     positions[i + 6] = bx
     positions[i + 7] = by
     positions[i + 8] = 2 * cz - bz
-  }
-}
-
-/** 90° rotation about the X axis: Y' = -Z, Z' = Y (det = +1). */
-export function applyRotateX90(positions: Float32Array): void {
-  for (let i = 0; i < positions.length; i += 3) {
-    const y = positions[i + 1]
-    const z = positions[i + 2]
-    positions[i + 1] = -z
-    positions[i + 2] = y
-  }
-}
-
-/** 90° rotation about the Y axis: X' = Z, Z' = -X (det = +1). */
-export function applyRotateY90(positions: Float32Array): void {
-  for (let i = 0; i < positions.length; i += 3) {
-    const x = positions[i]
-    const z = positions[i + 2]
-    positions[i] = z
-    positions[i + 2] = -x
-  }
-}
-
-/** 90° rotation about the Z axis: X' = -Y, Y' = X (det = +1). */
-export function applyRotateZ90(positions: Float32Array): void {
-  for (let i = 0; i < positions.length; i += 3) {
-    const x = positions[i]
-    const y = positions[i + 1]
-    positions[i] = -y
-    positions[i + 1] = x
   }
 }
 
@@ -770,74 +715,6 @@ export function computeSubmergedSectionAreaMm2(
 }
 
 /**
- * Compute the midship cross-section area (Am) at X = centerX.
- * Thin wrapper over {@link computeSectionAreaMm2} — kept for existing callers.
- *
- * @param positions Flat interleaved xyz Float32Array
- * @param centerX X coordinate of the midship plane (usually bounds.center.x)
- * @returns Midship section area in mm²
- */
-export function computeMidshipAreaMm2(positions: Float32Array, centerX: number): number {
-  return computeSectionAreaMm2(positions, centerX)
-}
-
-/**
- * Compute midship cross-section properties at X = centerX.
- * Returns area, beam (max Y extent), and draft (max Z extent) at that station.
- *
- * Area comes from {@link computeSectionAreaMm2}; the extents come from the
- * raw intersection points, which the shoelace integration does not expose.
- *
- * @param positions Flat interleaved xyz Float32Array
- * @param centerX X coordinate of the midship plane
- * @returns { areaMm2, beamMm, draftMm }
- */
-export function computeMidshipSection(
-  positions: Float32Array,
-  centerX: number,
-): { areaMm2: number; beamMm: number; draftMm: number } {
-  let minY = Infinity
-  let maxY = -Infinity
-  let minZ = Infinity
-  let maxZ = -Infinity
-  let hasIntersection = false
-
-  for (let i = 0; i < positions.length; i += 9) {
-    const vx = [positions[i], positions[i + 3], positions[i + 6]]
-    const vy = [positions[i + 1], positions[i + 4], positions[i + 7]]
-    const vz = [positions[i + 2], positions[i + 5], positions[i + 8]]
-
-    for (let e = 0; e < 3; e++) {
-      const a = e
-      const c = (e + 1) % 3
-      const fa = vx[a] - centerX
-      const fc = vx[c] - centerX
-      const faNeg = fa <= 0
-      const fcNeg = fc <= 0
-      if (faNeg === fcNeg) continue
-      const t = fa / (fa - fc)
-      const y = vy[a] + t * (vy[c] - vy[a])
-      const z = vz[a] + t * (vz[c] - vz[a])
-      hasIntersection = true
-      minY = Math.min(minY, y)
-      maxY = Math.max(maxY, y)
-      minZ = Math.min(minZ, z)
-      maxZ = Math.max(maxZ, z)
-    }
-  }
-
-  if (!hasIntersection) {
-    return { areaMm2: 0, beamMm: 0, draftMm: 0 }
-  }
-
-  return {
-    areaMm2: computeSectionAreaMm2(positions, centerX),
-    beamMm: maxY - minY,
-    draftMm: maxZ - minZ,
-  }
-}
-
-/**
  * Maximum beam of the waterline (BWL) in mm: the widest Y extent of the
  * hull's intersection with the plane z = h.
  *
@@ -980,37 +857,6 @@ export function findMaxSubmergedSection(
   }
 
   return best
-}
-
-/**
- * Find the maximum SUBMERGED cross-section area (Am) along the X axis.
- * This is the standard definition for Cp = V / (Am × LWL) and
- * Cm = Am / (BWL × draft) — both are defined on the underwater section,
- * so `h` (the waterline) is required.
- *
- * @param positions Flat interleaved xyz Float32Array
- * @param minX Minimum X coordinate
- * @param maxX Maximum X coordinate
- * @param h Waterline height (absolute Z in mesh coordinates)
- * @param numSamples Number of cross-sections to sample (default: 50)
- * @returns Maximum submerged cross-section area in mm²
- */
-export function findMaxCrossSectionArea(
-  positions: Float32Array,
-  minX: number,
-  maxX: number,
-  h: number,
-  numSamples: number = 50,
-): number {
-  let maxArea = 0
-
-  for (let i = 0; i <= numSamples; i++) {
-    const x = minX + (maxX - minX) * (i / numSamples)
-    const area = computeSubmergedSectionAreaMm2(positions, x, h)
-    if (area > maxArea) maxArea = area
-  }
-
-  return maxArea
 }
 
 /** One-stop analysis prep for a later hydrostatics pass. */
