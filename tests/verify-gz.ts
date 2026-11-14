@@ -421,14 +421,30 @@ const solveMeshForCurve = isMeshUsableForHydrostatics(decimated) ? decimated : b
     )
   }
 
-  // Every measured point up to 20 deg must be positive: this hull is stiff in
-  // that range, so a negative or non-monotonic arm there would mean the
-  // measurement itself had broken.
-  const upTo20 = measured.filter((m) => m.heel <= 20)
+  // Measured GZ(0) is definitionally zero: at upright y_G and y_B coincide.
+  // The raw STL is not perfectly symmetric in Y — its own whole-mesh centroid
+  // sits 0.005 mm off the centreline — so the clipped submerged centroid lies
+  // ~0.007 mm to one side of it and the measured arm reads -0.007 mm instead of
+  // exactly 0. That is ~1.2e-5 of the 613 mm beam: physically zero, and the same
+  // residual the shipped-curve print below already exempts at heel 0. Assert it
+  // as "zero within 0.05 mm" rather than "> 0": a strict > 0 fails on mesh
+  // asymmetry alone, and dropping the point entirely would leave the upright
+  // end unwatched.
+  const at0 = measured.find((m) => m.heel === 0)
   check(
-    'measured GZ positive to 20 deg',
-    upTo20.every((m) => m.gz > 0),
-    `${upTo20.map((m) => m.gz.toFixed(2)).join(', ')}`,
+    'measured GZ(0) = 0 (mesh asymmetry)',
+    !!at0 && Math.abs(at0.gz) <= 0.05,
+    `${at0 ? at0.gz.toFixed(6) : 'absent'} mm on a 613 mm beam`,
+  )
+
+  // Every measured HEELED point to 20 deg must be positive: this hull is stiff
+  // in that range, so a negative or non-monotonic arm there would mean the
+  // measurement itself had broken.
+  const heeled = measured.filter((m) => m.heel > 0 && m.heel <= 20)
+  check(
+    'measured GZ positive 5-20 deg',
+    heeled.every((m) => m.gz > 0),
+    `${heeled.map((m) => m.gz.toFixed(2)).join(', ')}`,
   )
 
   // Near upright the curve must track the measured arm. This is the assertion
@@ -463,7 +479,7 @@ const solveMeshForCurve = isMeshUsableForHydrostatics(decimated) ? decimated : b
   // GM was never asserted anywhere and this went unnoticed. Pin the relationship.
   //
   // Compared against solveTrim itself, not the zero-trim direct solve: the
-  // solver floats the hull at its equilibrium trim (here -1.9 deg), which
+  // solver floats the hull at its equilibrium trim (here +3.6 deg), which
   // legitimately gives a slightly larger KM than the upright case. Comparing
   // across trims would assert a difference that is not a bug.
   const solved = solveTrim(base, MASS_KG)

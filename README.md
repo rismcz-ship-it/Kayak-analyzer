@@ -41,7 +41,8 @@ Calculation**.
 - STL upload (25 MB cap, parsed in memory)
 - Automatic reorientation to the app's axes: Z-up, X = length, Y = beam, whatever the file used
 - 3D view with the waterline plane, rotating with trim and heel
-- Bow/stern detection from the volume centroid
+- The bow is whichever end the oriented mesh puts at +X — the app does not guess it from the
+  hull's shape, because a wrong guess silently inverts every freeboard and the trim
 
 ## Coordinates and units
 
@@ -61,7 +62,7 @@ that always holds.
 | `npm run build`      | Typecheck (`tsc -b`) then production build                                       |
 | `npm run preview`    | Serve the production build                                                       |
 | `npm run typecheck`  | Types only, no emit — covers `src`, `vite.config.ts` and `tests`                 |
-| `npm test`           | The fifteen assertion suites — see [tests/README.md](tests/README.md)            |
+| `npm test`           | The sixteen assertion suites — see [tests/README.md](tests/README.md)            |
 | `npm run test:print` | Diagnostic scripts that only print numbers                                       |
 | `npm run ci`         | The full gate: typecheck → Biome (format + lint) → `npm test` → production build |
 
@@ -88,7 +89,7 @@ LF in the repo and worktree (`.gitattributes`), which keeps the Biome line-endin
 - **KG defaults to 280 mm** above the keel. Weight, LCG and KG all have UI controls now, but
   the default is still an assumption — set KG to your paddler's actual height before
   trusting an absolute GM.
-- A solve takes a few seconds on a 12,000-triangle mesh — the trim sweep evaluates ~800
+- A solve takes a few seconds on a 12,000-triangle mesh — the trim sweep evaluates ~1000
   waterplane planes. It is correct, not fast.
 - Hulls must be watertight with a closed deck. Open or partial sections cannot float and the
   solver rejects them.

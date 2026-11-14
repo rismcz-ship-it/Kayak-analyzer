@@ -2,9 +2,10 @@
 //
 // Everything asserted here is stated in prose somewhere in the repo. Until this
 // suite existed, none of it was enforced: a global sign flip, a swapped axis
-// or a broken bow detection would leave `npm test` green.
+// or a resurrected bow/stern flip would leave `npm test` green.
 //
-//   - Z-up, X = LOA (bow = +X), Y = beam, Z = depth
+//   - Z-up, X = LOA, Y = beam, Z = depth, with bow/stern NOT guessed: the end
+//     the uploaded mesh puts at +X is the end the app reports as the bow
 //   - trim + = bow UP (marine convention)
 //   - heel + = the -Y side goes down
 //   - the viewer's rotation angles are the translation of the solver's
@@ -27,7 +28,7 @@ import {
   computeBounds,
   computeVolumeAndCentroid,
 } from '../src/lib/geometry.js'
-import { DEFAULT_KG_MM, solveTrim } from '../src/lib/hydrostatics.js'
+import { DEFAULT_KG_MM, findDraft0Trim, solveTrim } from '../src/lib/hydrostatics.js'
 import { viewerHeelDeg, viewerTrimDeg } from '../src/lib/viewer-conventions.js'
 
 // The published baseline for tests/test-kayak.stl, after auto-orientation.
@@ -35,11 +36,14 @@ const BASELINE = {
   loaMm: 2714.4,
   beamMm: 613.1,
   depthMm: 325.1,
-  trimDeg: -1.9,
-  lcbLcgOffsetMm: 1.637,
+  trimDeg: 3.6,
+  lcbLcgOffsetMm: 1.68,
+  bowFreeboardMm: 222.2,
+  sternFreeboardMm: 22.3,
   boundsTolMm: 0.5,
   trimTolDeg: 0.05,
-  lcbLcgOffsetTolMm: 0.2,
+  lcbLcgOffsetTolMm: 0.05,
+  freeboardTolMm: 0.5,
 }
 
 let failures = 0
@@ -74,15 +78,34 @@ console.log('=== 1. axis convention: X = LOA, Y = beam, Z = depth ===')
     `beam ${b.size.y.toFixed(1)} > depth ${b.size.z.toFixed(1)}`,
   )
 
-  const vol = computeVolumeAndCentroid(positions)
-  // autoOrientToZUp rotates the hull so the bow points at +X whenever the
-  // fuller stern sat at +X. The volume centroid sits towards the stern, so
-  // after orientation it must be on the -X side of the bounding-box centre.
+  // Orientation no longer guesses which end is the bow. It used to rotate the
+  // hull 180° whenever the volume centroid sat past the bounding-box centre,
+  // on the premise that a kayak's fuller end is its stern — a stereotype that
+  // is false for hulls that are fuller forward (the committed test hull is
+  // one, and it was mislabelling it), so the flip is gone. The consequence is
+  // pinned here on a synthetic closed hull whose fuller end is at +X: the old
+  // heuristic turned it 180°, the contract now is that it comes back exactly
+  // as entered — no axis mapping (already X-length / Y-beam / Z-up) and no
+  // bow/stern flip.
+  const fullerForward = new Float32Array([
+    // A closed tetrahedron: big face at x = +100, apex at x = -100. A
+    // tetrahedron's centroid is the mean of its four vertices, so it sits at
+    // x = +50 — past the bounding-box centre the old test compared against.
+    // Faces (outward-wound, so the signed volume is positive): PQR, PSQ, QSR,
+    // RSP with P=(100,-50,0) Q=(100,50,0) R=(100,0,50) S=(-100,0,50).
+    100, -50, 0, 100, 50, 0, 100, 0, 50, 100, -50, 0, -100, 0, 50, 100, 50, 0, 100, 50, 0, -100, 0,
+    50, 100, 0, 50, 100, 0, 50, -100, 0, 50, 100, -50, 0,
+  ])
+  const fullerNote = autoOrientToZUp(fullerForward)
+  const fullerVol = computeVolumeAndCentroid(fullerForward)
   check(
-    'bow is at +X (volume centroid towards -X)',
-    vol.centroid.x < b.center.x,
-    `centroid x ${vol.centroid.x.toFixed(1)} < centre ${b.center.x.toFixed(1)}`,
+    'a hull whose fuller end is at +X keeps that end at +X',
+    fullerVol.centroid.x > 0 && fullerNote === 'Already X-length · Y-beam · Z-up',
+    `centroid x ${fullerVol.centroid.x.toFixed(1)} > 0, note "${fullerNote}"`,
   )
+
+  // On the committed hull the same contract shows up as the freeboard labels
+  // below (the bow and stern freeboards swapped when the flip was live).
 }
 
 // ---------------------------------------------------------------------------
@@ -234,9 +257,33 @@ console.log('\n=== 5. published baseline for the committed test hull ===')
     Math.abs(solved.lcbLcgOffsetMm - BASELINE.lcbLcgOffsetMm) <= BASELINE.lcbLcgOffsetTolMm,
     `${solved.lcbLcgOffsetMm.toFixed(3)} mm`,
   )
+  // The freeboards are reported at the stem tips (the first vertex at each
+  // extreme X). They used to swap ends whenever the orientation heuristic
+  // flipped the length axis, which is what made it worth pinning: with the
+  // flip live this hull reported bow 61.1 / stern 180.3, and with it gone the
+  // bow — the fuller end, which is this hull's bow — reports 222.2.
   check(
-    'LCB-LCG offset stays under 2 mm',
-    solved.lcbLcgOffsetMm < 2,
+    `bow freeboard = ${BASELINE.bowFreeboardMm} mm`,
+    Math.abs(solved.bowFreeboardMm - BASELINE.bowFreeboardMm) <= BASELINE.freeboardTolMm,
+    `${solved.bowFreeboardMm.toFixed(2)} mm`,
+  )
+  check(
+    `stern freeboard = ${BASELINE.sternFreeboardMm} mm`,
+    Math.abs(solved.sternFreeboardMm - BASELINE.sternFreeboardMm) <= BASELINE.freeboardTolMm,
+    `${solved.sternFreeboardMm.toFixed(2)} mm`,
+  )
+  check(
+    'the bow freeboard is the far larger one',
+    solved.bowFreeboardMm > solved.sternFreeboardMm,
+    `bow ${solved.bowFreeboardMm.toFixed(2)} > stern ${solved.sternFreeboardMm.toFixed(2)}`,
+  )
+  // A guard, not a target: the offset is the residual left by the 0.1° fine
+  // sweep rather than an error, so the bound only has to be loose enough to
+  // survive a different sweep landing on a neighbouring angle — and tight
+  // enough to still catch a broken orientation, which shows up as ~100 mm.
+  check(
+    'LCB-LCG offset stays under 5 mm',
+    solved.lcbLcgOffsetMm < 5,
     `${solved.lcbLcgOffsetMm.toFixed(3)} mm`,
   )
 }
@@ -259,8 +306,29 @@ console.log('\n=== 6. KG is threaded through the solve ===')
     `${base.GM} vs ${base.KM} - ${base.kgMm}`,
   )
 
-  // Raising KG by 60 mm must lower GM by exactly 60 mm: GM is a difference of
-  // heights, so the sensitivity is 1:1 and cannot drift unnoticed.
+  // At a FIXED pose, raising KG by 60 mm must lower GM by exactly 60 mm: GM is
+  // a difference of heights, so with the waterplane held still the sensitivity
+  // is 1:1 and cannot drift unnoticed. The same 60 mm on the full solve moves
+  // the equilibrium as well — see the response check below — so the exact
+  // sensitivity has to be measured on a pose that does not move.
+  const rad = (base.trimDeg * Math.PI) / 180
+  const posed = new Float32Array(positions)
+  applyPitchY(posed, rad, base.pivot.x, base.pivot.z)
+  const anchorLow = findDraft0Trim(posed, 75, DEFAULT_KG_MM, 0)
+  const anchorHigh = findDraft0Trim(posed, 75, DEFAULT_KG_MM + 60, 0)
+  check(
+    'raising KG by 60 mm lowers GM by 60 mm at the same pose',
+    Math.abs(anchorLow.GM - anchorHigh.GM - 60) < 0.01,
+    `GM ${anchorLow.GM.toFixed(2)} -> ${anchorHigh.GM.toFixed(2)} mm`,
+  )
+
+  // On the full solve the raise also moves the equilibrium trim, and that is
+  // correct, not drift: the hull is pitched about (LCG x, keel-level centre z),
+  // so a CG 60 mm higher swings aft by 60·sin(trim) — 3.8 mm at this pose — in
+  // the posed frame the equilibrium is measured in, and the trim search
+  // follows it. The response must stay the size of that lever: a mis-scaled
+  // CG-height term shows up here as a trim jump, or as a residual the search
+  // can no longer close.
   const raised = solveTrim(positions, 75, {
     targetLcgPercentFromBow: 52,
     maxTrimDeg: 4.5,
@@ -268,12 +336,18 @@ console.log('\n=== 6. KG is threaded through the solve ===')
     fixedHeelDeg: 0,
     kgMm: DEFAULT_KG_MM + 60,
   })
-  check(
-    'raising KG by 60 mm lowers GM by 60 mm',
-    Math.abs(base.GM - raised.GM - 60) < 0.01,
-    `GM ${base.GM.toFixed(2)} -> ${raised.GM.toFixed(2)}`,
-  )
   check('the raised-KG solve reports its own KG', raised.kgMm === DEFAULT_KG_MM + 60)
+  const posedCgShift = (DEFAULT_KG_MM + 60 - DEFAULT_KG_MM) * -Math.sin(rad)
+  check(
+    'the raised KG moves the trim by no more than one sweep step',
+    Math.abs(raised.trimDeg - base.trimDeg) <= 0.5,
+    `trim ${base.trimDeg} -> ${raised.trimDeg} deg, posed CG shifted ${posedCgShift.toFixed(2)} mm aft`,
+  )
+  check(
+    'the raised-KG solve still closes on the posed LCG',
+    raised.converged && raised.lcbLcgOffsetMm < 5,
+    `offset ${raised.lcbLcgOffsetMm.toFixed(3)} mm`,
+  )
 }
 
 console.log(failures === 0 ? '\nALL CHECKS PASS' : `\n${failures} CHECK(S) FAILED`)

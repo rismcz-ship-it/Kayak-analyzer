@@ -574,13 +574,24 @@ console.log('=== 8. endTipImmersionDeg across load cases ===')
   const light = at(75)
   check('75 kg -> null (end tip stays dry)', light === null, `${light}`)
 
-  // Deeper in the water the bow or stern tip enters the water somewhere between
-  // 35 deg (freeboard +5.5 mm) and 40 deg (-2.6 mm) on this hull.
+  // Deeper in the water the lower stem tip enters the water between the 40 deg
+  // sample (freeboard +2.3 mm) and the 45 deg one (-5.6 mm) on this hull.
+  // Verified independently of the solver: a ray-parity column integral (every
+  // crossing of a vertical line with the mesh paired even-odd, so air above the
+  // swamped down-side deck is NOT counted as water — the naive "plane minus the
+  // lowest hit" reads ~15 mm low on the waterline here) puts the 150 kg
+  // waterline at z = 55.51 mm at 40 deg and 59.34 mm at 45 deg, and the zero
+  // crossing of the stem-tip clearance at 41.43 deg.
   const mid = at(150)
   check(
-    '150 kg -> interpolated between 35 and 40 deg',
-    typeof mid === 'number' && mid > 35 && mid < 40,
-    `${mid}`,
+    '150 kg -> interpolated between 40 and 45 deg',
+    typeof mid === 'number' && mid > 40 && mid < 45,
+    `${mid} (stem-tip freeboard +2.3 mm @ 40deg, -5.6 mm @ 45deg)`,
+  )
+  check(
+    '150 kg -> the interpolated heel is 41.5 +/- 0.1',
+    typeof mid === 'number' && Math.abs(mid - 41.5) <= 0.1,
+    `${mid} vs 41.5 — independent ray-parity crossing 41.43 deg`,
   )
 
   const heavy = at(190)

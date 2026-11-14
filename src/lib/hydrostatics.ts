@@ -1600,13 +1600,24 @@ export function solveTrim(
       const res = solveDraftLcb(workingPositions, target_kg, fixedHeelRad)
       totalPlanes += res.planesEvaluated
 
-      const cosA = Math.cos(rad)
       const sinA = Math.sin(rad)
-      const rx = res.lcb.x - targetLcgX
-      const rz = res.lcb.z - bounds.center.z
-      const origLcbX = rx * cosA + rz * sinA + targetLcgX
-
-      const offset = Math.abs(origLcbX - targetLcgX)
+      // Equilibrium is a property of the POSE, not of the hull frame. Buoyancy
+      // acts vertically through the centre of buoyancy and weight vertically
+      // through the centre of gravity, so those two must share an X in the
+      // posed frame — the frame the water surface is horizontal in.
+      //
+      // The CG travels with the hull. This mesh is pitched about
+      // (targetLcgX, bounds.center.z), so at trim the CG's posed X is
+      //     px - (cgZ - pz) * sin(trim)
+      // — it sits cgZ - pz above the pivot and pitching swings it fore/aft by
+      // exactly that lever. Matching the LCB against the CG's HULL-frame X
+      // instead (which is what rotating both back through the pivot amounts
+      // to) drops that term: on the test hull at 75 kg it is 7.4 mm at the
+      // +3.60 deg equilibrium (7.2 mm at the pre-fix +3.50 deg one), where the
+      // dropped term biased the reported trim by 0.12 deg and left 8.6 mm of
+      // real longitudinal moment reported as a 3.1 mm sweep residual.
+      const posedCgX = targetLcgX - (lcg.z - bounds.center.z) * sinA
+      const offset = Math.abs(res.lcb.x - posedCgX)
       if (offset < bestOffset) {
         bestOffset = offset
         bestAngleDeg = deg
@@ -1685,6 +1696,8 @@ export function solveTrim(
       heelDeg: fixedHeelDeg,
     }
     bestAngleDeg = 0
+    // Zero trim: sin(0) = 0, so the posed CG X collapses onto the hull-frame
+    // one and this is the same residual the sweep measures.
     bestOffset = Math.abs(bestResult.lcb.x - targetLcgX)
   }
 
@@ -1703,19 +1716,24 @@ export function solveTrim(
   // (targetLcgX, bounds.center.y, bounds.center.z), so findDraft0Trim's
   // `minZ`, `draftMm` and `waterlineZ` all belong to that tilted copy: the
   // draft is measured from the tilted hull's lowest point and the waterline is
-  // that point plus the draft. Rotating a hull about a pivot that sits above the
-  // keel lifts the keel by (x_keel - pivot.x) * |sin(trim)| — the tilted hull's
-  // lowest point sits 5.8 mm above the keel at -1.90 deg on the test hull, and
-  // it climbs as the trim deepens — so the datum the draft is measured from
-  // moves with the answer. On this hull at 75 kg that made the reported draft
-  // 7.6 mm short of the true keel-to-waterline distance. It also drifts between
-  // loads: the lift is proportional to sin(trim), so a hull that trims further
-  // under a heavier load carries the extra lift on top of its real sinkage and
-  // reports a waterline that climbed while it floated deeper — which is how
-  // this looked wrong to begin with. The viewer's waterline plane is placed
-  // from that number, so it rode along. LCB and LCF above are already rotated
-  // back into the hull frame; the waterplane needs the same inverse, evaluated
-  // at the station it is reported from:
+  // that point plus the draft. Pitching a hull about a pivot that sits above the
+  // keel lifts that lowest point with the trim — on the test hull it rides
+  // 11.5 mm above the keel at +3.60 deg, and it climbs as the trim deepens — so
+  // the datum the draft is measured from moves with the answer. Two things
+  // follow, both reasons to report in the hull frame instead of reusing the
+  // tilted copy's numbers:
+  //   - the reported draft (waterline at MIDSHIP minus the un-rotated keel) runs
+  //     22 mm more than the keel-to-waterline distance at the keel's own
+  //     station, which sits 294 mm forward of midship on this hull and so is off
+  //     the station the waterline is reported from, on a sloping plane;
+  //   - it drifts between loads: the lift is proportional to sin(trim), so a
+  //     hull that trims further under a heavier load carries the extra lift on
+  //     top of its real sinkage and reports a waterline that climbed while it
+  //     floated deeper — which is how this looked wrong to begin with.
+  // The viewer's waterline plane is placed from the hull-frame number, so it
+  // rides along correctly. LCB and LCF above are already rotated back into the
+  // hull frame; the waterplane needs the same inverse, evaluated at the station
+  // it is reported from:
   //     z' = (z - pz) * c + (x - px) * s + pz  =>  z = pz + (W - pz - (x - px) * s) / c
   const sinT = Math.sin(bestRad)
   const cosT = Math.cos(bestRad)
@@ -1732,9 +1750,9 @@ export function solveTrim(
   // The freeboards read the waterline at each end's own station, so they
   // inherit the tilt: at a bow-down trim the plane stands higher at the bow end
   // and the bow freeboard DROPS. The old form shifted the plane the opposite
-  // way round (`waterlineZ + x * tan(trim)`), putting it 45 mm too low at the
-  // bow end here, which let a bow-down trim GROW the bow freeboard to 153 mm
-  // against the true 61 mm.
+  // way round (`waterlineZ + x * tan(trim)`), which on this pose stands the bow
+  // end 139 mm too high and would report an 83 mm bow freeboard against the
+  // true 222 mm.
 
   return {
     trimDeg: Number(bestAngleDeg.toFixed(2)),

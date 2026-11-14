@@ -19,7 +19,7 @@ for gating a change. Use `verify-*` for that.
 npm test
 ```
 
-Runs all fifteen in order and stops at the first failure.
+Runs all sixteen in order and stops at the first failure.
 
 | File                        | Validates                                                                                                                                                                                                                                                                                                                                                                     |
 | --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -31,6 +31,7 @@ Runs all fifteen in order and stops at the first failure.
 | `verify-gz.ts`              | GZ curve: wall-sided closed form, the same box measured through the geometry path, sign convention, and real hull vs plotted curve                                                                                                                                                                                                                                            |
 | `verify-gz-marks.ts`        | `gzMarks` - empty/single/all-zero/all-negative curves, max ties, peak-last, the scan starting after the peak, AVS as the interpolated zero crossing, the committed hull's real curve, and `endTipWetsBeforeVanishing` - the ordering the panel's "an end immerses first" warning depends on, asserted with both angles present, with a null AVS and with a null end-tip angle |
 | `verify-heel-real.ts`       | Real hull: draft rises and BM falls monotonically with heel                                                                                                                                                                                                                                                                                                                   |
+| `verify-pose-truth.ts`      | The reported pose is a REAL equilibrium, measured without the solver: a 2 mm ray grid column-integrates the posed hull for displaced volume, centre of buoyancy X vs the reported LCG, centre of buoyancy Z vs the reported LCB Z (a height nothing else checks), and both stem-tip freeboards                                                                                |
 | `verify-trim-search.ts`     | The cheap trim search returns exactly the same draft and LCB as the full solve, and the frozen mirror of the search half still matches the production `solveDraftLcb` — 80 cases per floatable hull (4 masses, 4 heel angles, 5 trim angles). Only `test-kayak.stl` is required; the local hulls are optional extras skipped when absent (e.g. on CI)                         |
 | `verify-solve-extras.ts`    | Tier-1 extras against analytic box ground truth (Cwp, Iy/Ix axes, wetted area, TPC, loop count, LCF frame) plus `onAngle`'s coarse→fine ladder and `endTipImmersionDeg`'s three branches                                                                                                                                                                                      |
 | `verify-viewer-scene.ts`    | The `applyResultToScene` seam: solver trim/heel signs reach the scene, the `pivot ?? lcg ?? centre` chain, the mesh-vs-group frame rule for the waterline and both markers, `visible` gating, in-place leader writes, and the seam's purity                                                                                                                                   |
@@ -74,9 +75,12 @@ node tests/test-lcb.mjs
 - The suites are type-checked by `npm run typecheck` (`tsconfig.test.json`), so a type error in
   a suite fails the gate. The handful of Node APIs they use are declared in
   `tests/node-shims.d.ts` — the repo has no `@types/node` dependency.
-- Expected after correct auto-orientation: bounds `2714.4 × 613.1 × 325.1 mm`, trim ≈ `-1.90°`,
-  LCB–LCG offset ≈ `1.64 mm`. The offset is the residual of the 0.1° fine sweep, not an error;
-  a _large_ offset means orientation or bow detection broke.
+- Expected after correct auto-orientation: bounds `2714.4 × 613.1 × 325.1 mm`, trim ≈ `+3.60°`,
+  LCB–LCG offset ≈ `1.68 mm`, bow freeboard ≈ `222.2 mm`, stern freeboard ≈ `22.3 mm`. The offset
+  is the residual of the 0.1° fine sweep, not an error; a _large_ offset means orientation or bow
+  detection broke. `+X` is the bow because the mesh says so — `autoOrientToZUp` no longer guesses
+  the bow from the volume centroid (see AGENTS.md). `verify-pose-truth.ts` checks the same pose
+  against a ray grid that never touches the solver's clipper.
 - The local hulls live in `$KAYAK_LOCAL_HULL_DIR` (default `~/Downloads`). The two open-section
   STLs there (bow, stern) enclose no volume and cannot float; they are optional local extras:
   when present, `verify-trim-search` loads them only to prove it is not silently passing on an

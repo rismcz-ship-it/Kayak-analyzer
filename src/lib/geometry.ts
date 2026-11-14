@@ -269,6 +269,10 @@ export function applyRollX(positions: Float32Array, phiRad: number, pivotY = 0, 
  * and depth on Z. After re-orienting, it checks if the hull is keel-up and flips Z
  * if needed to ensure the deck is up.
  *
+ * Bow and stern are deliberately NOT guessed from the hull's shape — see the
+ * comment at the end of the function for why. The end the mapping places at
+ * +X is the end the rest of the app reports as the bow.
+ *
  * Mutates `positions` in place and returns a short human-readable note of the
  * change.
  */
@@ -316,18 +320,27 @@ export function autoOrientToZUp(positions: Float32Array): string {
     notes.push('Flipped Z for deck-up')
   }
 
-  // Bow vs Stern detection along X using VOLUME centroid (not vertex centroid).
-  // Vertex centroid is biased by STL tessellation density (more triangles at complex stern/cockpit).
-  // Volume centroid accurately represents the hull's mass distribution.
-  // Kayak bow is sharper/finer (less volume/width) than the stern/cockpit region,
-  // so the volume centroid sits towards the stern.
-  // If volumeCentroidX > center.x, the fuller stern is at +X and bow is at -X -> flip 180° around Z.
-  const vol = computeVolumeAndCentroid(positions)
-  const volumeCentroidX = vol.centroid.x
-  if (volumeCentroidX > oriented.center.x) {
-    applyRotateZ180(positions)
-    notes.push('Rotated Z 180° (bow → +X)')
-  }
+  // Bow vs stern is NOT decided here, deliberately. It used to be: the old
+  // heuristic rotated the hull 180° whenever the volume centroid sat towards
+  // +X, on the premise that a kayak's fuller end is its stern. That premise is
+  // a stereotype, not a measurement, and it fails on hulls that are fuller
+  // forward — the committed test hull is one, and the heuristic was actively
+  // mislabelling it, which inverted every freeboard the app reported for it.
+  // No tuning of that test can fix it: on this hull it is false on both
+  // measures (fuller end's enclosed volume, and where the zero-trim LCB
+  // sits), because "fuller forward" and "finer forward" are both real hull
+  // shapes. So orientation stays a pure axis mapping plus the deck-up Z flip.
+  //
+  // The end the mesh places at +X is the end this app calls the bow, and the
+  // LCG default (52% of the length from the bow) is measured from that same
+  // end, so the labels, the trim and the freeboards can never disagree with
+  // one another. If an uploaded-stern-first mesh is ever a real problem it
+  // needs an explicit UI control, not another guess in here.
+  //
+  // `verify-orientation` §1 pins the consequence (orientation is equivariant
+  // under a 180° reversal of the length axis) so the heuristic cannot creep
+  // back in, and `verify-pose-truth` checks the pose it produces is a genuine
+  // equilibrium.
 
   return notes.length > 0 ? notes.join(' · ') : 'Already X-length · Y-beam · Z-up'
 }

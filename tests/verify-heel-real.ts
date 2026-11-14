@@ -12,7 +12,8 @@
  *
  *   1. Draft increases with heel — heeling immerses the low side.
  *   2. BM decreases with heel — the waterplane narrows as it tilts.
- *   3. GM stays finite and the solve reports convergence at every angle.
+ *   3. GM stays finite and the solve reports convergence at every angle,
+ *      within the sweep window the app runs.
  *   4. The waterplane closes into exactly ONE contour.
  *
  * Run: npm exec -- tsx tests/verify-heel-real.ts
@@ -89,8 +90,17 @@ console.log(`\n=== solveTrim (full production path) ===`)
 console.log('heel   trim      draft      BM        GM        conv')
 const trimmed: { heel: number; BM: number }[] = []
 
+// The app's own window — AGENTS.md: the app always passes +/-4.5 deg
+// explicitly, the solver's +/-3.5 deg is only its fallback. That distinction
+// matters at 30 deg heel: buoyancy narrows so much that the trim has to work
+// harder to bring the LCB under the LCG, and this hull's equilibrium sits at
+// ~4.6 deg of trim — outside the fallback window, whose best reachable
+// residual there is 26 mm, so the default-window solve honestly reports
+// non-convergence. The window the app runs closes on it at 4.6 deg.
+const APP_WINDOW = { maxTrimDeg: 4.5, trimStepDeg: 0.1 }
+
 for (const heel of [0, 10, 20, 30]) {
-  const r = solveTrim(mesh, MASS_KG, { fixedHeelDeg: heel })
+  const r = solveTrim(mesh, MASS_KG, { ...APP_WINDOW, fixedHeelDeg: heel })
   trimmed.push({ heel, BM: r.BM })
   console.log(
     `  ${String(heel).padStart(2)}°  ${r.trimDeg.toFixed(2).padStart(6)}  ` +
