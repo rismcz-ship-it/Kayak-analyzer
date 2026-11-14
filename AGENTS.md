@@ -113,13 +113,17 @@ centre of buoyancy, both freeboards) is asserted in `verify-pose-truth.ts`.
 ## Repository Layout
 
 ```
+src/main.tsx                 React entry: mounts <App />
+src/App.tsx                  the app shell: upload, inputs, calculate
 src/lib/geometry.ts          mesh utilities, orientation, decimation, section measurement
 src/lib/hydrostatics.ts      the solver: clipping, coefficients, stability, trim sweep
+src/lib/gz-marks.ts          GZ curve marks: peak, AVS, end-tip warning predicate
+src/lib/format.ts            number formatting helpers (fmt / signed)
 src/lib/viewer-conventions.ts  solver -> Three.js sign translation (trim, heel)
 src/lib/inputs.ts              the input layer: number parsing, input bounds, validation, localStorage restore/persist, scale notices
 src/lib/solver-worker.ts      the solve off the main thread: solveTrim + progress/result messages
 src/lib/solver-client.ts      SolverClient: one worker at a time, progress, cancel
-src/components/               Upload, Viewer3D
+src/components/               GzChart, ResultsPanel, Upload, Viewer3D
 tests/                        assertion suites + diagnostic scripts + the test mesh
 references/                   five target schemas for saved runs (nothing emits them yet)
 sketches/                     standalone HTML UI mockups — design references, not the app
