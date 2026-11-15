@@ -1,26 +1,41 @@
 // Task 2 gate — the Compare roster: record shape, persistence round trip,
-// hostile storage, and the conditions-diff.
+// hostile storage, the creation gate, snapshot immunity and the
+// conditions-diff.
 //
 // Why this suite exists: the roster is the only part of Compare that outlives
 // the session, and it is re-read from localStorage — a string any user, any
-// older app version or any bug can have written. Two failure classes are
-// pinned here, both able to break the Compare tab silently:
+// older app version or any bug can have written. Three failure classes are
+// pinned here, all able to break the Compare tab silently:
 //
 //  1. A MALFORMED OR STALE ROSTER MUST DEGRADE, NEVER CRASH. Absent key,
-//     non-JSON, a JSON non-array, entries with wrong-typed or missing fields,
-//     and a reader that throws (private mode) must all yield [] or a filtered
-//     roster with the valid siblings kept — the tab renders, minus the junk.
-//     `readStoredInputs` established exactly this contract for the home
-//     inputs; the roster keeps it.
+//     non-JSON, a JSON non-array, entries with wrong-typed, missing or
+//     non-finite fields, and a reader that throws (private mode) must all
+//     yield [] or a filtered roster with the valid siblings kept — the tab
+//     renders, minus the junk. `readStoredInputs` established exactly this
+//     contract for the home inputs; the roster keeps it.
 //
 //  2. THE ROUND TRIP MUST BE LOSSLESS. The spec promises a restored record
 //     feeds the whole comparison table and delta column with no blank rows —
 //     so `encodeRoster` → `readRoster` must return the records deep-equal,
 //     `gzCurve` arrays included, or a reload would blank the stability rows.
 //
+//  3. A RECORD IS AN IMMUTABLE SNAPSHOT TAKEN AT CREATION. The creation gate
+//     refuses inputs the form rejects (so a record storage would silently
+//     drop can never exist in memory) and a hash-less record (which could
+//     never be re-picked against its STL); the stored result is a defensive
+//     copy of the caller's (so a later edit of what was passed in cannot
+//     rewrite a saved record another slot may be showing); and the snapshot
+//     is frozen, so an accidental in-place write throws rather than
+//     rewriting it.
+//
 // Validation shares ONE gate with the form: a record's inputs are judged by
 // the same `*Usable` predicates `verify-inputs.ts` drives, so a stored value
 // the form rejects cannot enter the roster through the back door.
+//
+// One comparator note: `JSON.stringify` collapses NaN and null to the same
+// text, so a sameJson-style equality cannot tell a non-finite field from a
+// null one — it would pass exactly the check that must fail. The deepEqual
+// below treats NaN as a value distinct from null.
 //
 // What this suite does NOT cover: the React wiring (roster state in the tab,
 // the delete affordance, the auto-add after a home solve) is JSX, covered by
@@ -39,7 +54,7 @@ import {
   type SlotInputs,
 } from '../src/lib/compare.js'
 import type { TrimSolveResult } from '../src/lib/hydrostatics.js'
-import { type StorageReader, weightUsable } from '../src/lib/inputs.js'
+import type { StorageReader } from '../src/lib/inputs.js'
 
 let failures = 0
 function check(ok: boolean, label: string, detail = ''): void {
@@ -51,8 +66,31 @@ function check(ok: boolean, label: string, detail = ''): void {
   }
 }
 
-function sameJson(a: unknown, b: unknown): boolean {
-  return JSON.stringify(a) === JSON.stringify(b)
+/**
+ * Deep equality that knows NaN is a value, not null. JSON.stringify collapses
+ * both to `null`, so a text comparison calls `{ heelDeg: NaN }` equal to
+ * `{ heelDeg: null }` and passes a check that must fail; plain `===` fails on
+ * structures that legitimately contain NaN. NaN equals itself here, and
+ * nothing else does.
+ */
+function deepEqual(a: unknown, b: unknown): boolean {
+  if (typeof a === 'number' && typeof b === 'number') {
+    return Number.isNaN(a) && Number.isNaN(b) ? true : a === b
+  }
+  if (a === null || b === null || typeof a !== 'object' || typeof b !== 'object') {
+    return a === b
+  }
+  if (Array.isArray(a) !== Array.isArray(b)) return false
+  if (Array.isArray(a) && Array.isArray(b)) {
+    return a.length === b.length && a.every((item, index) => deepEqual(item, b[index]))
+  }
+  const aObj = a as Record<string, unknown>
+  const bObj = b as Record<string, unknown>
+  const aKeys = Object.keys(aObj)
+  return (
+    aKeys.length === Object.keys(bObj).length &&
+    aKeys.every((key) => Object.hasOwn(bObj, key) && deepEqual(aObj[key], bObj[key]))
+  )
 }
 
 // --- a complete, table-rendering result -------------------------------------
@@ -118,11 +156,10 @@ check(built.id.startsWith('rec_'), 'the id carries the rec_ prefix', built.id)
 check(typeof built.id === 'string' && built.id.length > 4, 'the id is a real id', built.id)
 check(built.name === 'Test hull', 'the name is stored verbatim')
 check(built.modelHash === 'a'.repeat(64), 'the model hash is stored verbatim')
-check(sameJson(built.inputs, sampleInputs), 'the inputs are stored as given')
-check(
-  built.result === sampleResult || sameJson(built.result, sampleResult),
-  'the result is the solve result',
-)
+check(deepEqual(built.inputs, sampleInputs), 'the inputs are stored as given')
+check(built.inputs !== sampleInputs, 'the stored inputs are a copy, not the caller object')
+check(deepEqual(built.result, sampleResult), 'the stored result is deep-equal to the solve result')
+check(built.result !== sampleResult, 'the stored result is a defensive copy, not the caller object')
 check(
   Math.abs(built.savedAt - Date.now()) < 5000,
   'savedAt is now',
@@ -146,18 +183,18 @@ check(written.includes('"gzCurve"'), 'the gzCurve array is serialized with the r
 
 const back = readRoster(storage({ [COMPARE_STORAGE_KEY]: written }))
 check(back.length === 2, 'both records survive the round trip', `got ${back.length}`)
-check(sameJson(back[0], built), 'the first record is deep-equal after the round trip')
+check(deepEqual(back[0], built), 'the first record is deep-equal after the round trip')
 check(back[1].result.gzCurve !== undefined, 'the gzCurve survives')
 check(
-  sameJson(back[0].result.gzCurve, sampleResult.gzCurve),
+  deepEqual(back[0].result.gzCurve, sampleResult.gzCurve),
   'the gzCurve is deep-equal after the round trip',
   JSON.stringify(back[0].result.gzCurve),
 )
-check(sameJson(back, [built, built2]), 'the whole roster is deep-equal after the round trip')
+check(deepEqual(back, [built, built2]), 'the whole roster is deep-equal after the round trip')
 
 // An empty roster round-trips to [] rather than null or a throw.
 check(
-  sameJson(readRoster(storage({ [COMPARE_STORAGE_KEY]: '[]' })), []),
+  deepEqual(readRoster(storage({ [COMPARE_STORAGE_KEY]: '[]' })), []),
   'an empty array reads back as []',
 )
 
@@ -165,24 +202,24 @@ check(
 
 console.log('\n=== hostile storage ===')
 
-check(sameJson(readRoster(storage({})), []), 'an absent key yields []')
+check(deepEqual(readRoster(storage({})), []), 'an absent key yields []')
 check(
-  sameJson(readRoster(storage({ [COMPARE_STORAGE_KEY]: null })), []),
+  deepEqual(readRoster(storage({ [COMPARE_STORAGE_KEY]: null })), []),
   'a null payload yields []',
 )
 check(
-  sameJson(readRoster(storage({ [COMPARE_STORAGE_KEY]: '{not json' })), []),
+  deepEqual(readRoster(storage({ [COMPARE_STORAGE_KEY]: '{not json' })), []),
   'malformed JSON yields []',
 )
 check(
-  sameJson(readRoster(storage({ [COMPARE_STORAGE_KEY]: '42' })), []),
+  deepEqual(readRoster(storage({ [COMPARE_STORAGE_KEY]: '42' })), []),
   'a JSON primitive yields []',
 )
 check(
-  sameJson(readRoster(storage({ [COMPARE_STORAGE_KEY]: '{"records": []}' })), []),
+  deepEqual(readRoster(storage({ [COMPARE_STORAGE_KEY]: '{"records": []}' })), []),
   'a JSON object yields []',
 )
-check(sameJson(readRoster(storage({ [COMPARE_STORAGE_KEY]: 'null' })), []), 'JSON null yields []')
+check(deepEqual(readRoster(storage({ [COMPARE_STORAGE_KEY]: 'null' })), []), 'JSON null yields []')
 
 const storageThrows: StorageReader = () => {
   throw new Error('storage is disabled (private mode)')
@@ -194,7 +231,7 @@ try {
   escaped = true
 }
 check(!escaped, 'a throwing reader does not escape readRoster')
-check(sameJson(readRoster(storageThrows), []), 'a throwing reader yields []')
+check(deepEqual(readRoster(storageThrows), []), 'a throwing reader yields []')
 
 // --- 4. entry validation filters, keeps siblings -----------------------------
 
@@ -212,7 +249,7 @@ function rosterWith(...entries: Array<Record<string, unknown>>): RunRecord[] {
 }
 
 check(
-  sameJson(
+  deepEqual(
     rosterWith(valid).map((r) => r.id),
     ['rec_valid'],
   ),
@@ -225,76 +262,249 @@ const badEntries: Array<[string, Record<string, unknown>]> = [
   ['a non-string id', entry({ id: 7 })],
   ['a missing name', entry({ name: undefined })],
   ['a missing modelHash', entry({ modelHash: undefined })],
+  ['an empty modelHash', entry({ modelHash: '' })],
   ['a missing result', entry({ result: undefined })],
   ['a non-object result', entry({ result: 5 })],
   ['a result missing gzCurve', entry({ result: { ...sampleResult, gzCurve: undefined } })],
   ['a gzCurve that is not an array', entry({ result: { ...sampleResult, gzCurve: {} } })],
+  ['a gzCurve with a null element', entry({ result: { ...sampleResult, gzCurve: [null] } })],
+  ['a gzCurve with an empty-object element', entry({ result: { ...sampleResult, gzCurve: [{}] } })],
+  ['a gzCurve with a numeric element', entry({ result: { ...sampleResult, gzCurve: [42] } })],
+  ['a gzCurve with a string element', entry({ result: { ...sampleResult, gzCurve: ['x'] } })],
+  [
+    'a gzCurve element missing GZ',
+    entry({ result: { ...sampleResult, gzCurve: [{ heelDeg: 5 }] } }),
+  ],
+  [
+    'a gzCurve element with a NaN',
+    entry({ result: { ...sampleResult, gzCurve: [{ heelDeg: NaN, GZ: 0 }] } }),
+  ],
+  [
+    'a result missing a required number',
+    entry({ result: { ...sampleResult, draftMm: undefined } }),
+  ],
+  [
+    'a result with a wrong-typed required number',
+    entry({ result: { ...sampleResult, draftMm: '127.94' } }),
+  ],
+  ['a result with a NaN required number', entry({ result: { ...sampleResult, draftMm: NaN } })],
+  ['an lcb missing its z', entry({ result: { ...sampleResult, lcb: { x: -59.95, y: 0.1 } } })],
+  ['a wrong-typed lcb', entry({ result: { ...sampleResult, lcb: 'centre' } })],
   ['a missing inputs', entry({ inputs: undefined })],
   ['inputs with a wrong type', entry({ inputs: { ...sampleInputs, weightKg: '75' } })],
+  ['inputs with a null field', entry({ inputs: { ...sampleInputs, weightKg: null } })],
   ['inputs out of range', entry({ inputs: { ...sampleInputs, kgMm: 0 } })],
   ['a missing savedAt', entry({ savedAt: undefined })],
 ]
 for (const [label, bad] of badEntries) {
   const kept = rosterWith(bad, valid).map((r) => r.id)
   check(
-    sameJson(kept, ['rec_valid']),
+    deepEqual(kept, ['rec_valid']),
     `${label} is filtered out, the valid sibling survives`,
     JSON.stringify(kept),
   )
 }
 
-// The weight bound is the shared gate with the form: whatever the form rejects
-// cannot restore into the roster.
-check(weightUsable(75) && !weightUsable(19), 'the shared weight predicate is in force')
-const outOfRange = rosterWith(
-  entry({ id: 'rec_oor', inputs: { ...sampleInputs, weightKg: 19 } }),
-  valid,
-)
+// --- 5. the shared bounds gate, at both doors ---------------------------------
+
+console.log('\n=== the bounds gate ===')
+
+// The form's own bounds, checked at BOTH doors: a stored record carrying one
+// is filtered, and a fresh one cannot even be built — the creation gate the
+// back door would otherwise leave open.
+const boundsLadder: Array<[string, string, Partial<SlotInputs>]> = [
+  ['a 19 kg weight', 'weightKg', { weightKg: 19 }],
+  ['a 101 % LCG', 'lcgPctLwl', { lcgPctLwl: 101 }],
+  ['a 31 degree heel', 'heelDeg', { heelDeg: 31 }],
+  ['a 1001 mm KG', 'kgMm', { kgMm: 1001 }],
+]
+for (const [label, field, patch] of boundsLadder) {
+  const kept = rosterWith(
+    entry({ id: 'rec_bound', inputs: { ...sampleInputs, ...patch } }),
+    valid,
+  ).map((r) => r.id)
+  check(
+    deepEqual(kept, ['rec_valid']),
+    `${label} is filtered out of a stored roster`,
+    JSON.stringify(kept),
+  )
+  let message = ''
+  try {
+    recordFromSolve('bound', 'a'.repeat(64), { ...sampleInputs, ...patch }, sampleResult)
+  } catch (error) {
+    message = error instanceof Error ? error.message : String(error)
+  }
+  check(message !== '', `${label} is refused by recordFromSolve`, 'no throw')
+  check(message.includes(field), `${label} names the field it refused`, message)
+}
+
+// And the in-range edges still build and restore: the gate is not over-tight.
+const edgeInputs: SlotInputs = { weightKg: 20, lcgPctLwl: 100, kgMm: 1000, heelDeg: 30 }
+const edgeRecord = recordFromSolve('Edges', 'c'.repeat(64), edgeInputs, sampleResult)
 check(
-  sameJson(
-    outOfRange.map((r) => r.id),
-    ['rec_valid'],
-  ),
-  'a 19 kg record cannot enter the roster',
+  readRoster(storage({ [COMPARE_STORAGE_KEY]: encodeRoster([edgeRecord]) })).length === 1,
+  'the in-range edges (20 kg, 100 %, 1000 mm, 30 degrees) build and restore',
 )
 
-// --- 5. deleteRecord ---------------------------------------------------------
+// A record with no hash can never be re-picked against its STL, so creation
+// refuses it too.
+let hashMessage = ''
+try {
+  recordFromSolve('No hash', '', sampleInputs, sampleResult)
+} catch (error) {
+  hashMessage = error instanceof Error ? error.message : String(error)
+}
+check(hashMessage !== '', 'an empty modelHash is refused by recordFromSolve', 'no throw')
+check(hashMessage.includes('modelHash'), 'the refusal names modelHash', hashMessage)
+
+// --- 6. snapshot immunity -----------------------------------------------------
+
+console.log('\n=== snapshot immunity ===')
+
+// The caller's objects keep moving after the record exists — Task 6's slot
+// panel edits the inputs it adopted, Task 7's auto-roster holds the app's
+// live solve result — and neither may rewrite a saved record another slot
+// may be showing.
+const looseInputs: SlotInputs = { ...sampleInputs }
+const looseResult: TrimSolveResult = {
+  ...sampleResult,
+  lcb: { ...sampleResult.lcb },
+  lcg: { ...sampleResult.lcg },
+  pivot: { ...sampleResult.pivot },
+  gzCurve: sampleResult.gzCurve.map((point) => ({ ...point })),
+}
+const snapshot = recordFromSolve('Snapshot', 'a'.repeat(64), looseInputs, looseResult)
+looseInputs.weightKg = 90
+looseInputs.kgMm = 500
+looseResult.trimDeg = -3.6
+looseResult.lcb.x = 999
+looseResult.gzCurve[1] = { heelDeg: 5, GZ: 0 }
+check(
+  snapshot.inputs.weightKg === 75 && snapshot.inputs.kgMm === 280,
+  'editing the caller inputs does not rewrite the record',
+  JSON.stringify(snapshot.inputs),
+)
+check(snapshot.result.trimDeg === 3.6, 'editing the caller result does not rewrite the record')
+check(snapshot.result.lcb.x === -59.95, 'the centre vectors are private copies')
+check(
+  deepEqual(snapshot.result.gzCurve[1], { heelDeg: 5, GZ: 8.9 }),
+  'the gzCurve points are private copies',
+)
+
+// Frozen: an accidental in-place write throws instead of silently rewriting.
+const frozenTop = snapshot.result as { trimDeg: number }
+const frozenVec = snapshot.result.lcb as { x: number }
+let topWriteThrew = false
+let vecWriteThrew = false
+try {
+  frozenTop.trimDeg = 0
+} catch {
+  topWriteThrew = true
+}
+try {
+  frozenVec.x = 1
+} catch {
+  vecWriteThrew = true
+}
+check(topWriteThrew, 'the snapshot is frozen — an in-place write throws')
+check(vecWriteThrew, 'the nested centre vector is frozen too')
+check(snapshot.result.trimDeg === 3.6, 'the refused write leaves the value intact')
+
+// Purity: the roster functions hand back new containers, never their input.
+const purityRoster = [built, built2]
+const purityOut = deleteRecord(purityRoster, built.id)
+check(purityOut !== purityRoster, 'deleteRecord returns a new array')
+check(
+  purityRoster.length === 2 && purityRoster[0] === built,
+  'deleteRecord leaves its input array untouched',
+)
+check(purityOut[0] === built2, 'the surviving records are carried over, not re-cloned')
+
+const freshA = readRoster(storage({ [COMPARE_STORAGE_KEY]: written }))
+const freshB = readRoster(storage({ [COMPARE_STORAGE_KEY]: written }))
+check(freshA[0] !== freshB[0], 'each read parses fresh objects — reads do not share')
+freshA[0].inputs.weightKg = 90
+check(freshB[0].inputs.weightKg === 75, 'mutating one read does not touch another')
+
+// --- 7. non-finite values -----------------------------------------------------
+
+console.log('\n=== non-finite values ===')
+
+// The comparator itself, first: JSON cannot tell NaN from null, so a text
+// comparison would wave the junk through.
+check(deepEqual({ v: Number.NaN }, { v: Number.NaN }), 'deepEqual matches a NaN against itself')
+check(!deepEqual({ v: Number.NaN }, { v: null }), 'deepEqual tells NaN from null')
+check(
+  JSON.stringify({ v: Number.NaN }) === JSON.stringify({ v: null }),
+  'JSON text really does collapse the two — the reason deepEqual exists',
+)
+
+// What storage does with a NaN: JSON writes null, and null is not a number,
+// so the record drops and its valid sibling survives.
+const nanResult: TrimSolveResult = { ...sampleResult, trimDeg: Number.NaN }
+const nanRecord = recordFromSolve('NaN hull', 'd'.repeat(64), sampleInputs, nanResult)
+const nanText = encodeRoster([nanRecord, built])
+check(
+  nanText.includes('"trimDeg":null'),
+  'encodeRoster writes a NaN as null',
+  nanText.slice(0, 120),
+)
+const afterNan = readRoster(storage({ [COMPARE_STORAGE_KEY]: nanText }))
+check(
+  afterNan.length === 1,
+  'the NaN record is dropped, its valid sibling survives',
+  `got ${afterNan.length}`,
+)
+check(afterNan[0].id === built.id, 'the surviving sibling is the valid one')
+
+// The inputs are no different: a NaN input restores as null and is filtered.
+const nanInputsText = JSON.stringify([
+  entry({ id: 'rec_nan_inputs', inputs: { ...sampleInputs, weightKg: Number.NaN } }),
+  valid,
+])
+check(nanInputsText.includes('"weightKg":null'), 'JSON writes a NaN input as null too')
+check(
+  readRoster(storage({ [COMPARE_STORAGE_KEY]: nanInputsText })).length === 1,
+  'a NaN input is filtered, the valid sibling survives',
+)
+
+// --- 8. deleteRecord ---------------------------------------------------------
 
 console.log('\n=== deleteRecord ===')
 
 const three = [built, built2, { ...built2, id: 'rec_third' }]
-check(sameJson(deleteRecord(three, 'nope'), three), 'deleting a missing id changes nothing')
+check(deepEqual(deleteRecord(three, 'nope'), three), 'deleting a missing id changes nothing')
 check(
-  sameJson(
+  deepEqual(
     deleteRecord(three, built.id).map((r) => r.id),
     [built2.id, 'rec_third'],
   ),
   'the target is removed exactly',
 )
-check(sameJson(deleteRecord(three, 'rec_third')[1], built2), 'the other records are untouched')
+check(deepEqual(deleteRecord(three, 'rec_third')[1], built2), 'the other records are untouched')
 
-// --- 6. conditionsDiffer -----------------------------------------------------
+// --- 9. conditionsDiffer -----------------------------------------------------
 
 console.log('\n=== conditionsDiffer ===')
 
 const same = { weightKg: 75, lcgPctLwl: 52, kgMm: 280, heelDeg: 0 }
-check(sameJson(conditionsDiffer(same, sampleInputs), []), 'identical inputs produce no labels')
+check(deepEqual(conditionsDiffer(same, sampleInputs), []), 'identical inputs produce no labels')
 check(
-  sameJson(conditionsDiffer(same, { ...same, weightKg: 80 }), ['weight']),
+  deepEqual(conditionsDiffer(same, { ...same, weightKg: 80 }), ['weight']),
   'a differing weight is named',
   JSON.stringify(conditionsDiffer(same, { ...same, weightKg: 80 })),
 )
 check(
-  sameJson(conditionsDiffer(same, { ...same, lcgPctLwl: 55 }), ['LCG']),
+  deepEqual(conditionsDiffer(same, { ...same, lcgPctLwl: 55 }), ['LCG']),
   'a differing LCG is named',
 )
-check(sameJson(conditionsDiffer(same, { ...same, kgMm: 300 }), ['KG']), 'a differing KG is named')
+check(deepEqual(conditionsDiffer(same, { ...same, kgMm: 300 }), ['KG']), 'a differing KG is named')
 check(
-  sameJson(conditionsDiffer(same, { ...same, heelDeg: 10 }), ['heel']),
+  deepEqual(conditionsDiffer(same, { ...same, heelDeg: 10 }), ['heel']),
   'a differing heel is named',
 )
 check(
-  sameJson(conditionsDiffer(same, { weightKg: 80, lcgPctLwl: 55, kgMm: 300, heelDeg: 10 }), [
+  deepEqual(conditionsDiffer(same, { weightKg: 80, lcgPctLwl: 55, kgMm: 300, heelDeg: 10 }), [
     'weight',
     'LCG',
     'KG',
