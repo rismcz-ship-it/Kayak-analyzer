@@ -2,8 +2,8 @@
 //
 // The repository has no `@types/node` dependency: the app itself is
 // browser-only, and the suites only need a handful of Node APIs. Without
-// these declarations `tsc` cannot see `node:fs`, `node:url` or `process` at
-// all, and the test program would not type-check.
+// these declarations `tsc` cannot see `node:fs`, `node:url`, `node:crypto` or
+// `process` at all, and the test program would not type-check.
 //
 // This file declares exactly the surface the suites use. If a suite starts
 // using more of Node, extend it here — a missing declaration fails the
@@ -24,6 +24,12 @@ declare module 'node:url' {
 
 declare module 'node:os' {
   export function homedir(): string
+}
+
+declare module 'node:crypto' {
+  export function createHash(algorithm: string): {
+    update(data: Buffer): { digest(encoding: string): string }
+  }
 }
 
 declare const process: {

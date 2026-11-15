@@ -107,6 +107,10 @@ function asMesh(positions: Float32Array): LoadedMesh {
     stats,
     orientNote: 'oriented · centered by (0.0, 0.0, 0.0) mm',
     scaleAdvice: scaleAdviceFor(stats.bounds.size),
+    // Not hashed here — this suite pins the geometry path; the hash itself is
+    // pinned in verify-model-hash.ts. The empty-bytes digest keeps it a real
+    // hash literal rather than a placeholder.
+    sha256Hex: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
   }
 }
 

@@ -11,6 +11,7 @@ import {
   type ScaleAdvice,
   scaleAdviceFor,
 } from '../lib/geometry'
+import { SECURE_CONTEXT_ERROR, sha256Hex } from '../lib/model-hash'
 
 export const MAX_UPLOAD_BYTES = 25 * 1024 * 1024 // 25 MB cap, in-memory only
 
@@ -31,6 +32,12 @@ export interface LoadedMesh {
   orientNote: string
   /** Unit sanity flag from the oriented bounds; undefined when nothing is off. */
   scaleAdvice?: ScaleAdvice
+  /**
+   * SHA-256 (lowercase hex) of the file's RAW bytes, computed at load before
+   * orientation or centring. The mesh's identity: it survives the ×1000
+   * rescale (same file, corrected units) and identifies re-picks.
+   */
+  sha256Hex: string
 }
 
 /**
@@ -63,6 +70,9 @@ export function rescaleMesh(mesh: LoadedMesh, factor: number): LoadedMesh {
     // short for a boat.
     scaleAdvice: fresh?.kind === 'metres' ? undefined : fresh,
     orientNote: `${mesh.orientNote} · ×${factor} applied to reach mm`,
+    // The hash describes the file, not the vertices: the user correcting the
+    // units of the same STL must not change its identity.
+    sha256Hex: mesh.sha256Hex,
   }
 }
 
@@ -91,6 +101,8 @@ export default function Upload({ onLoaded, compact = false }: UploadProps) {
       setBusy(true)
       try {
         const buffer = await file.arrayBuffer()
+        // Identity of the RAW bytes, before any pipeline step can rewrite them.
+        const hash = await sha256Hex(buffer)
         const geometry = new STLLoader().parse(buffer) // non-indexed, mm units
 
         const positions = geometry.getAttribute('position').array as Float32Array
@@ -121,10 +133,14 @@ export default function Upload({ onLoaded, compact = false }: UploadProps) {
           stats,
           scaleAdvice,
           orientNote: fullNote,
+          sha256Hex: hash,
         })
       } catch (err) {
+        const message = err instanceof Error ? err.message : 'unknown error'
+        // A secure-context refusal is about the page, not this file: "Could not
+        // parse" would send the user hunting a corrupt STL that parses fine.
         setError(
-          `Could not parse ${file.name}: ${err instanceof Error ? err.message : 'unknown error'}`,
+          message === SECURE_CONTEXT_ERROR ? message : `Could not parse ${file.name}: ${message}`,
         )
       } finally {
         setBusy(false)
