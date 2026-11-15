@@ -10,6 +10,10 @@
 // - `findDraft0Trim`  — draft and displacement at a fixed trim/heel.
 // - `solveTrim`       — full solve: trim sweep, form coefficients, stability, GZ curve.
 // - `solveDraftLcb`   — the search half of `findDraft0Trim` (waterline + LCB only).
+// - `endTipImmersionHeelDeg` — the heel at which a stem tip immerses, from a
+//   curve's samples. Exported for the run-record import, which recomputes
+//   the angle from the freeboards the format carries instead of asserting
+//   "never immerses" for every foreign record.
 
 import {
   applyPitchY,
@@ -172,7 +176,17 @@ export interface TrimSolveResult {
   lcg: Vec3
   /** Rotation pivot used by solver (X, Y, Z). Matches applyPitchY pivot. */
   pivot: { x: number; y: number; z: number }
-  /** Longitudinal offset between LCB and LCG (|LCB_x - LCG_x|) in mm. */
+  /**
+   * Longitudinal offset between the centre of buoyancy and the centre of
+   * gravity, in mm, measured in the POSED frame — the frame the waterplane
+   * is horizontal in, which is the frame trim equilibrium is a property of.
+   * It is the residual the trim sweep closes on (see {@link solveTrim}),
+   * and it is NOT the hull-frame `Math.abs(lcb.x - lcg.x)`: the hull is
+   * pitched about {@link TrimSolveResult.pivot}, and that difference
+   * carries the pivot term the pose removes. On the test hull at 75 kg the
+   * two differ by about 6x (1.68 against 10.41 mm), so a saved run must
+   * CARRY this number (`lcb_lcg_offset_mm`) rather than re-derive it.
+   */
   lcbLcgOffsetMm: number
   /** Waterplane area in mm^2. */
   waterplaneAreaMm2: number
@@ -1399,7 +1413,7 @@ export function compute_gz_curve_geometric(
  * number this returns is "first water at an extremity", not "first water over
  * the deck". Callers that label it must choose their wording accordingly.
  */
-function endTipImmersionHeelDeg(curve: GZPoint[]): number | null {
+export function endTipImmersionHeelDeg(curve: GZPoint[]): number | null {
   const freeboard = (i: number): number | undefined => curve[i]?.minFreeboardMm
   if (curve.length === 0 || freeboard(0) === undefined) return null
 

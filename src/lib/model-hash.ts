@@ -20,6 +20,15 @@
 export const SECURE_CONTEXT_ERROR =
   'This page must be served over https or localhost to hash the model (crypto.subtle is unavailable)'
 
+/**
+ * The shape every hash this module issues has: 64 lowercase hex characters
+ * (`toString(16)` never emits uppercase, and SHA-256 is 32 bytes). The
+ * run-record import judges an incoming `model_hash` by this same pattern, so
+ * the identity a document claims is checked against the one definition of a
+ * hash rather than a second copy free to drift from the first.
+ */
+export const SHA256_HEX_PATTERN = /^[0-9a-f]{64}$/
+
 export async function sha256Hex(bytes: ArrayBuffer): Promise<string> {
   if (!crypto?.subtle) {
     throw new Error(SECURE_CONTEXT_ERROR)

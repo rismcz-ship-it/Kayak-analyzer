@@ -25,13 +25,21 @@
  *
  * Layering: the imports are the `TrimSolveResult` and `GZPoint` types (erased
  * at compile time), the `Vec3` type, one unit constant (`MM3_PER_KG`, fresh
- * water) and four value predicates from `inputs.ts`. Framework-free, so the
+ * water), one solver function (`endTipImmersionHeelDeg` — the only diagnostic
+ * an import recomputes), the pattern `sha256Hex`'s own output is checked
+ * against, and four value predicates from `inputs.ts`. Framework-free, so the
  * suite runs in Node with no browser shims.
  */
 
 import type { Vec3 } from './geometry'
-import { type GZPoint, MM3_PER_KG, type TrimSolveResult } from './hydrostatics'
+import {
+  endTipImmersionHeelDeg,
+  type GZPoint,
+  MM3_PER_KG,
+  type TrimSolveResult,
+} from './hydrostatics'
 import { heelUsable, kgUsable, lcgUsable, type StorageReader, weightUsable } from './inputs'
+import { SHA256_HEX_PATTERN } from './model-hash'
 
 /** One slot's conditions. Heel 0 is upright; + heels the −Y side down. */
 export interface SlotInputs {
@@ -55,12 +63,15 @@ export interface RunRecord {
   /**
    * The solved metrics the comparison renders. A record built by
    * `recordFromSolve` carries the solver's whole result; one restored from
-   * storage, or imported from a run record in Task 3, is guaranteed only the
-   * subset `readRoster` validates — `RESULT_NUMBERS` plus the two vectors and
-   * `gzCurve`. The solve's diagnostics (`planesEvaluated`, `pivot`,
-   * `wettedSurfaceAreaMm2` and the rest) may be absent there, so no Compare
-   * consumer may read them off a stored record; the comparison table's rows
-   * all sit inside the guaranteed subset.
+   * storage is guaranteed only the subset `readRoster` validates —
+   * `RESULT_NUMBERS` plus the two vectors and `gzCurve`. The solve's
+   * diagnostics (`planesEvaluated`, `wettedSurfaceAreaMm2` and the rest)
+   * may be absent on such a record, so no Compare consumer may read them
+   * off one; the comparison table's rows all sit inside the guaranteed
+   * subset. The rotation `pivot` is the one diagnostic the run-record
+   * format carries (`pivot_xyz`), so an IMPORTED record has the solver's
+   * own rotation centre — the pivot a live solve used, not the LCG a
+   * fallback would guess.
    */
   result: TrimSolveResult
   savedAt: number
@@ -205,6 +216,9 @@ export function conditionsDiffer(a: SlotInputs, b: SlotInputs): string[] {
 
 // --- run-record export / import ----------------------------------------------
 
+/** One `[x, y, z]`, in the hull's own frame, as the schema spells it. */
+type Xyz = [number, number, number]
+
 /**
  * The run-record document `references/kayak_analyzer_solver.json` describes:
  * the one Compare artifact meant to leave the browser, and the contract the
@@ -214,15 +228,68 @@ export function conditionsDiffer(a: SlotInputs, b: SlotInputs): string[] {
  * it, `stations_csv_path`, `solver_time_ms`) are not, because nothing in the
  * app produces them.
  *
+ * The document CARRIES what the solver reported rather than what a reader
+ * could re-derive: `lcb_lcg_offset_mm` is the sweep residual (not the
+ * hull-frame `|lcb.x − lcg.x|`, which is a different quantity — see
+ * `TrimSolveResult.lcbLcgOffsetMm`) and `pivot_xyz` is the rotation centre
+ * the solve used (not the LCG). Each GZ sample carries the stem-tip
+ * clearance that was measured for it, so a reader can recompute the end-tip
+ * immersion angle instead of asserting "never immerses".
+ *
  * Volume is the one unit that changes hands: the solver counts mm³, the
  * format records liters, and fresh water makes them the same measurement
- * (1 L = 1 kg = {@link MM3_PER_KG} mm³). The identity is applied exactly, so
- * a record round-trips its volume. The GZ curve is always emitted — the
- * schema marks it optional for records other tools trim — and an import that
- * finds none reads an empty curve rather than refusing the document.
+ * (1 L = 1 kg = {@link MM3_PER_KG} mm³). The identity is applied exactly,
+ * so a document this app wrote round-trips byte-stable. A FOREIGN document
+ * can come back one ulp adrift: for a general double the multiply and the
+ * divide each round, and the two compose — the suite pins that as a ≤ 1 ulp
+ * bound rather than pretending it is exact.
  */
-export function exportRunRecord(record: RunRecord): unknown {
+export interface RunRecordDocument {
+  model_hash: string
+  targets: {
+    weight_kg: number
+    lcg_pct_lwl: number
+    kg_mm: number
+    heel_deg: number
+  }
+  results: {
+    draft_mm: number
+    trim_deg: number
+    lwl_mm: number
+    bwl_mm: number
+    volume_liters: number
+    lcb_xyz: Xyz
+    lcg_xyz: Xyz
+    lcb_lcg_offset_mm: number
+    pivot_xyz: Xyz
+    bow_freeboard_mm: number
+    stern_freeboard_mm: number
+    waterline_z_mm: number
+    gz_curve?: { heel_deg: number; gz_mm: number; min_freeboard_mm?: number }[]
+  }
+  coefficients: {
+    cb: number
+    cp: number
+    cm: number
+    kb_mm: number
+    bm_mm: number
+    km_mm: number
+    gm_mm: number
+    cwp: number
+    lcf_mm: number
+    tpc: number
+  }
+  /** The source STL's file name; optional in the schema, always emitted here. */
+  file_name?: string
+  /** Only `full_coefficients` is produced or read — the import refuses the rest. */
+  phase: 'full_coefficients'
+}
+
+export function exportRunRecord(record: RunRecord): RunRecordDocument {
   const r = record.result
+  const lcbXyz: Xyz = [r.lcb.x, r.lcb.y, r.lcb.z]
+  const lcgXyz: Xyz = [r.lcg.x, r.lcg.y, r.lcg.z]
+  const pivotXyz: Xyz = [r.pivot.x, r.pivot.y, r.pivot.z]
   return {
     model_hash: record.modelHash,
     targets: {
@@ -237,12 +304,18 @@ export function exportRunRecord(record: RunRecord): unknown {
       lwl_mm: r.LWL,
       bwl_mm: r.BWL,
       volume_liters: r.displacedVolumeMm3 / MM3_PER_KG,
-      lcb_xyz: [r.lcb.x, r.lcb.y, r.lcb.z],
-      lcg_xyz: [r.lcg.x, r.lcg.y, r.lcg.z],
+      lcb_xyz: lcbXyz,
+      lcg_xyz: lcgXyz,
+      lcb_lcg_offset_mm: r.lcbLcgOffsetMm,
+      pivot_xyz: pivotXyz,
       bow_freeboard_mm: r.bowFreeboardMm,
       stern_freeboard_mm: r.sternFreeboardMm,
       waterline_z_mm: r.waterlineZ,
-      gz_curve: r.gzCurve.map((point) => ({ heel_deg: point.heelDeg, gz_mm: point.GZ })),
+      gz_curve: r.gzCurve.map((point) => ({
+        heel_deg: point.heelDeg,
+        gz_mm: point.GZ,
+        min_freeboard_mm: point.minFreeboardMm,
+      })),
     },
     coefficients: {
       cp: r.Cp,
@@ -274,6 +347,7 @@ const RESULT_KEYS = [
   'lwl_mm',
   'bwl_mm',
   'volume_liters',
+  'lcb_lcg_offset_mm',
   'bow_freeboard_mm',
   'stern_freeboard_mm',
   'waterline_z_mm',
@@ -292,6 +366,17 @@ const COEFFICIENT_KEYS = [
   'lcf_mm',
   'tpc',
 ] as const
+
+/**
+ * The document's OWN field, or undefined when only the prototype has it.
+ * Every read goes through this: a parsed JSON object still inherits
+ * Object.prototype, and a page whose prototype carries `targets` (or
+ * anything else a required field is named) must not turn "missing" into
+ * "found" for a document that never wrote it.
+ */
+function ownField(parent: Record<string, unknown>, key: string): unknown {
+  return Object.hasOwn(parent, key) ? parent[key] : undefined
+}
 
 function readObject(value: unknown, path: string): Read<Record<string, unknown>> {
   if (value === undefined) return { ok: false, error: `${path} is missing` }
@@ -313,20 +398,30 @@ function readNumbers(
 ): Read<Record<string, number>> {
   const out: Record<string, number> = {}
   for (const key of keys) {
-    // hasOwn, not `in`: a JSON object still inherits Object.prototype, and a
-    // document that names a constructor key must not pass as a schema field.
-    if (!Object.hasOwn(parent, key)) return { ok: false, error: `${path}.${key} is missing` }
-    const field = parent[key]
-    if (typeof field !== 'number' || !Number.isFinite(field)) {
-      return { ok: false, error: `${path}.${key} must be a number` }
-    }
-    out[key] = field
+    const read = readNumber(parent, key, path)
+    if (!read.ok) return read
+    out[key] = read.value
   }
   return { ok: true, value: out }
 }
 
+/**
+ * One named number. `hasOwn`, not a plain read: a JSON object still inherits
+ * Object.prototype, and a document that relies on an inherited `constructor`
+ * to satisfy a required field must not pass as one that names it.
+ */
+function readNumber(parent: Record<string, unknown>, key: string, path: string): Read<number> {
+  if (!Object.hasOwn(parent, key)) return { ok: false, error: `${path}.${key} is missing` }
+  const field = parent[key]
+  if (typeof field !== 'number' || !Number.isFinite(field)) {
+    return { ok: false, error: `${path}.${key} must be a number` }
+  }
+  return { ok: true, value: field }
+}
+
 /** One `[x, y, z]` array, exactly three finite numbers. */
 function readVec3(parent: Record<string, unknown>, key: string, path: string): Read<Vec3> {
+  if (!Object.hasOwn(parent, key)) return { ok: false, error: `${path}.${key} is missing` }
   const field = parent[key]
   if (!Array.isArray(field) || field.length !== 3) {
     return { ok: false, error: `${path}.${key} must be an array of three numbers` }
@@ -344,7 +439,10 @@ function readVec3(parent: Record<string, unknown>, key: string, path: string): R
 /**
  * The optional curve. Absent reads as empty (a trimmed record): the schema
  * marks the field optional, so its absence is not an error — but a present
- * one that is not an array of `{heel_deg, gz_mm}` pairs is.
+ * one that is not an array of `{heel_deg, gz_mm}` pairs is. Each sample may
+ * also carry its `min_freeboard_mm`, the stem-tip clearance the end-tip
+ * immersion angle is recomputed from; it is optional, and a present one
+ * must be a number.
  */
 function readGzCurve(value: unknown): Read<GZPoint[]> {
   if (value === undefined) return { ok: true, value: [] }
@@ -361,8 +459,8 @@ function readGzCurve(value: unknown): Read<GZPoint[]> {
       }
     }
     const sample = element as Record<string, unknown>
-    const heel = sample.heel_deg
-    const arm = sample.gz_mm
+    const heel = ownField(sample, 'heel_deg')
+    const arm = ownField(sample, 'gz_mm')
     if (
       typeof heel !== 'number' ||
       !Number.isFinite(heel) ||
@@ -374,9 +472,66 @@ function readGzCurve(value: unknown): Read<GZPoint[]> {
         error: `results.gz_curve[${index}] must be an object with heel_deg and gz_mm`,
       }
     }
-    points.push({ heelDeg: heel, GZ: arm })
+    const point: GZPoint = { heelDeg: heel, GZ: arm }
+    const freeboard = ownField(sample, 'min_freeboard_mm')
+    if (freeboard !== undefined) {
+      if (typeof freeboard !== 'number' || !Number.isFinite(freeboard)) {
+        return {
+          ok: false,
+          error: `results.gz_curve[${index}].min_freeboard_mm must be a number`,
+        }
+      }
+      point.minFreeboardMm = freeboard
+    }
+    points.push(point)
   }
   return { ok: true, value: points }
+}
+
+/**
+ * Numbers that must clear a plausibility bar, not merely be finite. The
+ * schema types every result field `number`, so `readNumbers` stops at "is a
+ * number"; without this pass a hand-edited document could state a negative
+ * displacement, a zero waterline length or a negative draft straight into a
+ * Compare row. The bar is per field group, and the failure names the dotted
+ * path and the bar together.
+ */
+const RESULT_KEYS_POSITIVE = ['volume_liters', 'lwl_mm', 'bwl_mm'] as const
+const RESULT_KEYS_NON_NEGATIVE = ['draft_mm', 'lcb_lcg_offset_mm'] as const
+const COEFFICIENT_KEYS_NON_NEGATIVE = [
+  'cb',
+  'cp',
+  'cm',
+  'kb_mm',
+  'bm_mm',
+  'km_mm',
+  'cwp',
+  'tpc',
+] as const
+
+/**
+ * The first field of this group outside its bar, as a `results.x …` message,
+ * or null. Runs after `readNumbers` proved every listed field an own finite
+ * number, and re-checks ownership rather than trusting that earlier pass.
+ * GM is deliberately absent from every list: a negative GM is a real
+ * (unstable) answer, not a corrupt input.
+ */
+function magnitudeProblem(
+  parent: Record<string, unknown>,
+  keys: readonly string[],
+  path: string,
+  passes: (value: number) => boolean,
+  complaint: string,
+): string | null {
+  for (const key of keys) {
+    if (!Object.hasOwn(parent, key)) return `${path}.${key} is missing`
+    const field = parent[key]
+    if (typeof field !== 'number' || !Number.isFinite(field)) {
+      return `${path}.${key} must be a number`
+    }
+    if (!passes(field)) return `${path}.${key} ${complaint}`
+  }
+  return null
 }
 
 /**
@@ -395,13 +550,30 @@ function readGzCurve(value: unknown): Read<GZPoint[]> {
  *
  * An imported record carries what the format states and nothing more. The
  * solve's diagnostics — planes evaluated, wetted surface, waterplane second
- * moment, loop count, the end-tip immersion angle — are NOT part of the
- * format and come back neutral; no Compare consumer may read them off an
- * imported record (the table's rows all sit inside `RESULT_NUMBERS`). What
- * the format DOES state is rebuilt coherent: fresh-water liters are
- * kilograms, the LCB–LCG offset is the recorded centres' own, and the pose
- * pivot is the LCG — the value the scene seam falls back to when a result
- * carries no pivot.
+ * moment, loop count — are NOT part of the format and come back neutral; no
+ * Compare consumer may read them off an imported record (the table's rows
+ * all sit inside `RESULT_NUMBERS`).
+ *
+ * What the format states is CARRIED, never re-derived, because a reader's
+ * arithmetic would change the number: `lcb_lcg_offset_mm` is the sweep
+ * residual, not the hull-frame `|lcb.x - lcg.x|` (see
+ * `TrimSolveResult.lcbLcgOffsetMm`); `pivot_xyz` is the rotation centre the
+ * solve actually used, whose z is the bounding-box centre's, not the LCG's
+ * KG height; and each GZ sample's `min_freeboard_mm` is the stem-tip
+ * clearance the end-tip immersion angle is recomputed from — that one
+ * diagnostic IS derived here, because the angle is a pure function of
+ * freeboards the format already carries and the alternative is asserting
+ * "never immerses" for every imported record.
+ *
+ * Two gates sit between a document and a record. The phase must be
+ * `full_coefficients`: the schema's earlier phases carry no coefficients
+ * block and the comparison table renders them, so an earlier run is a
+ * different document, not a degraded one. And every magnitude the schema
+ * merely types as a number must clear the bar its physical sense demands —
+ * positive displacement and waterplane dimensions, non-negative draft,
+ * offset and coefficients, and a derived mm³ volume that stays finite
+ * (1e308 L is a valid double and an Infinity mm³, which passes every read
+ * here and is then dropped by `readRoster` at the next reload).
  */
 export function parseRunRecordImport(
   text: string,
@@ -417,19 +589,32 @@ export function parseRunRecordImport(
   }
   const doc = raw as Record<string, unknown>
 
-  const modelHash = doc.model_hash
-  if (typeof modelHash !== 'string' || modelHash.length === 0) {
-    return { ok: false, error: 'model_hash must be a non-empty string' }
+  const phase = ownField(doc, 'phase')
+  if (phase === undefined) return { ok: false, error: 'phase is missing' }
+  if (phase !== 'full_coefficients') {
+    return { ok: false, error: `phase must be 'full_coefficients', not '${String(phase)}'` }
+  }
+
+  const modelHash = ownField(doc, 'model_hash')
+  if (typeof modelHash !== 'string' || !SHA256_HEX_PATTERN.test(modelHash)) {
+    return {
+      ok: false,
+      error: 'model_hash must be 64 lowercase hex characters (a SHA-256 of the STL bytes)',
+    }
+  }
+  const fileNameField = ownField(doc, 'file_name')
+  if (fileNameField !== undefined && typeof fileNameField !== 'string') {
+    return { ok: false, error: 'file_name must be a string' }
   }
   const fileName =
-    typeof doc.file_name === 'string' && doc.file_name.length > 0 ? doc.file_name : 'Imported run'
+    typeof fileNameField === 'string' && fileNameField.length > 0 ? fileNameField : 'Imported run'
 
-  const targets = readObject(doc.targets, 'targets')
+  const targets = readObject(ownField(doc, 'targets'), 'targets')
   if (!targets.ok) return { ok: false, error: targets.error }
   const targetFields = readNumbers(targets.value, TARGET_KEYS, 'targets')
   if (!targetFields.ok) return { ok: false, error: targetFields.error }
 
-  const results = readObject(doc.results, 'results')
+  const results = readObject(ownField(doc, 'results'), 'results')
   if (!results.ok) return { ok: false, error: results.error }
   const resultFields = readNumbers(results.value, RESULT_KEYS, 'results')
   if (!resultFields.ok) return { ok: false, error: resultFields.error }
@@ -437,13 +622,45 @@ export function parseRunRecordImport(
   if (!lcb.ok) return { ok: false, error: lcb.error }
   const lcg = readVec3(results.value, 'lcg_xyz', 'results')
   if (!lcg.ok) return { ok: false, error: lcg.error }
+  const pivot = readVec3(results.value, 'pivot_xyz', 'results')
+  if (!pivot.ok) return { ok: false, error: pivot.error }
 
-  const coefficients = readObject(doc.coefficients, 'coefficients')
+  const coefficients = readObject(ownField(doc, 'coefficients'), 'coefficients')
   if (!coefficients.ok) return { ok: false, error: coefficients.error }
   const coefficientFields = readNumbers(coefficients.value, COEFFICIENT_KEYS, 'coefficients')
   if (!coefficientFields.ok) return { ok: false, error: coefficientFields.error }
 
-  const curve = readGzCurve(results.value.gz_curve)
+  // Magnitudes. The schema types these `number`, so `readNumbers` stops at
+  // "is a number"; a negative displacement or a zero waterline length would
+  // sail through that and render as a plausible Compare row.
+  const positiveResults = magnitudeProblem(
+    results.value,
+    RESULT_KEYS_POSITIVE,
+    'results',
+    (value) => value > 0,
+    'must be greater than zero',
+  )
+  if (positiveResults) return { ok: false, error: positiveResults }
+  const nonNegativeResults = magnitudeProblem(
+    results.value,
+    RESULT_KEYS_NON_NEGATIVE,
+    'results',
+    (value) => value >= 0,
+    'must not be negative',
+  )
+  if (nonNegativeResults) return { ok: false, error: nonNegativeResults }
+  const nonNegativeCoefficients = magnitudeProblem(
+    coefficients.value,
+    COEFFICIENT_KEYS_NON_NEGATIVE,
+    'coefficients',
+    (value) => value >= 0,
+    'must not be negative',
+  )
+  if (nonNegativeCoefficients) return { ok: false, error: nonNegativeCoefficients }
+
+  // ownField, not a plain read: an inherited `gz_curve` would satisfy an
+  // optional field the document never wrote.
+  const curve = readGzCurve(ownField(results.value, 'gz_curve'))
   if (!curve.ok) return { ok: false, error: curve.error }
 
   const inputs: SlotInputs = {
@@ -454,17 +671,26 @@ export function parseRunRecordImport(
   }
   const r = resultFields.value
   const c = coefficientFields.value
+  // The derived displacement must itself be finite. `volume_liters` is read
+  // as a finite double, but 1e308 of it overflows on the x1_000_000 — and
+  // Infinity passes every read here, is written by `encodeRoster`, and is
+  // then dropped by `readRoster` at the next reload: an accepted record
+  // that silently vanishes from the roster it was just added to.
+  const displacedVolumeMm3 = r.volume_liters * MM3_PER_KG
+  if (!Number.isFinite(displacedVolumeMm3)) {
+    return { ok: false, error: 'results.volume_liters is too large to convert to mm3' }
+  }
   const result: TrimSolveResult = {
     trimDeg: r.trim_deg,
     draftMm: r.draft_mm,
     waterlineZ: r.waterline_z_mm,
-    displacedVolumeMm3: r.volume_liters * MM3_PER_KG,
+    displacedVolumeMm3,
     displacementKg: r.volume_liters,
     targetKg: inputs.weightKg,
     lcb: lcb.value,
     lcg: lcg.value,
-    pivot: { ...lcg.value },
-    lcbLcgOffsetMm: Math.abs(lcb.value.x - lcg.value.x),
+    pivot: pivot.value,
+    lcbLcgOffsetMm: r.lcb_lcg_offset_mm,
     waterplaneAreaMm2: 0,
     planesEvaluated: 0,
     converged: true,
@@ -489,7 +715,7 @@ export function parseRunRecordImport(
     waterplaneCentroidX: c.lcf_mm,
     waterplaneIyyMm4: 0,
     tpcTonnesPerCm: c.tpc,
-    endTipImmersionDeg: null,
+    endTipImmersionDeg: endTipImmersionHeelDeg(curve.value),
   }
   try {
     return { ok: true, record: recordFromSolve(fileName, modelHash, inputs, result) }

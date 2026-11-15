@@ -1,15 +1,25 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "Kayak Analyzer Solver Run",
+  "description": "One Kayak Analyzer solver run. FRAME: every position in this document is in the HULL's own frame — the uploaded STL after auto-orientation to Z-up, with X = LOA (bow at +X), Y = beam, Z up — in millimetres, and every height is measured from the keel, the hull's lowest Z. Angles follow the solver's conventions: trim + is bow up, heel + drops the -Y side.",
   "type": "object",
-  "required": ["model_hash", "targets", "results", "phase"],
+  "required": ["model_hash", "targets", "results", "coefficients", "phase"],
   "properties": {
-    "model_hash": { "type": "string", "description": "SHA256 of the STL model used" },
+    "model_hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "SHA256 of the STL model used, as 64 lowercase hex characters — the mesh's identity everywhere (roster key, re-pick check). Hashed over the raw bytes, never the parsed geometry, so the x1000 metre-Apply rescale keeps one identity."
+    },
     "targets": {
       "type": "object",
       "required": ["weight_kg", "lcg_pct_lwl", "kg_mm", "heel_deg"],
       "properties": {
-        "weight_kg": { "type": "number", "minimum": 0 },
+        "weight_kg": {
+          "type": "number",
+          "minimum": 20,
+          "maximum": 200,
+          "description": "Paddler plus gear plus boat, kg. The bounds are the app's own form gate: under 20 kg is not a loaded boat, over 200 kg is not a load this hull class is solved for."
+        },
         "lcg_pct_lwl": {
           "type": "number",
           "minimum": 0,
@@ -18,12 +28,15 @@
         },
         "kg_mm": {
           "type": "number",
-          "minimum": 0,
-          "description": "Vertical center of gravity above keel in mm. Required: the UI exposes KG, and a run that does not state its KG cannot be reproduced. The solver's fallback when a caller omits it is 280 mm (DEFAULT_KG_MM)."
+          "exclusiveMinimum": 0,
+          "maximum": 1000,
+          "description": "Vertical center of gravity above keel in mm — a HEIGHT, never an absolute Z. Required: the UI exposes KG, and a run that does not state its KG cannot be reproduced. The solver's fallback when a caller omits it is 280 mm (DEFAULT_KG_MM). Above 1000 mm the CG sits above the deck of any kayak, where GM stops describing anything real."
         },
         "heel_deg": {
           "type": "number",
-          "description": "Fixed heel in degrees; + heels the -Y side down. Required: GM and the whole GZ curve depend on it, so a run that does not state its heel cannot be reproduced. The solver's default when a caller omits it is 0 (upright)."
+          "minimum": -30,
+          "maximum": 30,
+          "description": "Fixed heel in degrees; + heels the -Y side down. Required: GM and the whole GZ curve depend on it, so a run that does not state its heel cannot be reproduced. The solver's default when a caller omits it is 0 (upright). The app's slider spans ±30."
         }
       }
     },
@@ -37,13 +50,21 @@
         "volume_liters",
         "lcb_xyz",
         "lcg_xyz",
+        "lcb_lcg_offset_mm",
+        "pivot_xyz",
         "bow_freeboard_mm",
         "stern_freeboard_mm",
         "waterline_z_mm"
       ],
       "properties": {
-        "draft_mm": { "type": "number" },
-        "trim_deg": { "type": "number" },
+        "draft_mm": {
+          "type": "number",
+          "description": "Equilibrium draft at midship, mm, measured up from the keel"
+        },
+        "trim_deg": {
+          "type": "number",
+          "description": "Trim in degrees; + is bow up (marine convention)"
+        },
         "lwl_mm": {
           "type": "number",
           "description": "Length of waterline in mm, measured at the waterline (not the bounding box)"
@@ -52,20 +73,34 @@
           "type": "number",
           "description": "Beam at waterline in mm, measured at the waterline"
         },
-        "volume_liters": { "type": "number", "description": "Displaced volume in liters" },
+        "volume_liters": {
+          "type": "number",
+          "description": "Displaced volume in liters; fresh water, so 1 L = 1 kg = 1_000_000 mm3"
+        },
         "lcb_xyz": {
           "type": "array",
           "items": { "type": "number" },
           "minItems": 3,
           "maxItems": 3,
-          "description": "LCB in mm [x, y, z]"
+          "description": "LCB in mm [x, y, z], in the hull's own frame"
         },
         "lcg_xyz": {
           "type": "array",
           "items": { "type": "number" },
           "minItems": 3,
           "maxItems": 3,
-          "description": "LCG in mm [x, y, z]"
+          "description": "LCG in mm [x, y, z], in the hull's own frame"
+        },
+        "lcb_lcg_offset_mm": {
+          "type": "number",
+          "description": "The longitudinal LCB-LCG offset the SOLVER reports, in mm: the distance between the two centres measured in the POSED frame — the frame the waterplane is horizontal in, which is the frame trim equilibrium is a property of. It is the residual the trim sweep closes on, and it is NOT |lcb_xyz[0] - lcg_xyz[0]|: the hull pitches about pivot_xyz, and that difference carries the pivot term the pose removes (on the test hull at 75 kg the two differ about 6x). Carried by the format, never re-derived by a reader."
+        },
+        "pivot_xyz": {
+          "type": "array",
+          "items": { "type": "number" },
+          "minItems": 3,
+          "maxItems": 3,
+          "description": "The rotation centre the solve pitched the hull about, mm [x, y, z], hull frame. Its x is the LCG's x but its z is the bounding-box centre's z — NOT the LCG (a KG height), so it must be carried rather than guessed."
         },
         "bow_freeboard_mm": {
           "type": "number",
@@ -86,7 +121,11 @@
             "required": ["heel_deg", "gz_mm"],
             "properties": {
               "heel_deg": { "type": "number" },
-              "gz_mm": { "type": "number" }
+              "gz_mm": { "type": "number" },
+              "min_freeboard_mm": {
+                "type": "number",
+                "description": "Optional: the stem-tip clearance at this heel (the smaller of the bow and stern freeboards), mm. Carried by the app's export; the reader recomputes the end-tip immersion angle from it."
+              }
             }
           },
           "description": "Optional: the righting-arm curve, one sample per heel angle. Emitted by the app's export; absent on a trimmed record."
@@ -100,6 +139,7 @@
     },
     "coefficients": {
       "type": "object",
+      "required": ["cb", "cp", "cm", "kb_mm", "bm_mm", "km_mm", "gm_mm", "cwp", "lcf_mm", "tpc"],
       "properties": {
         "cp": { "type": "number" },
         "cm": { "type": "number" },
@@ -111,7 +151,7 @@
         "cwp": { "type": "number", "description": "Waterplane area coefficient" },
         "lcf_mm": {
           "type": "number",
-          "description": "Longitudinal centre of flotation, mm from midship in the hull's own frame"
+          "description": "Longitudinal centre of flotation in mm: an ABSOLUTE x in the hull's own frame, the same datum as lcb_xyz[0] and lcg_xyz[0] — not a distance from midship"
         },
         "tpc": {
           "type": "number",
@@ -119,7 +159,11 @@
         }
       }
     },
-    "phase": { "type": "string", "enum": ["draft_only", "trim_lcg_lcb", "full_coefficients"] },
+    "phase": {
+      "type": "string",
+      "enum": ["draft_only", "trim_lcg_lcb", "full_coefficients"],
+      "description": "How far the run went. This app imports full_coefficients only: a draft_only or trim_lcg_lcb run has no coefficients block, and the reader requires one."
+    },
     "solver_time_ms": { "type": "number" },
     "file_name": {
       "type": "string",
