@@ -23,11 +23,14 @@
  * non-array, wrong-typed entries, a reader that throws — degrades to [] or a
  * filtered roster with the valid siblings kept. The Compare tab must render.
  *
- * Layering: the imports are the `TrimSolveResult` type (erased at compile
- * time) and four value predicates from `inputs.ts`. Framework-free, so the
+ * Layering: the imports are the `TrimSolveResult` and `GZPoint` types (erased
+ * at compile time), the `Vec3` type, one unit constant (`MM3_PER_KG`, fresh
+ * water) and four value predicates from `inputs.ts`. Framework-free, so the
  * suite runs in Node with no browser shims.
  */
-import type { TrimSolveResult } from './hydrostatics'
+
+import type { Vec3 } from './geometry'
+import { type GZPoint, MM3_PER_KG, type TrimSolveResult } from './hydrostatics'
 import { heelUsable, kgUsable, lcgUsable, type StorageReader, weightUsable } from './inputs'
 
 /** One slot's conditions. Heel 0 is upright; + heels the −Y side down. */
@@ -198,6 +201,301 @@ export function conditionsDiffer(a: SlotInputs, b: SlotInputs): string[] {
   if (a.kgMm !== b.kgMm) labels.push('KG')
   if (a.heelDeg !== b.heelDeg) labels.push('heel')
   return labels
+}
+
+// --- run-record export / import ----------------------------------------------
+
+/**
+ * The run-record document `references/kayak_analyzer_solver.json` describes:
+ * the one Compare artifact meant to leave the browser, and the contract the
+ * import trusts. Every field the schema names and the app can produce is
+ * emitted; the three the schema documents as not-yet-available
+ * (`waterline_polygon` — the clipper discards the contour after measuring
+ * it, `stations_csv_path`, `solver_time_ms`) are not, because nothing in the
+ * app produces them.
+ *
+ * Volume is the one unit that changes hands: the solver counts mm³, the
+ * format records liters, and fresh water makes them the same measurement
+ * (1 L = 1 kg = {@link MM3_PER_KG} mm³). The identity is applied exactly, so
+ * a record round-trips its volume. The GZ curve is always emitted — the
+ * schema marks it optional for records other tools trim — and an import that
+ * finds none reads an empty curve rather than refusing the document.
+ */
+export function exportRunRecord(record: RunRecord): unknown {
+  const r = record.result
+  return {
+    model_hash: record.modelHash,
+    targets: {
+      weight_kg: record.inputs.weightKg,
+      lcg_pct_lwl: record.inputs.lcgPctLwl,
+      kg_mm: record.inputs.kgMm,
+      heel_deg: record.inputs.heelDeg,
+    },
+    results: {
+      draft_mm: r.draftMm,
+      trim_deg: r.trimDeg,
+      lwl_mm: r.LWL,
+      bwl_mm: r.BWL,
+      volume_liters: r.displacedVolumeMm3 / MM3_PER_KG,
+      lcb_xyz: [r.lcb.x, r.lcb.y, r.lcb.z],
+      lcg_xyz: [r.lcg.x, r.lcg.y, r.lcg.z],
+      bow_freeboard_mm: r.bowFreeboardMm,
+      stern_freeboard_mm: r.sternFreeboardMm,
+      waterline_z_mm: r.waterlineZ,
+      gz_curve: r.gzCurve.map((point) => ({ heel_deg: point.heelDeg, gz_mm: point.GZ })),
+    },
+    coefficients: {
+      cp: r.Cp,
+      cm: r.Cm,
+      cb: r.Cb,
+      kb_mm: r.KB,
+      bm_mm: r.BM,
+      km_mm: r.KM,
+      gm_mm: r.GM,
+      cwp: r.Cwp,
+      lcf_mm: r.waterplaneCentroidX,
+      tpc: r.tpcTonnesPerCm,
+    },
+    file_name: record.name,
+    phase: 'full_coefficients',
+  }
+}
+
+/** A read that either carries the value or names the path that failed. */
+type Read<T> = { ok: true; value: T } | { ok: false; error: string }
+
+/** The document's `targets` keys, in the schema's own order. */
+const TARGET_KEYS = ['weight_kg', 'lcg_pct_lwl', 'kg_mm', 'heel_deg'] as const
+
+/** The document's scalar `results` keys, in the schema's own order. */
+const RESULT_KEYS = [
+  'draft_mm',
+  'trim_deg',
+  'lwl_mm',
+  'bwl_mm',
+  'volume_liters',
+  'bow_freeboard_mm',
+  'stern_freeboard_mm',
+  'waterline_z_mm',
+] as const
+
+/** The document's `coefficients` keys, in the schema's own order. */
+const COEFFICIENT_KEYS = [
+  'cb',
+  'cp',
+  'cm',
+  'kb_mm',
+  'bm_mm',
+  'km_mm',
+  'gm_mm',
+  'cwp',
+  'lcf_mm',
+  'tpc',
+] as const
+
+function readObject(value: unknown, path: string): Read<Record<string, unknown>> {
+  if (value === undefined) return { ok: false, error: `${path} is missing` }
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return { ok: false, error: `${path} must be an object` }
+  }
+  return { ok: true, value: value as Record<string, unknown> }
+}
+
+/**
+ * The documented numbers of one object, first failure naming the dotted
+ * path. NaN, Infinity and a text number are all "must be a number": a
+ * hand-edited file that carried one would poison every row that reads it.
+ */
+function readNumbers(
+  parent: Record<string, unknown>,
+  keys: readonly string[],
+  path: string,
+): Read<Record<string, number>> {
+  const out: Record<string, number> = {}
+  for (const key of keys) {
+    // hasOwn, not `in`: a JSON object still inherits Object.prototype, and a
+    // document that names a constructor key must not pass as a schema field.
+    if (!Object.hasOwn(parent, key)) return { ok: false, error: `${path}.${key} is missing` }
+    const field = parent[key]
+    if (typeof field !== 'number' || !Number.isFinite(field)) {
+      return { ok: false, error: `${path}.${key} must be a number` }
+    }
+    out[key] = field
+  }
+  return { ok: true, value: out }
+}
+
+/** One `[x, y, z]` array, exactly three finite numbers. */
+function readVec3(parent: Record<string, unknown>, key: string, path: string): Read<Vec3> {
+  const field = parent[key]
+  if (!Array.isArray(field) || field.length !== 3) {
+    return { ok: false, error: `${path}.${key} must be an array of three numbers` }
+  }
+  const parts: number[] = []
+  for (const part of field) {
+    if (typeof part !== 'number' || !Number.isFinite(part)) {
+      return { ok: false, error: `${path}.${key} must be an array of three numbers` }
+    }
+    parts.push(part)
+  }
+  return { ok: true, value: { x: parts[0], y: parts[1], z: parts[2] } }
+}
+
+/**
+ * The optional curve. Absent reads as empty (a trimmed record): the schema
+ * marks the field optional, so its absence is not an error — but a present
+ * one that is not an array of `{heel_deg, gz_mm}` pairs is.
+ */
+function readGzCurve(value: unknown): Read<GZPoint[]> {
+  if (value === undefined) return { ok: true, value: [] }
+  if (!Array.isArray(value)) {
+    return { ok: false, error: 'results.gz_curve must be an array of {heel_deg, gz_mm} samples' }
+  }
+  const points: GZPoint[] = []
+  for (let index = 0; index < value.length; index++) {
+    const element = value[index]
+    if (typeof element !== 'object' || element === null) {
+      return {
+        ok: false,
+        error: `results.gz_curve[${index}] must be an object with heel_deg and gz_mm`,
+      }
+    }
+    const sample = element as Record<string, unknown>
+    const heel = sample.heel_deg
+    const arm = sample.gz_mm
+    if (
+      typeof heel !== 'number' ||
+      !Number.isFinite(heel) ||
+      typeof arm !== 'number' ||
+      !Number.isFinite(arm)
+    ) {
+      return {
+        ok: false,
+        error: `results.gz_curve[${index}] must be an object with heel_deg and gz_mm`,
+      }
+    }
+    points.push({ heelDeg: heel, GZ: arm })
+  }
+  return { ok: true, value: points }
+}
+
+/**
+ * Read a run-record document back into a record — the import half of the
+ * export, and the only door a foreign file enters the roster through.
+ *
+ * The document is untrusted input: another machine's app version, another
+ * tool, or a text editor may have written it. So the read fails LOUD on
+ * anything the schema requires and the document lacks or mistypes, naming
+ * the dotted path so the caller can show which field is wrong; and a target
+ * the form's own range gate rejects is refused by `recordFromSolve`, whose
+ * throw becomes the `{ok:false}` message — the import door must not open
+ * where the creation door is shut. Unknown fields are tolerated: a newer
+ * producer's `waterline_polygon` or `solver_time_ms` must not make its file
+ * unreadable here.
+ *
+ * An imported record carries what the format states and nothing more. The
+ * solve's diagnostics — planes evaluated, wetted surface, waterplane second
+ * moment, loop count, the end-tip immersion angle — are NOT part of the
+ * format and come back neutral; no Compare consumer may read them off an
+ * imported record (the table's rows all sit inside `RESULT_NUMBERS`). What
+ * the format DOES state is rebuilt coherent: fresh-water liters are
+ * kilograms, the LCB–LCG offset is the recorded centres' own, and the pose
+ * pivot is the LCG — the value the scene seam falls back to when a result
+ * carries no pivot.
+ */
+export function parseRunRecordImport(
+  text: string,
+): { ok: true; record: RunRecord } | { ok: false; error: string } {
+  let raw: unknown
+  try {
+    raw = JSON.parse(text)
+  } catch {
+    return { ok: false, error: 'the file is not valid JSON' }
+  }
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
+    return { ok: false, error: 'the record is not a JSON object' }
+  }
+  const doc = raw as Record<string, unknown>
+
+  const modelHash = doc.model_hash
+  if (typeof modelHash !== 'string' || modelHash.length === 0) {
+    return { ok: false, error: 'model_hash must be a non-empty string' }
+  }
+  const fileName =
+    typeof doc.file_name === 'string' && doc.file_name.length > 0 ? doc.file_name : 'Imported run'
+
+  const targets = readObject(doc.targets, 'targets')
+  if (!targets.ok) return { ok: false, error: targets.error }
+  const targetFields = readNumbers(targets.value, TARGET_KEYS, 'targets')
+  if (!targetFields.ok) return { ok: false, error: targetFields.error }
+
+  const results = readObject(doc.results, 'results')
+  if (!results.ok) return { ok: false, error: results.error }
+  const resultFields = readNumbers(results.value, RESULT_KEYS, 'results')
+  if (!resultFields.ok) return { ok: false, error: resultFields.error }
+  const lcb = readVec3(results.value, 'lcb_xyz', 'results')
+  if (!lcb.ok) return { ok: false, error: lcb.error }
+  const lcg = readVec3(results.value, 'lcg_xyz', 'results')
+  if (!lcg.ok) return { ok: false, error: lcg.error }
+
+  const coefficients = readObject(doc.coefficients, 'coefficients')
+  if (!coefficients.ok) return { ok: false, error: coefficients.error }
+  const coefficientFields = readNumbers(coefficients.value, COEFFICIENT_KEYS, 'coefficients')
+  if (!coefficientFields.ok) return { ok: false, error: coefficientFields.error }
+
+  const curve = readGzCurve(results.value.gz_curve)
+  if (!curve.ok) return { ok: false, error: curve.error }
+
+  const inputs: SlotInputs = {
+    weightKg: targetFields.value.weight_kg,
+    lcgPctLwl: targetFields.value.lcg_pct_lwl,
+    kgMm: targetFields.value.kg_mm,
+    heelDeg: targetFields.value.heel_deg,
+  }
+  const r = resultFields.value
+  const c = coefficientFields.value
+  const result: TrimSolveResult = {
+    trimDeg: r.trim_deg,
+    draftMm: r.draft_mm,
+    waterlineZ: r.waterline_z_mm,
+    displacedVolumeMm3: r.volume_liters * MM3_PER_KG,
+    displacementKg: r.volume_liters,
+    targetKg: inputs.weightKg,
+    lcb: lcb.value,
+    lcg: lcg.value,
+    pivot: { ...lcg.value },
+    lcbLcgOffsetMm: Math.abs(lcb.value.x - lcg.value.x),
+    waterplaneAreaMm2: 0,
+    planesEvaluated: 0,
+    converged: true,
+    Cb: c.cb,
+    LWL: r.lwl_mm,
+    BWL: r.bwl_mm,
+    midshipAreaMm2: 0,
+    Cp: c.cp,
+    Cm: c.cm,
+    KB: c.kb_mm,
+    BM: c.bm_mm,
+    KM: c.km_mm,
+    GM: c.gm_mm,
+    gzCurve: curve.value,
+    bowFreeboardMm: r.bow_freeboard_mm,
+    sternFreeboardMm: r.stern_freeboard_mm,
+    heelDeg: inputs.heelDeg,
+    kgMm: inputs.kgMm,
+    waterplaneLoopCount: 0,
+    Cwp: c.cwp,
+    wettedSurfaceAreaMm2: 0,
+    waterplaneCentroidX: c.lcf_mm,
+    waterplaneIyyMm4: 0,
+    tpcTonnesPerCm: c.tpc,
+    endTipImmersionDeg: null,
+  }
+  try {
+    return { ok: true, record: recordFromSolve(fileName, modelHash, inputs, result) }
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) }
+  }
 }
 
 // --- validation --------------------------------------------------------------

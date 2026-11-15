@@ -7,7 +7,7 @@
     "model_hash": { "type": "string", "description": "SHA256 of the STL model used" },
     "targets": {
       "type": "object",
-      "required": ["weight_kg", "lcg_pct_lwl", "kg_mm"],
+      "required": ["weight_kg", "lcg_pct_lwl", "kg_mm", "heel_deg"],
       "properties": {
         "weight_kg": { "type": "number", "minimum": 0 },
         "lcg_pct_lwl": {
@@ -20,6 +20,10 @@
           "type": "number",
           "minimum": 0,
           "description": "Vertical center of gravity above keel in mm. Required: the UI exposes KG, and a run that does not state its KG cannot be reproduced. The solver's fallback when a caller omits it is 280 mm (DEFAULT_KG_MM)."
+        },
+        "heel_deg": {
+          "type": "number",
+          "description": "Fixed heel in degrees; + heels the -Y side down. Required: GM and the whole GZ curve depend on it, so a run that does not state its heel cannot be reproduced. The solver's default when a caller omits it is 0 (upright)."
         }
       }
     },
@@ -32,7 +36,10 @@
         "bwl_mm",
         "volume_liters",
         "lcb_xyz",
-        "lcg_xyz"
+        "lcg_xyz",
+        "bow_freeboard_mm",
+        "stern_freeboard_mm",
+        "waterline_z_mm"
       ],
       "properties": {
         "draft_mm": { "type": "number" },
@@ -60,6 +67,30 @@
           "maxItems": 3,
           "description": "LCG in mm [x, y, z]"
         },
+        "bow_freeboard_mm": {
+          "type": "number",
+          "description": "Bow stem tip above the waterline, mm, in the hull's own frame"
+        },
+        "stern_freeboard_mm": {
+          "type": "number",
+          "description": "Stern stem tip above the waterline, mm, in the hull's own frame"
+        },
+        "waterline_z_mm": {
+          "type": "number",
+          "description": "Waterline plane height at midship, mm, in the hull's own frame; draft_mm is this minus the keel"
+        },
+        "gz_curve": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["heel_deg", "gz_mm"],
+            "properties": {
+              "heel_deg": { "type": "number" },
+              "gz_mm": { "type": "number" }
+            }
+          },
+          "description": "Optional: the righting-arm curve, one sample per heel angle. Emitted by the app's export; absent on a trimmed record."
+        },
         "waterline_polygon": {
           "type": "array",
           "items": { "type": "array", "items": { "type": "number" } },
@@ -76,11 +107,24 @@
         "kb_mm": { "type": "number" },
         "bm_mm": { "type": "number" },
         "km_mm": { "type": "number" },
-        "gm_mm": { "type": "number" }
+        "gm_mm": { "type": "number" },
+        "cwp": { "type": "number", "description": "Waterplane area coefficient" },
+        "lcf_mm": {
+          "type": "number",
+          "description": "Longitudinal centre of flotation, mm from midship in the hull's own frame"
+        },
+        "tpc": {
+          "type": "number",
+          "description": "Tonnes per centimetre immersion at the waterline"
+        }
       }
     },
     "phase": { "type": "string", "enum": ["draft_only", "trim_lcg_lcb", "full_coefficients"] },
     "solver_time_ms": { "type": "number" },
+    "file_name": {
+      "type": "string",
+      "description": "Optional: the source STL's file name, for display"
+    },
     "stations_csv_path": { "type": "string", "description": "Path to stations.csv (20 stations)" }
   }
 }
