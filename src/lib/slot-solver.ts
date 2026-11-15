@@ -19,6 +19,12 @@
 //     never be able to stand in for a slot's answer. The app always asks for
 //     the documented ±4.5° / 0.1° sweep, which is what a slot's solve runs on.
 //
+//     The ±4.5° / 0.1° pair is the same literal App.tsx passes for the
+//     single-viewer solve (its own inline value, not a shared constant):
+//     unifying them is a refactor beyond this task's closed file list, so the
+//     suite pins the slot side and this note keeps the twin visible until the
+//     two flows are merged.
+//
 // It is tested from Node against a fake Worker global (all of
 // tests/verify-slot-solver.ts), the same seam the protocol suite drives.
 
