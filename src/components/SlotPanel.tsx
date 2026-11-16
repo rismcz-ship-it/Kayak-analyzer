@@ -24,6 +24,11 @@ import { SLOT_COLORS } from './Viewer3D'
  * above both panels, with a button per slot, so "click the file" always names
  * the slot it fills.
  *
+ * A slot with NO record takes a fresh STL directly: the hull solves live at
+ * the panel's own conditions and its Export writes a run record from that
+ * live solve - there is no saved run behind it, so Export waits for one.
+ * That is the Compare tab's "add a model" path, separate from the roster.
+ *
  * Two store-picked details:
  *
  *  - A record's numbers are FROZEN (`compare.ts`), so the slot's editable
@@ -132,7 +137,6 @@ export default function SlotPanel({ label, slot, record, onInputs, onMesh }: Slo
   }
 
   const onExport = () => {
-    if (!record) return
     setExportError(null)
     // What the slot DISPLAYS. The name and the hash must come from the SAME
     // source as the numbers: a live result was solved from the slot's own
@@ -154,10 +158,16 @@ export default function SlotPanel({ label, slot, record, onInputs, onMesh }: Slo
     // `slot.live` property through a boolean alias does not survive to the
     // uses below, so the value itself is what gets compared.
     const liveSolve = slot.live
-    const displayed = liveSolve ?? record.result
-    const conditions = liveSolve !== null ? (slot.liveInputs ?? slot.inputs) : record.inputs
-    const name = liveSolve !== null && own ? own.fileName : record.name
-    const modelHash = liveSolve !== null && own ? own.sha256Hex : record.modelHash
+    const displayed = liveSolve ?? record?.result ?? null
+    const conditions =
+      liveSolve !== null ? (slot.liveInputs ?? slot.inputs) : (record?.inputs ?? slot.inputs)
+    const name = liveSolve !== null && own ? own.fileName : (record?.name ?? own?.fileName ?? '')
+    const modelHash =
+      liveSolve !== null && own ? own.sha256Hex : (record?.modelHash ?? own?.sha256Hex ?? '')
+    // A fresh slot exports only its own live solve of its own mesh - there is
+    // no saved run to fall back to. The button is disabled before then; this
+    // is the same gate in code.
+    if (displayed === null || name === '' || modelHash === '') return
     // A live solve from a mesh the page could not hash names no model at all:
     // `recordFromSolve` would refuse it with a developer-only message, so the
     // panel says it in plain language instead.
@@ -221,15 +231,15 @@ export default function SlotPanel({ label, slot, record, onInputs, onMesh }: Slo
           className="min-w-0 flex-1 truncate text-sm text-zinc-200"
           title={record ? `${record.name} · ${record.modelHash}` : undefined}
         >
-          {record ? record.name : 'empty slot'}
+          {record?.name ?? slot.mesh?.fileName ?? 'empty slot'}
         </span>
         <button
           type="button"
           onClick={onExport}
-          disabled={!record || !allValid}
+          disabled={!allValid || (record === null && (slot.live === null || slot.mesh === null))}
           title={
-            !record
-              ? 'Pick a run first.'
+            record === null && (slot.live === null || slot.mesh === null)
+              ? 'Load an STL and let its solve finish first.'
               : !allValid
                 ? 'Fix the highlighted conditions first.'
                 : 'Download this run as a .run.json'
@@ -240,212 +250,210 @@ export default function SlotPanel({ label, slot, record, onInputs, onMesh }: Slo
         </button>
       </div>
 
-      {record ? (
-        <>
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <label htmlFor={`${label}-weight`} className="mb-1 block text-xs text-zinc-400">
-                Weight (kg)
-              </label>
-              <input
-                id={`${label}-weight`}
-                type="text"
-                inputMode="decimal"
-                value={numeric.weightInput}
-                onChange={(e) => commitNumeric({ weightInput: e.target.value })}
-                className="w-full rounded border border-zinc-700 bg-zinc-800 p-1.5 text-sm text-white"
-              />
-              {parsed.weightError && (
-                <p className="mt-1 text-xs text-rose-300" role="alert">
-                  {parsed.weightError}
-                </p>
-              )}
-            </div>
-            <div>
-              <label htmlFor={`${label}-lcg`} className="mb-1 block text-xs text-zinc-400">
-                LCG from bow (%)
-              </label>
-              <input
-                id={`${label}-lcg`}
-                type="text"
-                inputMode="decimal"
-                value={numeric.lcgInput}
-                onChange={(e) => commitNumeric({ lcgInput: e.target.value })}
-                className="w-full rounded border border-zinc-700 bg-zinc-800 p-1.5 text-sm text-white"
-              />
-              {parsed.lcgError && (
-                <p className="mt-1 text-xs text-rose-300" role="alert">
-                  {parsed.lcgError}
-                </p>
-              )}
-            </div>
-            <div>
-              <label htmlFor={`${label}-kg`} className="mb-1 block text-xs text-zinc-400">
-                KG above keel (mm)
-              </label>
-              <input
-                id={`${label}-kg`}
-                type="text"
-                inputMode="decimal"
-                value={numeric.kgInput}
-                onChange={(e) => commitNumeric({ kgInput: e.target.value })}
-                className="w-full rounded border border-zinc-700 bg-zinc-800 p-1.5 text-sm text-white"
-              />
-              {parsed.kgError && (
-                <p className="mt-1 text-xs text-rose-300" role="alert">
-                  {parsed.kgError}
-                </p>
-              )}
-            </div>
-            <div>
-              <label htmlFor={`${label}-heel`} className="mb-1 block text-xs text-zinc-400">
-                Heel (°) — + = −Y side down
-              </label>
-              <div className="flex items-center gap-2">
-                <input
-                  id={`${label}-heel`}
-                  type="range"
-                  min={HEEL_MIN}
-                  max={HEEL_MAX}
-                  step={1}
-                  value={heelDeg}
-                  onChange={(e) => commitHeel(Number(e.target.value))}
-                  className="h-1.5 flex-1 appearance-none rounded-lg bg-zinc-700 accent-sky-500"
-                />
-                <span className="w-8 text-right font-mono text-xs text-zinc-300">{heelDeg}°</span>
-              </div>
-            </div>
+      <div className="grid grid-cols-2 gap-2">
+        <div>
+          <label htmlFor={`${label}-weight`} className="mb-1 block text-xs text-zinc-400">
+            Weight (kg)
+          </label>
+          <input
+            id={`${label}-weight`}
+            type="text"
+            inputMode="decimal"
+            value={numeric.weightInput}
+            onChange={(e) => commitNumeric({ weightInput: e.target.value })}
+            className="w-full rounded border border-zinc-700 bg-zinc-800 p-1.5 text-sm text-white"
+          />
+          {parsed.weightError && (
+            <p className="mt-1 text-xs text-rose-300" role="alert">
+              {parsed.weightError}
+            </p>
+          )}
+        </div>
+        <div>
+          <label htmlFor={`${label}-lcg`} className="mb-1 block text-xs text-zinc-400">
+            LCG from bow (%)
+          </label>
+          <input
+            id={`${label}-lcg`}
+            type="text"
+            inputMode="decimal"
+            value={numeric.lcgInput}
+            onChange={(e) => commitNumeric({ lcgInput: e.target.value })}
+            className="w-full rounded border border-zinc-700 bg-zinc-800 p-1.5 text-sm text-white"
+          />
+          {parsed.lcgError && (
+            <p className="mt-1 text-xs text-rose-300" role="alert">
+              {parsed.lcgError}
+            </p>
+          )}
+        </div>
+        <div>
+          <label htmlFor={`${label}-kg`} className="mb-1 block text-xs text-zinc-400">
+            KG above keel (mm)
+          </label>
+          <input
+            id={`${label}-kg`}
+            type="text"
+            inputMode="decimal"
+            value={numeric.kgInput}
+            onChange={(e) => commitNumeric({ kgInput: e.target.value })}
+            className="w-full rounded border border-zinc-700 bg-zinc-800 p-1.5 text-sm text-white"
+          />
+          {parsed.kgError && (
+            <p className="mt-1 text-xs text-rose-300" role="alert">
+              {parsed.kgError}
+            </p>
+          )}
+        </div>
+        <div>
+          <label htmlFor={`${label}-heel`} className="mb-1 block text-xs text-zinc-400">
+            Heel (°) — + = −Y side down
+          </label>
+          <div className="flex items-center gap-2">
+            <input
+              id={`${label}-heel`}
+              type="range"
+              min={HEEL_MIN}
+              max={HEEL_MAX}
+              step={1}
+              value={heelDeg}
+              onChange={(e) => commitHeel(Number(e.target.value))}
+              className="h-1.5 flex-1 appearance-none rounded-lg bg-zinc-700 accent-sky-500"
+            />
+            <span className="w-8 text-right font-mono text-xs text-zinc-300">{heelDeg}°</span>
           </div>
+        </div>
+      </div>
 
-          {slot.solving && (
-            <div className="mt-3">
-              <div className="h-1.5 w-full overflow-hidden rounded-full bg-zinc-800">
-                <div
-                  className="h-full rounded-full bg-sky-500 transition-[width] duration-150"
-                  style={{
-                    width:
-                      slot.progress && slot.progress.total > 0
-                        ? `${Math.min(100, Math.round((slot.progress.done / slot.progress.total) * 100))}%`
-                        : '4%',
-                  }}
-                />
-              </div>
-              <p className="mt-1 text-xs text-zinc-400" role="status" aria-live="polite">
-                {slot.progress
-                  ? `Solving… angle ${slot.progress.done}/${slot.progress.total}`
-                  : 'Starting solver…'}
-              </p>
-            </div>
-          )}
-          {slot.error && (
-            <p
-              className="mt-3 rounded border border-rose-900 bg-rose-950/50 p-2 text-xs text-rose-300"
-              role="alert"
-            >
-              {slot.error}
-            </p>
-          )}
-          {!slot.solving && !slot.error && slot.live && (
-            <p className="mt-3 text-xs text-emerald-400">Live — solved at the conditions above.</p>
-          )}
-          {!slot.solving && !slot.error && !slot.live && (
-            <p className="mt-3 text-xs text-zinc-500">
-              Showing the saved run — edit a condition to re-solve.
-            </p>
-          )}
-          {foreignGeometry && (
+      {slot.solving && (
+        <div className="mt-3">
+          <div className="h-1.5 w-full overflow-hidden rounded-full bg-zinc-800">
+            <div
+              className="h-full rounded-full bg-sky-500 transition-[width] duration-150"
+              style={{
+                width:
+                  slot.progress && slot.progress.total > 0
+                    ? `${Math.min(100, Math.round((slot.progress.done / slot.progress.total) * 100))}%`
+                    : '4%',
+              }}
+            />
+          </div>
+          <p className="mt-1 text-xs text-zinc-400" role="status" aria-live="polite">
+            {slot.progress
+              ? `Solving… angle ${slot.progress.done}/${slot.progress.total}`
+              : 'Starting solver…'}
+          </p>
+        </div>
+      )}
+      {slot.error && (
+        <p
+          className="mt-3 rounded border border-rose-900 bg-rose-950/50 p-2 text-xs text-rose-300"
+          role="alert"
+        >
+          {slot.error}
+        </p>
+      )}
+      {!slot.solving && !slot.error && slot.live && (
+        <p className="mt-3 text-xs text-emerald-400">Live — solved at the conditions above.</p>
+      )}
+      {!slot.solving && !slot.error && !slot.live && record !== null && (
+        <p className="mt-3 text-xs text-zinc-500">
+          Showing the saved run — edit a condition to re-solve.
+        </p>
+      )}
+      {foreignGeometry && (
+        <p className="mt-1 text-xs text-amber-400" role="note">
+          The STL in memory is a different hull from the one this record was solved on — the numbers
+          above are that record's, posed on the file below.
+        </p>
+      )}
+
+      {slot.mesh ? (
+        <div className="mt-3">
+          <p className="text-xs text-emerald-400" title={slot.mesh.orientNote}>
+            STL in memory - {slot.mesh.fileName}
+          </p>
+          {!slot.mesh.stats.watertight.watertight && (
             <p className="mt-1 text-xs text-amber-400" role="note">
-              The STL in memory is a different hull from the one this record was solved on — the
-              numbers above are that record's, posed on the file below.
+              {slot.mesh.stats.watertight.openEdgeCount} open edges — the solver needs a closed
+              hull, so this slot is not solved.
             </p>
           )}
-
-          {slot.mesh ? (
-            <div className="mt-3">
-              <p className="text-xs text-emerald-400" title={slot.mesh.orientNote}>
-                STL in memory - {slot.mesh.fileName}
-              </p>
-              {!slot.mesh.stats.watertight.watertight && (
-                <p className="mt-1 text-xs text-amber-400" role="note">
-                  {slot.mesh.stats.watertight.openEdgeCount} open edges — the solver needs a closed
-                  hull, so this slot is not solved.
-                </p>
-              )}
-              {slot.mesh.scaleAdvice && (
-                <p className="mt-1 text-xs text-amber-400" role="note">
-                  {scaleNotice(slot.mesh.scaleAdvice, maxDim)}
-                  {slot.mesh.scaleAdvice.kind === 'metres' && (
-                    <button
-                      type="button"
-                      onClick={applyScale}
-                      className="ml-2 rounded border border-amber-600/60 px-2 py-0.5 text-xs text-amber-300 hover:bg-amber-950/40"
-                    >
-                      Apply ×1000
-                    </button>
-                  )}
-                </p>
-              )}
-            </div>
-          ) : (
-            <div className="mt-3">
-              <p className="mb-2 text-xs text-zinc-500">
-                This record's STL is not in memory — load it to see the hull in the overlay.
-              </p>
-              <Upload onLoaded={handleRepick} compact />
-              {mismatch && (
-                <div
-                  className="mt-2 rounded border border-amber-800 bg-amber-950/50 p-2 text-xs text-amber-300"
-                  role="note"
+          {slot.mesh.scaleAdvice && (
+            <p className="mt-1 text-xs text-amber-400" role="note">
+              {scaleNotice(slot.mesh.scaleAdvice, maxDim)}
+              {slot.mesh.scaleAdvice.kind === 'metres' && (
+                <button
+                  type="button"
+                  onClick={applyScale}
+                  className="ml-2 rounded border border-amber-600/60 px-2 py-0.5 text-xs text-amber-300 hover:bg-amber-950/40"
                 >
-                  <p className="mb-2">
-                    This file hashes to{' '}
-                    <span className="font-mono" title={mismatch.sha256Hex}>
-                      {mismatch.sha256Hex === ''
-                        ? 'nothing'
-                        : `${mismatch.sha256Hex.slice(0, 12)}…`}
-                    </span>
-                    , but the record was saved from{' '}
-                    <span className="font-mono" title={record.modelHash}>
-                      {record.modelHash.slice(0, 12)}…
-                    </span>
-                    . It may be a different hull, or the same one edited — its numbers would be
-                    posed on this file's geometry.
-                  </p>
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        onMesh(mismatch)
-                        setMismatch(null)
-                      }}
-                      className="rounded border border-amber-600/60 px-2 py-0.5 text-amber-200 hover:bg-amber-950/40"
-                    >
-                      Use anyway
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setMismatch(null)}
-                      className="rounded border border-zinc-700 px-2 py-0.5 text-zinc-300 hover:bg-zinc-800"
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                </div>
+                  Apply ×1000
+                </button>
               )}
-            </div>
-          )}
-          {exportError && (
-            <p
-              className="mt-2 rounded border border-rose-900 bg-rose-950/50 p-2 text-xs text-rose-300"
-              role="alert"
-            >
-              {exportError}
             </p>
           )}
-        </>
+        </div>
+      ) : record !== null ? (
+        <div className="mt-3">
+          <p className="mb-2 text-xs text-zinc-500">
+            This record's STL is not in memory — load it to see the hull in the overlay.
+          </p>
+          <Upload onLoaded={handleRepick} compact />
+          {mismatch && (
+            <div
+              className="mt-2 rounded border border-amber-800 bg-amber-950/50 p-2 text-xs text-amber-300"
+              role="note"
+            >
+              <p className="mb-2">
+                This file hashes to{' '}
+                <span className="font-mono" title={mismatch.sha256Hex}>
+                  {mismatch.sha256Hex === '' ? 'nothing' : `${mismatch.sha256Hex.slice(0, 12)}…`}
+                </span>
+                , but the record was saved from{' '}
+                <span className="font-mono" title={record.modelHash}>
+                  {record.modelHash.slice(0, 12)}…
+                </span>
+                . It may be a different hull, or the same one edited — its numbers would be posed on
+                this file's geometry.
+              </p>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    onMesh(mismatch)
+                    setMismatch(null)
+                  }}
+                  className="rounded border border-amber-600/60 px-2 py-0.5 text-amber-200 hover:bg-amber-950/40"
+                >
+                  Use anyway
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMismatch(null)}
+                  className="rounded border border-zinc-700 px-2 py-0.5 text-zinc-300 hover:bg-zinc-800"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
       ) : (
-        <p className="text-xs text-zinc-500">
-          Pick a run above — its conditions and its saved result load into this slot.
+        <div className="mt-3">
+          <p className="mb-2 text-xs text-zinc-500">
+            Drop an STL here to solve it fresh — its numbers stay live in this slot, and its Export
+            writes a run record once the solve lands.
+          </p>
+          <Upload onLoaded={handleRepick} compact prompt="Drop an STL hull here" />
+        </div>
+      )}
+      {exportError && (
+        <p
+          className="mt-2 rounded border border-rose-900 bg-rose-950/50 p-2 text-xs text-rose-300"
+          role="alert"
+        >
+          {exportError}
         </p>
       )}
     </section>

@@ -407,8 +407,10 @@ export default function CompareView({
     slot.live !== null ? (slot.liveInputs ?? slot.inputs) : (record?.inputs ?? slot.inputs)
   const columnA: CompareColumn = {
     record: recordA,
+    // A slot loaded straight from an STL is called by its file name.
+    name: recordA?.name ?? slotA.mesh?.fileName ?? null,
     result: resultA,
-    inputs: recordA ? shownInputs(slotA, recordA) : null,
+    inputs: recordA !== null || slotA.mesh !== null ? shownInputs(slotA, recordA) : null,
     // A re-solve is in flight: the numbers on screen still answer to the
     // previous conditions, and the table says so instead of letting the delta
     // column imply they are the current ones.
@@ -416,8 +418,9 @@ export default function CompareView({
   }
   const columnB: CompareColumn = {
     record: recordB,
+    name: recordB?.name ?? slotB.mesh?.fileName ?? null,
     result: resultB,
-    inputs: recordB ? shownInputs(slotB, recordB) : null,
+    inputs: recordB !== null || slotB.mesh !== null ? shownInputs(slotB, recordB) : null,
     stale: slotB.solving && slotB.live !== null,
   }
 
@@ -468,8 +471,8 @@ export default function CompareView({
         */}
         {roster.length === 0 ? (
           <p className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-3 text-xs text-zinc-500">
-            The roster is empty - import a run record (.run.json), or solve at the Analyze tab to
-            add one automatically.
+            The roster is empty - import a run record (.run.json), solve at the Analyze tab to add
+            one automatically, or drop an STL straight into a slot below.
           </p>
         ) : (
           <ul className="max-h-52 space-y-1 overflow-y-auto pr-1" aria-label="Saved runs">

@@ -83,6 +83,8 @@ export function rescaleMesh(mesh: LoadedMesh, factor: number): LoadedMesh {
 interface UploadProps {
   onLoaded: (mesh: LoadedMesh) => void
   compact?: boolean
+  /** Overrides the compact variant's "Load another hull" wording. */
+  prompt?: string
 }
 
 /**
@@ -121,7 +123,7 @@ export function rememberMesh(cache: Map<string, LoadedMesh>, mesh: LoadedMesh): 
   }
 }
 
-export default function Upload({ onLoaded, compact = false }: UploadProps) {
+export default function Upload({ onLoaded, compact = false, prompt }: UploadProps) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [dragging, setDragging] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -265,7 +267,7 @@ export default function Upload({ onLoaded, compact = false }: UploadProps) {
         ) : (
           <>
             <span className="block text-sm font-medium text-zinc-200">
-              {compact ? 'Load another hull' : 'Drop an STL hull here'}
+              {compact ? (prompt ?? 'Load another hull') : 'Drop an STL hull here'}
             </span>
             <span className="block text-xs text-zinc-500">
               or click to browse · ≤ 25 MB · parsed in memory, nothing is uploaded

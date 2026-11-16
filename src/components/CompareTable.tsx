@@ -15,6 +15,12 @@ import { SLOT_COLORS } from './Viewer3D'
  */
 export interface CompareColumn {
   record: RunRecord | null
+  /**
+   * What the header calls this column: the record's name, or a fresh hull's
+   * file name when the slot was loaded straight from an STL. null = the slot
+   * is empty.
+   */
+  name: string | null
   result: TrimSolveResult | null
   /**
    * The conditions the displayed result was produced at; null when the slot
@@ -190,14 +196,14 @@ export default function CompareTable({ a, b }: CompareTableProps) {
             <th scope="col" className="py-1 text-right font-medium" style={columnStyle(0)}>
               A ·{' '}
               <span className="font-normal text-zinc-400">
-                {a.record?.name ?? 'empty'}
+                {a.name ?? 'empty'}
                 {a.stale ? ' (re-solving)' : ''}
               </span>
             </th>
             <th scope="col" className="py-1 text-right font-medium" style={columnStyle(1)}>
               B ·{' '}
               <span className="font-normal text-zinc-400">
-                {b.record?.name ?? 'empty'}
+                {b.name ?? 'empty'}
                 {b.stale ? ' (re-solving)' : ''}
               </span>
             </th>
