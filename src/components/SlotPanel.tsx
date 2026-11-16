@@ -7,16 +7,22 @@ import Upload, { type LoadedMesh, rescaleMesh } from './Upload'
 import { SLOT_COLORS } from './Viewer3D'
 
 /**
- * One Compare slot's controls: the roster picker, the conditions it solves at,
- * its solve status, and the re-pick / export pair.
+ * One Compare slot's controls: the conditions it solves at, its solve status,
+ * and the re-pick / export pair.
  *
  * The panel owns the four fields as RAW STRINGS the way App owns its form
  * (`lib/inputs.ts` — `Number('')` is 0, the historic bug), and reuses
  * `parseInputs` itself, so a slot is gated by exactly the predicate the home
- * form is. CompareView keys it on the record id plus a per-pick counter, so a
- * pick - including a re-pick of the record the slot already shows - remounts
- * it and the strings fall back to that record's own values without a sync
- * effect.
+ * form is. CompareView keys it on the slot label, the record id and a
+ * per-pick counter, so a pick - including a re-pick of the record the slot
+ * already shows - remounts it and the strings fall back to that record's own
+ * values without a sync effect. The label is part of the key because the two
+ * panels can legitimately hold the SAME record (one hull, two conditions),
+ * and a key without it let the panels impersonate each other.
+ *
+ * The roster itself is NOT rendered here: it is one shared list in CompareView
+ * above both panels, with a button per slot, so "click the file" always names
+ * the slot it fills.
  *
  * Two store-picked details:
  *
@@ -34,9 +40,6 @@ interface SlotPanelProps {
   slot: SlotState
   /** The record this slot shows, or null when nothing is picked. */
   record: RunRecord | null
-  roster: RunRecord[]
-  onPick: (record: RunRecord) => void
-  onDelete: (id: string) => void
   onInputs: (inputs: SlotInputs) => void
   /** A re-picked (or rescaled) STL for this slot. */
   onMesh: (mesh: LoadedMesh) => void
@@ -50,16 +53,7 @@ function fieldStrings(record: RunRecord | null): NumericInputs {
   }
 }
 
-export default function SlotPanel({
-  label,
-  slot,
-  record,
-  roster,
-  onPick,
-  onDelete,
-  onInputs,
-  onMesh,
-}: SlotPanelProps) {
+export default function SlotPanel({ label, slot, record, onInputs, onMesh }: SlotPanelProps) {
   const colorIndex = label === 'A' ? 0 : 1
   const [numeric, setNumeric] = useState<NumericInputs>(() => fieldStrings(record))
   const [heelDeg, setHeelDeg] = useState(() => record?.inputs.heelDeg ?? 0)
@@ -245,46 +239,6 @@ export default function SlotPanel({
           Export
         </button>
       </div>
-
-      {roster.length === 0 ? (
-        <p className="mb-3 text-xs text-zinc-500">
-          The roster is empty — import a run record (.run.json) above.
-        </p>
-      ) : (
-        <ul className="mb-3 max-h-40 space-y-1 overflow-y-auto pr-1">
-          {roster.map((entry) => (
-            <li
-              key={entry.id}
-              className={`flex items-center gap-1 rounded border px-2 py-1 text-xs ${
-                entry.id === slot.recordId
-                  ? 'border-sky-700 bg-sky-950/40'
-                  : 'border-zinc-800 bg-zinc-900/40'
-              }`}
-            >
-              <button
-                type="button"
-                onClick={() => onPick(entry)}
-                className="min-w-0 flex-1 truncate text-left text-zinc-200 hover:text-white"
-                title={`${entry.name} — ${entry.modelHash}`}
-              >
-                {entry.name}
-              </button>
-              <span className="font-mono text-[10px] text-zinc-500" title={entry.modelHash}>
-                {entry.modelHash.slice(0, 6)}
-              </span>
-              <button
-                type="button"
-                onClick={() => onDelete(entry.id)}
-                aria-label={`Delete ${entry.name}`}
-                title={`Delete ${entry.name}`}
-                className="rounded px-1 text-zinc-500 hover:text-rose-400"
-              >
-                ✕
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
 
       {record ? (
         <>

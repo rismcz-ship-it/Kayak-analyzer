@@ -152,6 +152,11 @@ function positionsOf(mesh: LoadedMesh): Float32Array {
   return mesh.geometry.getAttribute('position').array as Float32Array
 }
 
+/** A slot badge's fill as a CSS colour, shared by the panels and the roster list. */
+function slotColorHex(index: 0 | 1): string {
+  return `#${SLOT_COLORS[index].toString(16).padStart(6, '0')}`
+}
+
 /**
  * The form's own gate, reused so a slot can never re-solve at a value the home
  * tab's Calculate button would refuse. The messages are the `parseInputs`
@@ -452,32 +457,93 @@ export default function CompareView({
             {importError}
           </p>
         )}
+        {/*
+          ONE roster list for BOTH slots, not one inside each panel. Two copies
+          made "click the file" ambiguous - the same button looked like the same
+          control while it filled a different slot - and when the same record
+          landed in both slots the two panels' React keys collided. Each entry
+          now says exactly which slot it loads, so the same run can still go
+          into A and B deliberately (same hull, two conditions) without either
+          panel ever impersonating the other.
+        */}
+        {roster.length === 0 ? (
+          <p className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-3 text-xs text-zinc-500">
+            The roster is empty - import a run record (.run.json), or solve at the Analyze tab to
+            add one automatically.
+          </p>
+        ) : (
+          <ul className="max-h-52 space-y-1 overflow-y-auto pr-1" aria-label="Saved runs">
+            {roster.map((entry) => (
+              <li
+                key={entry.id}
+                className={`flex items-center gap-1 rounded border px-2 py-1 text-xs ${
+                  entry.id === slotA.recordId || entry.id === slotB.recordId
+                    ? 'border-sky-700 bg-sky-950/40'
+                    : 'border-zinc-800 bg-zinc-900/40'
+                }`}
+              >
+                <span
+                  className="min-w-0 flex-1 truncate text-zinc-200"
+                  title={`${entry.name} - ${entry.modelHash}`}
+                >
+                  {entry.name}
+                </span>
+                <span className="font-mono text-[10px] text-zinc-500" title={entry.modelHash}>
+                  {entry.modelHash.slice(0, 6)}
+                </span>
+                {([0, 1] as const).map((index) => (
+                  <button
+                    key={index}
+                    type="button"
+                    onClick={() => pickRecord(index, entry)}
+                    aria-label={`Load ${entry.name} into slot ${index === 0 ? 'A' : 'B'}`}
+                    title={`Load into slot ${index === 0 ? 'A' : 'B'}`}
+                    className="rounded px-1.5 py-0.5 text-[10px] font-bold text-zinc-950 hover:opacity-80"
+                    style={{ backgroundColor: slotColorHex(index) }}
+                  >
+                    {index === 0 ? 'A' : 'B'}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => handleDeleteRecord(entry.id)}
+                  aria-label={`Delete ${entry.name}`}
+                  title={`Delete ${entry.name}`}
+                  className="rounded px-1 text-zinc-500 hover:text-rose-400"
+                >
+                  ✕
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
         <SlotPanel
-          key={`${slotA.recordId ?? 'empty-A'}#${slotA.pickSeq}`}
+          key={`A#${slotA.recordId ?? 'empty'}#${slotA.pickSeq}`}
           label="A"
           slot={slotA}
           record={recordA}
-          roster={roster}
-          onPick={(record) => pickRecord(0, record)}
-          onDelete={handleDeleteRecord}
           onInputs={(inputs) => editInputs(0, inputs)}
           onMesh={(mesh) => attachMesh(0, mesh)}
         />
         <SlotPanel
-          key={`${slotB.recordId ?? 'empty-B'}#${slotB.pickSeq}`}
+          key={`B#${slotB.recordId ?? 'empty'}#${slotB.pickSeq}`}
           label="B"
           slot={slotB}
           record={recordB}
-          roster={roster}
-          onPick={(record) => pickRecord(1, record)}
-          onDelete={handleDeleteRecord}
           onInputs={(inputs) => editInputs(1, inputs)}
           onMesh={(mesh) => attachMesh(1, mesh)}
         />
       </div>
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-4">
-        <section className="flex min-h-0 h-[45vh] min-w-0 flex-col overflow-hidden rounded-lg border border-zinc-800 bg-zinc-900/40 p-2">
+        {/*
+          The overlay is `shrink-0` on purpose: as a shrinking flex item it
+          surrendered its height to the table below it, which is content-sized
+          and taller than most windows, so the 3D view collapsed to zero and
+          the Compare tab showed no hull at all. The table takes the slack and
+          scrolls inside its own area instead.
+        */}
+        <section className="flex h-[45vh] min-h-0 shrink-0 flex-col overflow-hidden rounded-lg border border-zinc-800 bg-zinc-900/40 p-2">
           <CompareOverlay
             meshA={slotA.mesh}
             meshB={slotB.mesh}
@@ -488,7 +554,9 @@ export default function CompareView({
             Both hulls sit on one shared waterline — the deeper hull floats lower.
           </div>
         </section>
-        <CompareTable a={columnA} b={columnB} />
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <CompareTable a={columnA} b={columnB} />
+        </div>
       </div>
     </div>
   )
