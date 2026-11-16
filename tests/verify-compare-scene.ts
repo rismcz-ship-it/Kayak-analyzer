@@ -2,24 +2,29 @@
 //
 // Task 5 builds the overlay viewer: two solved hulls on ONE shared water
 // surface, each semi-transparent in its own colour, each offset vertically by
-// its own draft so the deeper hull visibly sits lower. Three additive exports
-// in `Viewer3D.tsx` carry it, and this suite drives them against the same
-// object graph the single viewer builds — `makeSlotScene` reuses `createLeader`
-// and the mount-pass construction, so a check written in world space reads a
-// real parented hull and quietly tests something.
+// its own draft so the deeper hull visibly sits lower. Five additive exports
+// in `Viewer3D.tsx` carry it - `SLOT_COLORS`, `makeSlotScene`,
+// `applySlotResultToScene`, `applySharedWaterSurface` and `disposeSlotScene` -
+// and this suite drives them against the same object graph the single viewer
+// builds: `makeSlotScene` reuses `createLeader` and the mount-pass
+// construction, so a check written in world space reads a real parented hull
+// and quietly tests something.
 //
 // What this suite pins, and why each one earns its place:
 //
-//  1. THE SHARED SURFACE. `applySharedWaterSurface` puts each slot's wrapper
-//     at z = -waterlineZ, so BOTH hulls' midship waterline points land on
-//     world Z 0. A deeper hull therefore sits visibly lower — the whole point
-//     of the overlay (Review Focus 2 of the design review: a hull that draws
-//     30 mm more water must LOOK 30 mm deeper). A wrapper offset that is
-//     signed the other way would float the deep hull above the shallow one.
-//     Posing a hull lifts its midship point out of plane by the rotation
-//     residual dz*(cos(theta)-1) — a translation datum, not a re-pose — so
-//     sections 2 and 3 pin that analytic value: tenths of a millimetre at the
-//     app's sweep, and a first-order error still fails the check.
+//  1. THE SHARED SURFACE. `applySharedWaterSurface` drops each slot so its
+//     hull's MIDSHIP WATERLINE POINT (x = y = 0, z = waterlineZ - the station
+//     the solver reports its waterline at) lands exactly on world Z 0, under
+//     ANY pose. A deeper hull therefore sits visibly lower - the whole point of
+//     the overlay (Review Focus 2 of the design review: a hull that draws
+//     30 mm more water must LOOK 30 mm deeper). A wrapper offset that is signed
+//     the other way would float the deep hull above the shallow one. The drop
+//     is POSE-AWARE because the pose seam rotates the hull about its pivot:
+//     the plain `-waterlineZ` a first draft used leaves a FIRST-order
+//     p.x*sin(trim) error (~31 mm at a 500 mm pivot X and 3.6 deg, ~50 mm at a
+//     20 % LCG on the real hull) that is larger than the draft difference the
+//     overlay exists to show, so sections 2 and 3 assert the exact landing and
+//     pin that regression with a pivot offset of their own.
 //
 //  2. THE DIVISION OF LABOUR. Two seams meet on one scene: the POSE seam
 //     (`applySlotResultToScene`, the single-viewer math by deliberate
@@ -39,12 +44,15 @@
 //     slot: a wrapper offset that accumulated would sink a hull without limit
 //     over a session.
 //
-//  5. PURITY. Same contract as the single-viewer seam: no renderer, camera or
+//  5. DISPOSE. Slots are rebuilt on every re-pick, so `disposeSlotScene` must
+//     reach every geometry and material the slot owns.
+//
+//  6. PURITY. Same contract as the single-viewer seam: no renderer, camera or
 //     controls keys read, nothing returned.
 //
-// The plane's geometry is the UNIT square the seam scales — the harness builds
-// `PlaneGeometry(1, 1)` and `applySharedWaterSurface` sizes it, exactly the
-// split Task 6's compare mount makes.
+// The plane's geometry is the UNIT square by default, and the seam also accepts
+// an already-sized plane: the scale is target / geometry extent, so Task 6's
+// mount may build either shape.
 //
 // What this suite does NOT cover: Task 6's JSX (the slot panels, the roster
 // picker) and the browser render itself — those are covered by typecheck,
@@ -52,10 +60,19 @@
 //
 // Run: npm.cmd exec -- tsx tests/verify-compare-scene.ts
 
-import { Box3, type BufferAttribute, Mesh, MeshBasicMaterial, PlaneGeometry, Vector3 } from 'three'
+import {
+  Box3,
+  type BufferAttribute,
+  type Material,
+  Mesh,
+  MeshBasicMaterial,
+  PlaneGeometry,
+  Vector3,
+} from 'three'
 import {
   applySharedWaterSurface,
   applySlotResultToScene,
+  disposeSlotScene,
   makeSlotScene,
   SLOT_COLORS,
   type SlotScene,
@@ -72,17 +89,24 @@ const check = (label: string, ok: boolean, detail: string) => {
 
 // --- the two test hulls -----------------------------------------------------
 //
-// Two boxes, both centred on the origin in x/y so the wrapper's x/y stay 0 and
-// every world-space expectation is a one-axis number. Hull A is the longer,
-// shallower one; hull B is shorter and deeper (keel -100 for both, deck 400),
-// so a shared surface at each own waterline puts B 30 mm lower than A.
+// Two boxes, both centred on the origin in Z so each slot's wrapper stays a
+// pure-Z translation and every world-space expectation is a one-axis number.
+// Hull A is the longer, shallower one; hull B is shorter and deeper (keel -100
+// for both, deck 400), so a shared surface at each own waterline puts B 30 mm
+// lower than A.
+//
+// B is NOT centred in x/y on purpose: it reaches 1100 mm aft of A's forward end
+// point and stops short of it forward, and it is narrower in beam. So the union
+// of the two is strictly larger than EITHER box - a "sized from the union"
+// check would be vacuous if A contained B, which is what the first draft of
+// this fixture did.
 
 const A_MIN = [-1000, -250, -100] as const
 const A_MAX = [1000, 250, 250] as const
-const B_MIN = [-900, -200, -100] as const
-const B_MAX = [900, 200, 400] as const
+const B_MIN = [-900, -220, -100] as const
+const B_MAX = [1100, 220, 400] as const
 const A_CENTER = new Vector3(0, 0, 75)
-const B_CENTER = new Vector3(0, 0, 150)
+const B_CENTER = new Vector3(100, 0, 150)
 const WL_A = 100
 const WL_B = 130
 
@@ -252,7 +276,7 @@ console.log('=== 1. both midship waterlines land on world Z 0 ===')
 
   check(
     'the plane is centred on the union at world Z 0',
-    plane.position.x === 0 && plane.position.y === 0 && plane.position.z === 0,
+    plane.position.x === 50 && plane.position.y === 0 && plane.position.z === 0,
     plane.position.toArray().join(', '),
   )
   const world = new Box3().setFromObject(plane)
@@ -260,13 +284,35 @@ console.log('=== 1. both midship waterlines land on world Z 0 ===')
   const d = world.max.y - world.min.y
   check(
     'the plane covers both hulls (union, 1.2x)',
-    world.min.x <= -1000 && world.max.x >= 1000 && world.min.y <= -250 && world.max.y >= 250,
+    world.min.x <= -1000 && world.max.x >= 1100 && world.min.y <= -250 && world.max.y >= 250,
     `x ${world.min.x.toFixed(1)}..${world.max.x.toFixed(1)}, y ${world.min.y.toFixed(1)}..${world.max.y.toFixed(1)}`,
   )
   check(
     'the plane is sized from the UNION, not one slot',
-    Math.abs(w - 2400) < 1e-6 && Math.abs(d - 600) < 1e-6,
-    `${w.toFixed(1)} x ${d.toFixed(1)} mm; from B alone it would be 2160 x 480`,
+    // Union: x -1000..1100 (2100), y -250..250 (500), at the 1.2x margin.
+    // A alone would give 2400 x 600 and B alone 2400 x 528, so this number
+    // matches NEITHER hull's own extent - the first draft of this fixture had
+    // A containing B, where the union was A's extent and the check could not
+    // tell the two apart.
+    Math.abs(w - 2520) < 1e-6 && Math.abs(d - 600) < 1e-6,
+    `${w.toFixed(1)} x ${d.toFixed(1)} mm; A alone 2400 x 600, B alone 2400 x 528`,
+  )
+  // The plane's own geometry is respected, not assumed to be the unit square:
+  // an already-sized plane must be scaled to the TARGET, not by it.
+  const sized = new Mesh(new PlaneGeometry(2400, 600), new MeshBasicMaterial({ transparent: true }))
+  applySharedWaterSurface(
+    [
+      { slot: a, waterlineZ: WL_A },
+      { slot: b, waterlineZ: WL_B },
+    ],
+    sized,
+  )
+  const sizedWorld = new Box3().setFromObject(sized)
+  check(
+    'an already-sized plane is scaled to the same target',
+    Math.abs(sizedWorld.max.x - sizedWorld.min.x - 2520) < 1e-6 &&
+      Math.abs(sizedWorld.max.y - sizedWorld.min.y - 600) < 1e-6,
+    `${(sizedWorld.max.x - sizedWorld.min.x).toFixed(1)} x ${(sizedWorld.max.y - sizedWorld.min.y).toFixed(1)} mm from a 2400 x 600 plane`,
   )
 }
 
@@ -274,8 +320,9 @@ console.log('=== 1. both midship waterlines land on world Z 0 ===')
 console.log('\n=== 2. a solver trim of +3.60 degrees lifts the bow ===')
 {
   const { a } = twoSlots()
-  applySlotResultToScene(a, view({ waterlineZ: WL_A, trimDeg: 3.6 }))
   const plane = unitPlane()
+  const planeBefore = plane.position.clone()
+  applySlotResultToScene(a, view({ waterlineZ: WL_A, trimDeg: 3.6 }))
   applySharedWaterSurface([{ slot: a, waterlineZ: WL_A }], plane)
 
   const bow = worldOf(a, { x: 1000, y: 0, z: 75 })
@@ -292,29 +339,65 @@ console.log('\n=== 2. a solver trim of +3.60 degrees lifts the bow ===')
     Math.abs(rise - expected) < 1e-6,
     `${rise.toFixed(6)} vs ${expected.toFixed(6)} mm (2000 * sin 3.6 deg)`,
   )
-  // The shared surface survives a pure trim up to the rotation residual
-  // dz*(cos(theta)-1): the wrapper offset is a TRANSLATION datum, so posing the
-  // hull lifts its midship waterline point out of plane by that second-order
-  // amount - tenths of a millimetre at the app's +/-4.5 deg sweep, and
-  // invisible next to a 125 mm trim raise. Zero pose (section 1) is exact; the
-  // check here pins the analytic value, so a seam that moved the datum by a
-  // first-order amount fails.
+  // The drop is POSE-AWARE, so the shared surface is exact under a pure trim,
+  // not approximately held. A plain `-waterlineZ` wrapper would leave the
+  // FIRST-order pivot term: the pose seam rotates about the pivot, and a point
+  // at the midship station moves by p.x*sin(trim) in world Z - 31 mm at the
+  // 500 mm pivot X used below, larger than the 30 mm draft difference this
+  // overlay exists to show.
   const mid = worldOf(a, { x: 0, y: 0, z: WL_A })
-  const residual = (WL_A - A_CENTER.z) * (Math.cos(rad(3.6)) - 1)
   check(
-    'the shared surface carries only the rotation residual under the trim',
-    Math.abs(mid.z - residual) < 1e-9 && Math.abs(residual) < 1,
-    `midship waterline at world Z ${mid.z.toFixed(9)} vs residual ${residual.toFixed(9)} mm`,
+    'the midship waterline sits exactly on the shared surface',
+    Math.abs(mid.z) < 1e-9,
+    `midship waterline at world Z ${mid.z.toFixed(12)} mm (the pose-blind wrapper misses by ${(500 * Math.sin(rad(3.6))).toFixed(3)} mm at the 500 mm pivot X below)`,
   )
   check(
     'the pose seam left the water plane alone',
-    Math.abs(plane.position.x) < 1e-9 &&
-      Math.abs(plane.position.y) < 1e-9 &&
-      Math.abs(plane.position.z) < 1e-9,
+    // Snapshotted BEFORE the pose seam ran - asserting the (0,0,0) the water
+    // seam itself writes afterwards would test the water seam twice and the
+    // pose seam not at all.
+    Math.abs(plane.position.x - planeBefore.x) < 1e-12 &&
+      Math.abs(plane.position.y - planeBefore.y) < 1e-12 &&
+      Math.abs(plane.position.z - planeBefore.z) < 1e-12,
+    `${planeBefore.toArray().join(', ')} -> ${plane.position.toArray().join(', ')}`,
+  )
+  check(
+    'the water seam still puts its plane at world Z 0',
+    Math.abs(plane.position.z) < 1e-9 && Math.abs(plane.position.y) < 1e-9,
     plane.position
       .toArray()
       .map((n) => n.toExponential(1))
       .join(', '),
+  )
+
+  // The same trim, but posed about a pivot 500 mm forward of the origin and
+  // 25 mm above it - the shape `solveTrim` really hands the viewer
+  // (`pivot = { x: lcgX, y: boundsCentreY, z: boundsCentreZ }`). This is the
+  // check that fails on the pose-blind wrapper, and it cannot pass by the
+  // zero-pivot accident of the fixture above.
+  const pivot = { x: 500, y: 0, z: 25 }
+  const { a: offset } = twoSlots()
+  applySlotResultToScene(offset, view({ waterlineZ: WL_A, trimDeg: 3.6, pivot }))
+  const plane2 = unitPlane()
+  applySharedWaterSurface([{ slot: offset, waterlineZ: WL_A }], plane2)
+  const offsetMid = worldOf(offset, { x: 0, y: 0, z: WL_A })
+  check(
+    'an off-centre pivot leaves the midship waterline exact too',
+    Math.abs(offsetMid.z) < 1e-9 && Math.abs(offsetMid.y) < 1e-9,
+    `midship waterline at world Z ${offsetMid.z.toFixed(12)} mm`,
+  )
+  // The same pose with the pose-BLIND wrapper, measured here so the check above
+  // carries its own failing case: this is what the first draft's `-waterlineZ`
+  // produced, and it is tens of millimetres - larger than the 30 mm draft
+  // difference the overlay exists to show.
+  const { a: blind } = twoSlots()
+  applySlotResultToScene(blind, view({ waterlineZ: WL_A, trimDeg: 3.6, pivot }))
+  blind.wrapper.position.z = -WL_A
+  const blindMid = worldOf(blind, { x: 0, y: 0, z: WL_A })
+  check(
+    'the pose-blind wrapper would miss by tens of millimetres',
+    Math.abs(blindMid.z) > 10,
+    `pose-blind midship waterline at world Z ${blindMid.z.toFixed(3)} mm`,
   )
 }
 
@@ -322,8 +405,9 @@ console.log('\n=== 2. a solver trim of +3.60 degrees lifts the bow ===')
 console.log('\n=== 3. a solver heel of +10 degrees drops the -Y side ===')
 {
   const { a } = twoSlots()
-  applySlotResultToScene(a, view({ waterlineZ: WL_A, heelDeg: 10 }))
   const plane = unitPlane()
+  const planeBefore = plane.position.clone()
+  applySlotResultToScene(a, view({ waterlineZ: WL_A, heelDeg: 10 }))
   applySharedWaterSurface([{ slot: a, waterlineZ: WL_A }], plane)
 
   const pos = worldOf(a, { x: 0, y: 250, z: 75 })
@@ -341,21 +425,50 @@ console.log('\n=== 3. a solver heel of +10 degrees drops the -Y side ===')
     `${drop.toFixed(6)} vs ${expected.toFixed(6)} mm (500 * sin 10 deg)`,
   )
   const mid = worldOf(a, { x: 0, y: 0, z: WL_A })
-  const residual = (WL_A - A_CENTER.z) * (Math.cos(rad(10)) - 1)
   check(
-    'the shared surface carries only the rotation residual under the heel',
-    Math.abs(mid.z - residual) < 1e-9 && Math.abs(residual) < 1,
-    `midship waterline at world Z ${mid.z.toFixed(9)} vs residual ${residual.toFixed(9)} mm`,
+    'the midship waterline sits exactly on the shared surface under the heel',
+    Math.abs(mid.z) < 1e-9,
+    `midship waterline at world Z ${mid.z.toFixed(12)} mm`,
   )
   check(
     'the pose seam left the water plane alone',
-    Math.abs(plane.position.x) < 1e-9 &&
-      Math.abs(plane.position.y) < 1e-9 &&
-      Math.abs(plane.position.z) < 1e-9,
+    // Again snapshotted before the pose ran, for the same reason as section 2.
+    Math.abs(plane.position.x - planeBefore.x) < 1e-12 &&
+      Math.abs(plane.position.y - planeBefore.y) < 1e-12 &&
+      Math.abs(plane.position.z - planeBefore.z) < 1e-12,
+    `${planeBefore.toArray().join(', ')} -> ${plane.position.toArray().join(', ')}`,
+  )
+  check(
+    'the water seam still puts its plane at world Z 0',
+    Math.abs(plane.position.z) < 1e-9 && Math.abs(plane.position.y) < 1e-9,
     plane.position
       .toArray()
       .map((n) => n.toExponential(1))
       .join(', '),
+  )
+
+  // Heel poses about the X axis, where the same first-order term is p.y: a
+  // pivot 200 mm to starboard of the origin and a 10 deg heel must still land
+  // the midship waterline exactly on the surface.
+  const pivot = { x: 0, y: 200, z: 25 }
+  const { a: offset } = twoSlots()
+  applySlotResultToScene(offset, view({ waterlineZ: WL_A, heelDeg: 10, pivot }))
+  const plane2 = unitPlane()
+  applySharedWaterSurface([{ slot: offset, waterlineZ: WL_A }], plane2)
+  const offsetMid = worldOf(offset, { x: 0, y: 0, z: WL_A })
+  check(
+    'an off-centre heel pivot leaves the midship waterline exact too',
+    Math.abs(offsetMid.z) < 1e-9 && Math.abs(offsetMid.x) < 1e-9,
+    `midship waterline at world Z ${offsetMid.z.toFixed(12)} mm`,
+  )
+  const { a: blind } = twoSlots()
+  applySlotResultToScene(blind, view({ waterlineZ: WL_A, heelDeg: 10, pivot }))
+  blind.wrapper.position.z = -WL_A
+  const blindMid = worldOf(blind, { x: 0, y: 0, z: WL_A })
+  check(
+    'the pose-blind wrapper would miss by tens of millimetres here too',
+    Math.abs(blindMid.z) > 10,
+    `pose-blind midship waterline at world Z ${blindMid.z.toFixed(3)} mm`,
   )
 }
 
@@ -384,31 +497,106 @@ console.log('\n=== 4. a re-apply is identical to a fresh slot ===')
   )
 
   // A DIFFERENT result must move the wrapper to the new waterline exactly once:
-  // an accumulating offset would sink the hull further on every re-solve.
+  // an accumulating offset would sink the hull further on every re-solve. The
+  // claim is the LANDING (a zero-pose slot's wrapper is exactly -waterlineZ),
+  // plus the wrapper having actually moved from where the first pass put it.
   const zBefore = twice.wrapper.position.z
+  applySlotResultToScene(twice, view({ waterlineZ: 80 }))
   applySharedWaterSurface([{ slot: twice, waterlineZ: 80 }], unitPlane())
+  const moved = worldOf(twice, { x: 0, y: 0, z: 80 })
   check(
-    'a changed waterline moves the wrapper by exactly its delta',
-    twice.wrapper.position.z === -80 && zBefore === -WL_A,
-    `${zBefore} -> ${twice.wrapper.position.z}`,
+    'a changed waterline lands the hull on the surface again',
+    Math.abs(moved.z) < 1e-9 && twice.wrapper.position.z === -80 && zBefore !== -80,
+    `wrapper ${zBefore} -> ${twice.wrapper.position.z}, waterline point now at world Z ${moved.z.toFixed(12)}`,
   )
 }
 
-// --- 5. purity and the division of labour ----------------------------------
-console.log('\n=== 5. purity: each seam touches only what it is handed ===')
+// --- 5. disposing a slot ----------------------------------------------------
+console.log('\n=== 5. disposing a slot releases every resource it owns ===')
+{
+  const watch = (obj: { dispose: () => void }, name: string, sink: string[]): void => {
+    const original = obj.dispose.bind(obj)
+    obj.dispose = () => {
+      sink.push(name)
+      original()
+    }
+  }
+  const watchSlot = (slot: SlotScene, sink: string[]): void => {
+    // A watch helper, not the suite's subject: `ViewerRefs` types the markers
+    // nullable (the single-viewer mount builds it without a mesh), but
+    // `makeSlotScene` always fills them - so the null branch is unreachable
+    // here and the count below stays exactly ten.
+    watch(slot.refs.hullMesh.geometry, 'hull geometry', sink)
+    watch(slot.refs.hullMesh.material as Material, 'hull material', sink)
+    for (const key of ['lcgSphere', 'lcbSphere', 'lcgLine', 'lcbLine'] as const) {
+      const obj = slot.refs[key]
+      if (!obj) continue
+      watch(obj.geometry, `${key} geometry`, sink)
+      watch(obj.material as Material, `${key} material`, sink)
+    }
+  }
+
+  // A fresh slot owns a hull geometry and material, two spheres and two leaders,
+  // each with a geometry and a material of its own: 2 + 4*2 = 10 resources, and
+  // every one must go - Task 6 rebuilds a slot whenever its mesh hash changes,
+  // so a missed one leaks GPU memory per re-pick for the whole session.
+  const { a } = twoSlots()
+  const released: string[] = []
+  watchSlot(a, released)
+  disposeSlotScene(a)
+  check(
+    'disposeSlotScene reaches every geometry and material',
+    released.length === 10,
+    released.length === 10 ? 'all 10 released' : `only ${released.length}: ${released.join(', ')}`,
+  )
+
+  // Only the slot handed over: a slot's rebuild must not strip its neighbour.
+  const { a: owner, b: neighbour } = twoSlots()
+  const releasedOwner: string[] = []
+  const releasedNeighbour: string[] = []
+  watchSlot(owner, releasedOwner)
+  watchSlot(neighbour, releasedNeighbour)
+  disposeSlotScene(owner)
+  check(
+    'dispose touches only the slot handed over',
+    releasedOwner.length === 10 && releasedNeighbour.length === 0,
+    `owner ${releasedOwner.length}, neighbour ${releasedNeighbour.length}`,
+  )
+
+  // Cleanup can run twice - a rebuild followed by an unmount, or React's
+  // double-invoked effects in development - and three's dispose is only an
+  // event dispatch, so a second call must simply not throw.
+  let twiceSafe = true
+  try {
+    disposeSlotScene(owner)
+    disposeSlotScene(owner)
+  } catch {
+    twiceSafe = false
+  }
+  check('dispose is safe to run twice', twiceSafe, 'two consecutive calls do not throw')
+}
+
+// --- 6. purity and the division of labour ----------------------------------
+console.log('\n=== 6. purity: each seam touches only what it is handed ===')
 {
   const { a } = twoSlots()
-  const touched: string[] = []
-  const spy = (target: object): object =>
+  // Each spy writes to ITS OWN sink. The first draft captured one array in the
+  // closure and had the water seam assert a second array nothing ever wrote
+  // to - a purity check that could never fail.
+  const spy = (target: object, sink: string[]): object =>
     new Proxy(target, {
       get(t, prop: string) {
         if (/camera|controls|renderer|scene|domElement|requestAnimation/i.test(prop))
-          touched.push(prop)
+          sink.push(prop)
         return Reflect.get(t, prop)
       },
     })
 
-  const proxied = { wrapper: spy(a.wrapper), refs: spy(a.refs) } as unknown as SlotScene
+  const touched: string[] = []
+  const proxied = {
+    wrapper: spy(a.wrapper, touched),
+    refs: spy(a.refs, touched),
+  } as unknown as SlotScene
   applySlotResultToScene(
     proxied,
     view({
@@ -428,7 +616,11 @@ console.log('\n=== 5. purity: each seam touches only what it is handed ===')
 
   const touchedWater: string[] = []
   const { a: w } = twoSlots()
-  const proxiedSlot = { wrapper: spy(w.wrapper), refs: spy(w.refs) } as unknown as SlotScene
+  applySlotResultToScene(w, view({ waterlineZ: WL_A }))
+  const proxiedSlot = {
+    wrapper: spy(w.wrapper, touchedWater),
+    refs: spy(w.refs, touchedWater),
+  } as unknown as SlotScene
   applySharedWaterSurface([{ slot: proxiedSlot, waterlineZ: WL_A }], unitPlane())
   check(
     'the water seam reads no scene-graph escape hatches',
@@ -467,10 +659,16 @@ console.log('\n=== 5. purity: each seam touches only what it is handed ===')
   applySharedWaterSurface([{ slot: s, waterlineZ: 40 }], unitPlane())
   const poseAfter = poseOf(s)
   const poseDrift = Math.max(...poseBefore.map((v, i) => Math.abs(v - poseAfter[i])))
+  // The wrapper's new offset is NOT -40 any more: the drop is pose-aware, so
+  // under this 4 deg trim and 5 deg heel it is the pose-blind -40 plus the
+  // pivot's own rotation terms. What the contract still guarantees exactly is
+  // the LANDING - the midship waterline point on world Z 0 - and that nothing
+  // about the hull's own pose moved.
+  const waterPoint = worldOf(s, { x: 0, y: 0, z: 40 })
   check(
     'the water seam leaves the hull pose alone',
-    poseDrift === 0 && s.wrapper.position.z === -40,
-    `max pose drift ${poseDrift.toExponential(2)} mm, wrapper moved to ${s.wrapper.position.z}`,
+    poseDrift === 0 && Math.abs(waterPoint.z) < 1e-9,
+    `max pose drift ${poseDrift.toExponential(2)} mm, wrapper at ${s.wrapper.position.z.toFixed(6)}, waterline point at world Z ${waterPoint.z.toExponential(1)}`,
   )
 
   check(

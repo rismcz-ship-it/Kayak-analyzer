@@ -247,12 +247,8 @@ export function makeSlotScene(positions: Float32Array, color: number, opacity: n
   geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
   geometry.computeBoundingBox()
   const bb = geometry.boundingBox
-  const size = new THREE.Vector3()
   const center = new THREE.Vector3()
-  if (bb) {
-    bb.getSize(size)
-    bb.getCenter(center)
-  }
+  if (bb) bb.getCenter(center)
   const keelZ = bb ? bb.min.z : 0
   const hullSizeX = bb ? Math.max(bb.max.x - bb.min.x, 1) : 100
 
@@ -268,15 +264,36 @@ export function makeSlotScene(positions: Float32Array, color: number, opacity: n
   )
   hullGroup.add(mesh)
 
-  const markerMat = (c: number) => new THREE.MeshBasicMaterial({ color: c, depthTest: false })
+  // The markers join the hull's TRANSPARENT pass. The hull is translucent by
+  // design, and three.js draws every opaque object before every transparent
+  // one - an opaque marker would therefore be blended OVER by the hull drawn
+  // after it and come out dimmed. renderOrder 2 puts the markers after the
+  // hull inside the transparent list; the single viewer gets away with the
+  // mount pass's 1 because its hull is opaque, and `createLeader` (shared, so
+  // untouched) sets exactly that 1, which is overridden here per line.
+  const markerMat = (c: number) =>
+    new THREE.MeshBasicMaterial({ color: c, depthTest: false, transparent: true })
 
+  // Hidden until the first result: the mount pass calls the pose seam with an
+  // empty view at mount, which hides them, and a fresh slot has no result yet
+  // - two bright spheres at the origin would say otherwise.
   const lcgSphere = new THREE.Mesh(new THREE.SphereGeometry(hullSizeX * 0.02), markerMat(0xef4444))
+  lcgSphere.renderOrder = 2
+  lcgSphere.visible = false
   hullGroup.add(lcgSphere)
   const lcgLine = createLeader(hullGroup, 0xef4444)
+  lcgLine.renderOrder = 2
+  lcgLine.visible = false
+  ;(lcgLine.material as THREE.Material).transparent = true
 
   const lcbSphere = new THREE.Mesh(new THREE.SphereGeometry(hullSizeX * 0.02), markerMat(0x22c55e))
+  lcbSphere.renderOrder = 2
+  lcbSphere.visible = false
   hullGroup.add(lcbSphere)
   const lcbLine = createLeader(hullGroup, 0x22c55e)
+  lcbLine.renderOrder = 2
+  lcbLine.visible = false
+  ;(lcbLine.material as THREE.Material).transparent = true
 
   return {
     wrapper,
@@ -310,21 +327,38 @@ export function applySlotResultToScene(slot: SlotScene, view: ViewerView): void 
 /**
  * Put every slot on ONE shared water surface.
  *
- * Each wrapper sits at z = -waterlineZ, so each hull's midship waterline point
- * lands on world Z 0 and the deeper hull visibly sits lower — the whole point
- * of the overlay. The plane is centred on the union of the hulls' world bounds
- * at world Z 0 and scaled 1.2x past them, the same margin the single-viewer
- * mount uses.
+ * Each slot is dropped so that its hull's MIDSHIP WATERLINE POINT — the mesh
+ * point at x = y = 0, z = waterlineZ, the station the solver reports its
+ * waterline height at — lands exactly on world Z 0. The deeper hull therefore
+ * visibly sits lower, which is the whole point of the overlay, and both hulls
+ * sit on the same plane however they are posed.
  *
- * Idempotent by construction: the wrapper offset is written, never
- * accumulated, so a re-solve REPLACES the waterline instead of drifting the
- * hull. The plane's geometry is the unit square this seam scales; Task 6's
- * compare mount builds it once.
+ * The drop is POSE-AWARE, not the plain `-waterlineZ` a first draft used. The
+ * pose seam rotates the hull about its pivot `p`, so the world Z of that point
+ * is `p.z + p.x*sin(trim) - p.y*sin(heel) + (waterlineZ - p.z)*cos(...)` — the
+ * `p.x*sin(trim)` term alone is FIRST order and reaches ~50 mm on this hull at
+ * a 20 % LCG, which is larger than the 30 mm draft difference the overlay
+ * exists to show. Measuring the point through the hull's own matrixWorld and
+ * cancelling its Z makes the contract exact under any pose; at zero pose the
+ * measurement is `waterlineZ` itself and this is the same number the draft
+ * code produced.
  *
- * At zero pose each hull's midship waterline point lands exactly on world Z 0.
- * A posed hull lifts that point by the second-order rotation residual
- * dz*(cos(theta)-1) — a translation datum does not re-pose the hull — which is
- * tenths of a millimetre across the app's +/-4.5 deg sweep.
+ * Idempotent by construction: the wrapper is returned to the origin before the
+ * measurement and the offset is then WRITTEN, never accumulated, so a re-solve
+ * REPLACES the waterline instead of drifting the hull.
+ *
+ * The plane is centred on the union of the hulls' world bounds at world Z 0 and
+ * scaled 1.2x past them (the single-viewer margin). Its size is derived from
+ * the plane's OWN geometry, so a unit square and an already-sized plane both
+ * work — the scale is `target / geometry extent`, not the target itself.
+ *
+ * Preconditions, all the caller's: call AFTER the pose seams have run (the
+ * union and the measurement read the posed hull); the plane must be a direct
+ * child of the scene, because this seam writes world coordinates to it; the
+ * plane's visibility is the caller's — an empty or all-non-finite list leaves
+ * the plane exactly as it was; and each entry's `waterlineZ` should be the
+ * same one handed to that slot's pose seam (Task 6 reads it from the slot's
+ * own last result, one source for both).
  */
 export function applySharedWaterSurface(
   slots: Array<{ slot: SlotScene; waterlineZ: number }>,
@@ -332,7 +366,14 @@ export function applySharedWaterSurface(
 ): void {
   const union = new THREE.Box3()
   for (const { slot, waterlineZ } of slots) {
-    slot.wrapper.position.z = -waterlineZ
+    if (!Number.isFinite(waterlineZ)) continue
+    // Measure with the wrapper at the origin so the hull's own pose shows
+    // through the matrices undisturbed, then drop the whole slot by exactly
+    // the height its waterline point reached.
+    slot.wrapper.position.set(0, 0, 0)
+    slot.wrapper.updateMatrixWorld(true)
+    const onWater = new THREE.Vector3(0, 0, waterlineZ).applyMatrix4(slot.refs.hullMesh.matrixWorld)
+    slot.wrapper.position.z = -onWater.z
     slot.wrapper.updateMatrixWorld(true)
     const box = new THREE.Box3().setFromObject(slot.refs.hullMesh)
     if (!box.isEmpty()) union.union(box)
@@ -340,8 +381,37 @@ export function applySharedWaterSurface(
   if (union.isEmpty()) return
   const size = union.getSize(new THREE.Vector3())
   const centre = union.getCenter(new THREE.Vector3())
+  waterPlane.geometry.computeBoundingBox()
+  const geomBox = waterPlane.geometry.boundingBox
+  const geomSize = geomBox ? geomBox.getSize(new THREE.Vector3()) : new THREE.Vector3(1, 1, 0)
   waterPlane.position.set(centre.x, centre.y, 0)
-  waterPlane.scale.set(Math.max(size.x, 1) * 1.2, Math.max(size.y, 1) * 1.2, 1)
+  waterPlane.scale.set(
+    (Math.max(size.x, 1) * 1.2) / (geomSize.x || 1),
+    (Math.max(size.y, 1) * 1.2) / (geomSize.y || 1),
+    1,
+  )
+}
+
+/**
+ * Release a slot's GPU resources: the hull geometry this module built, the
+ * marker and leader geometries and their materials, and the hull material.
+ * The single viewer's mount cleanup is the model. Slots are rebuilt whenever
+ * their mesh hash changes, so without this a session of re-picks leaks a
+ * geometry and four materials per rebuild.
+ */
+export function disposeSlotScene(slot: SlotScene): void {
+  const { hullMesh, lcgSphere, lcbSphere, lcgLine, lcbLine } = slot.refs
+  hullMesh.geometry.dispose()
+  const hullMat = hullMesh.material
+  if (Array.isArray(hullMat)) for (const m of hullMat) m.dispose()
+  else hullMat.dispose()
+  for (const obj of [lcgSphere, lcbSphere, lcgLine, lcbLine]) {
+    if (!obj) continue
+    obj.geometry.dispose()
+    const mat = obj.material
+    if (Array.isArray(mat)) for (const m of mat) m.dispose()
+    else mat.dispose()
+  }
 }
 
 export default function Viewer3D({
