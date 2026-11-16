@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import CompareView from './components/CompareView'
 import ResultsPanel, { statRow } from './components/ResultsPanel'
 import Upload, { type LoadedMesh, rescaleMesh } from './components/Upload'
 import Viewer3D from './components/Viewer3D'
+import { deleteRecord, type RunRecord, readRoster, writeRoster } from './lib/compare'
 import { fmt } from './lib/format'
 import type { TrimSolveResult } from './lib/hydrostatics'
 import {
@@ -20,6 +22,11 @@ import { SolverClient } from './lib/solver-client'
 function positionsOf(mesh: LoadedMesh): Float32Array {
   return mesh.geometry.getAttribute('position').array as Float32Array
 }
+
+/** The two surfaces in this app; `analyze` is the home single-hull flow. */
+const TABS = ['analyze', 'compare'] as const
+type TabKey = (typeof TABS)[number]
+const TAB_LABELS: Record<TabKey, string> = { analyze: 'Analyze', compare: 'Compare' }
 
 export default function App() {
   const [mesh, setMesh] = useState<LoadedMesh | null>(null)
@@ -65,6 +72,35 @@ export default function App() {
   const calcToken = useRef(0)
   const clientRef = useRef<SolverClient | null>(null)
   const mountedRef = useRef(true)
+
+  // Which surface is on screen. Only one 3D canvas is ever mounted: the home
+  // viewer and the compare overlay are alternatives, not neighbours, so
+  // switching tabs tears the other context down instead of paying for two.
+  const [tab, setTab] = useState<TabKey>('analyze')
+  // The Compare tab's roster: the only Compare state that outlives a reload.
+  // Records are immutable snapshots, so an id that arrives twice (a re-import
+  // of a record already in the roster) replaces rather than duplicates.
+  const [roster, setRoster] = useState<RunRecord[]>(() =>
+    readRoster((key) => localStorage.getItem(key)),
+  )
+
+  const addRecord = useCallback((record: RunRecord) => {
+    setRoster((prev) => [record, ...prev.filter((entry) => entry.id !== record.id)])
+  }, [])
+
+  const removeRecord = useCallback((id: string) => {
+    setRoster((prev) => deleteRecord(prev, id))
+  }, [])
+
+  // Same swallow-the-throw rule as the inputs above: a browser with no usable
+  // storage simply runs without a roster, and the Compare tab still works.
+  useEffect(() => {
+    try {
+      writeRoster(roster, (key, value) => localStorage.setItem(key, value))
+    } catch {
+      // No localStorage, or it is full: carry on without memory.
+    }
+  }, [roster])
 
   /**
    * Retire whatever is in flight: bump the token so its late continuation is
@@ -263,9 +299,30 @@ export default function App() {
   return (
     <div className="flex h-full flex-col">
       <header className="flex items-center justify-between gap-4 border-b border-zinc-800 px-6 py-3">
-        <div>
-          <h1 className="text-lg font-semibold tracking-tight text-zinc-100">kayak-analyzer</h1>
-          <p className="text-xs text-zinc-500">Static float + stability viewer — school project</p>
+        <div className="flex items-center gap-4">
+          <div>
+            <h1 className="text-lg font-semibold tracking-tight text-zinc-100">kayak-analyzer</h1>
+            <p className="text-xs text-zinc-500">
+              Static float + stability viewer — school project
+            </p>
+          </div>
+          <nav aria-label="Mode" className="flex items-center gap-1">
+            {TABS.map((key) => (
+              <button
+                key={key}
+                type="button"
+                aria-current={tab === key ? 'page' : undefined}
+                onClick={() => setTab(key)}
+                className={`rounded px-3 py-1 text-xs font-medium transition-colors ${
+                  tab === key
+                    ? 'bg-zinc-800 text-zinc-100'
+                    : 'text-zinc-400 hover:bg-zinc-800/60 hover:text-zinc-200'
+                }`}
+              >
+                {TAB_LABELS[key]}
+              </button>
+            ))}
+          </nav>
         </div>
         <span className="hidden items-center gap-1.5 text-xs text-zinc-500 sm:flex">
           <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
@@ -274,7 +331,9 @@ export default function App() {
       </header>
 
       <main className="flex min-h-0 flex-1 flex-col p-4">
-        {mesh && s ? (
+        {tab === 'compare' ? (
+          <CompareView roster={roster} onAddRecord={addRecord} onDeleteRecord={removeRecord} />
+        ) : mesh && s ? (
           <div className="flex flex-col min-h-0 flex-1 gap-4 lg:flex-row">
             {/*
              * flex-none below lg, on purpose: in this column flex a non-auto basis (flex-1 =
