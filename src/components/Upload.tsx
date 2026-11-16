@@ -103,12 +103,16 @@ export const MESH_CACHE_MAX = 8
  * it identifies nothing, so it is not cached under a key no record will ever
  * look up (`recordFromSolve` refuses the empty string for the same reason).
  *
- * The oldest entry leaves first — a `Map` keeps insertion order. A slot already
- * displaying that mesh keeps it in its own state, so an eviction only costs a
- * re-upload the next time the record is picked.
+ * A re-remembered hash is refreshed, not left in place: `Map.set` on an
+ * existing key keeps the original insertion position, so without the explicit
+ * delete a hull that is re-solved every run would be the FIRST evicted — the
+ * exact opposite of what its use should earn it. A slot already displaying
+ * that mesh keeps it in its own state, so an eviction only costs a re-upload
+ * the next time the record is picked.
  */
 export function rememberMesh(cache: Map<string, LoadedMesh>, mesh: LoadedMesh): void {
   if (mesh.sha256Hex === '') return
+  cache.delete(mesh.sha256Hex)
   cache.set(mesh.sha256Hex, mesh)
   while (cache.size > MESH_CACHE_MAX) {
     const oldest = cache.keys().next()

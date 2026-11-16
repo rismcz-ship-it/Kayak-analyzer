@@ -125,15 +125,32 @@ function cloneSolveResult(result: TrimSolveResult): TrimSolveResult {
 }
 
 /**
- * Build a record from a fresh solve — the snapshot of what the solve
+ * True when every number in a plain-data snapshot (nested vectors and curve
+ * arrays included) is finite. `NaN`/`Infinity` are the only values JSON
+ * cannot represent losslessly, so they are the only ones worth walking for.
+ */
+function numbersAllFinite(value: unknown): boolean {
+  if (typeof value === 'number') return Number.isFinite(value)
+  if (Array.isArray(value)) return value.every(numbersAllFinite)
+  if (value !== null && typeof value === 'object') {
+    return Object.values(value as Record<string, unknown>).every(numbersAllFinite)
+  }
+  return true
+}
+
+/**
+ * Build a record from a fresh solve - the snapshot of what the solve
  * reported at these conditions, and nothing else may ever change it.
  *
- * Two guards run before the record exists. The inputs go through the same
+ * Three guards run before the record exists. The inputs go through the same
  * range gate the form and `readRoster` use, so a value the form rejects
  * throws here instead of building a record that storage will drop on the
- * next reload; and the model hash must be a real one, because a record with
- * no hash can never be re-picked against its STL. Both throws name the
- * field, so the caller (the auto-add path) can surface the cause.
+ * next reload; the model hash must be a real one, because a record with no
+ * hash can never be re-picked against its STL; and the result must be all
+ * finite, because JSON turns a NaN into null and `readRoster` would then
+ * drop the whole record on the next reload without telling anyone - a record
+ * that vanishes later is worse than one refused now. All three throws name
+ * the field, so the caller (the auto-add path) can surface the cause.
  *
  * The id mixes a counter with one captured timestamp, so two saves in the
  * same millisecond (two slots, or a fast double analysis) still differ and
@@ -154,6 +171,16 @@ export function recordFromSolve(
   if (typeof modelHash !== 'string' || !SHA256_HEX_PATTERN.test(modelHash)) {
     throw new Error(
       'recordFromSolve: modelHash must be 64 lowercase hex characters (a SHA-256 of the raw STL bytes)',
+    )
+  }
+  // A record outlives the session as JSON, and JSON collapses NaN/Infinity to
+  // null — which `readRoster` then refuses, dropping the whole entry on the
+  // next reload WITHOUT telling anyone. Refuse it here instead, where the
+  // message names the reason, rather than letting a visible record silently
+  // vanish later.
+  if (!numbersAllFinite(result)) {
+    throw new Error(
+      'recordFromSolve: the solve result carries a non-finite number and cannot be recorded',
     )
   }
   const savedAt = Date.now()

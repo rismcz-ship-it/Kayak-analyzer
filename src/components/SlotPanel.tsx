@@ -140,24 +140,39 @@ export default function SlotPanel({
   const onExport = () => {
     if (!record) return
     setExportError(null)
-    // What the slot DISPLAYS. The name and the hash describe the geometry on
-    // screen, which is the slot's own re-picked STL when it has one: exporting
-    // the record's hash against a different hull's numbers would tag the run
-    // with a model it was not solved from, and the re-import would then ask for
-    // an STL that is sitting in memory right now.
+    // What the slot DISPLAYS. The name and the hash must come from the SAME
+    // source as the numbers: a live result was solved from the slot's own
+    // re-picked STL, so it carries the mesh's identity; the record's snapshot
+    // came from the record's hull, so it must keep the record's name and hash
+    // even while a foreign STL waits for its own solve. Mixing the two stamps
+    // the document with a model its numbers never came from, and the re-import
+    // would then ask for an STL that is not the one that produced them.
     //
-    // The conditions travel WITH the result: the live solve's own while it has
-    // one, the record's own when its snapshot is what is on screen. Pairing
-    // the displayed results with the slot's EDITED targets instead would write
-    // a document whose reproduction inputs never produced its numbers
-    // (`exportRunRecord` copies `record.inputs` into `targets` verbatim) - and
-    // a slot whose STL is not in memory has no live solve at all, so that was
-    // the default state of every imported record.
+    // The conditions travel WITH the result for the same reason: the live
+    // solve's own while it has one, the record's own when its snapshot is what
+    // is on screen. Pairing the displayed results with the slot's EDITED
+    // targets instead would write a document whose reproduction inputs never
+    // produced its numbers (`exportRunRecord` copies `record.inputs` into
+    // `targets` verbatim) - and a slot whose STL is not in memory has no live
+    // solve at all, so that was the default state of every imported record.
     const own = slot.mesh
-    const name = own ? own.fileName : record.name
-    const modelHash = own ? own.sha256Hex : record.modelHash
-    const displayed = slot.live ?? record.result
-    const conditions = slot.live !== null ? (slot.liveInputs ?? slot.inputs) : record.inputs
+    // Captured in a local const before anything branches on it: narrowing the
+    // `slot.live` property through a boolean alias does not survive to the
+    // uses below, so the value itself is what gets compared.
+    const liveSolve = slot.live
+    const displayed = liveSolve ?? record.result
+    const conditions = liveSolve !== null ? (slot.liveInputs ?? slot.inputs) : record.inputs
+    const name = liveSolve !== null && own ? own.fileName : record.name
+    const modelHash = liveSolve !== null && own ? own.sha256Hex : record.modelHash
+    // A live solve from a mesh the page could not hash names no model at all:
+    // `recordFromSolve` would refuse it with a developer-only message, so the
+    // panel says it in plain language instead.
+    if (liveSolve !== null && own && own.sha256Hex === '') {
+      setExportError(
+        'This page cannot hash STLs (no secure context), so this hull cannot be exported as a run record.',
+      )
+      return
+    }
     try {
       const doc = exportRunRecord(recordFromSolve(name, modelHash, conditions, displayed))
       const url = URL.createObjectURL(
@@ -394,8 +409,14 @@ export default function SlotPanel({
           {slot.mesh ? (
             <div className="mt-3">
               <p className="text-xs text-emerald-400" title={slot.mesh.orientNote}>
-                STL in memory — {slot.mesh.fileName}
+                STL in memory - {slot.mesh.fileName}
               </p>
+              {!slot.mesh.stats.watertight.watertight && (
+                <p className="mt-1 text-xs text-amber-400" role="note">
+                  {slot.mesh.stats.watertight.openEdgeCount} open edges — the solver needs a closed
+                  hull, so this slot is not solved.
+                </p>
+              )}
               {slot.mesh.scaleAdvice && (
                 <p className="mt-1 text-xs text-amber-400" role="note">
                   {scaleNotice(slot.mesh.scaleAdvice, maxDim)}

@@ -189,7 +189,8 @@ function viewOf(result: TrimSolveResult | null): ViewerView {
  * When the slot's inputs fall outside the form's gate the slot stops solving
  * and DROPS its live result, so what stays on screen is the record's own
  * labelled snapshot rather than a number that no longer answers to the
- * conditions being edited.
+ * conditions being edited. An open (non-watertight) hull is the same kind of
+ * stop, checked first: it names the open-edge count instead of an input.
  */
 function useSlotSolve(
   slot: SlotState,
@@ -205,7 +206,14 @@ function useSlotSolve(
   useEffect(() => {
     if (!mesh) return
     const conditions = { weightKg, lcgPctLwl, kgMm, heelDeg }
-    const problem = inputsProblem(conditions)
+    // The hull's own gate comes first, exactly as the home flow's does (App
+    // checks the open edges before it checks the inputs): an open hull must
+    // not reach solveTrim on this path either. The slot stops and says how
+    // many edges are open, keeping the record's labelled snapshot on screen
+    // rather than exporting a clip of a hull the solver cannot close.
+    const problem = mesh.stats.watertight.watertight
+      ? inputsProblem(conditions)
+      : `${mesh.stats.watertight.openEdgeCount} open edges — the solver needs a closed hull.`
     if (problem !== null) {
       setSlot((prev) =>
         prev.error === problem && prev.live === null && !prev.solving

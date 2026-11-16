@@ -549,10 +549,12 @@ check(
 )
 
 // What storage does with a NaN: JSON writes null, and null is not a number,
-// so the record drops and its valid sibling survives.
+// so the record drops and its valid sibling survives. A hand-written entry
+// stands in for the record here, because the create gate below refuses to
+// build one in the first place.
 const nanResult: TrimSolveResult = { ...sampleResult, trimDeg: Number.NaN }
-const nanRecord = recordFromSolve('NaN hull', 'd'.repeat(64), sampleInputs, nanResult)
-const nanText = encodeRoster([nanRecord, built])
+const nanStored = entry({ id: 'rec_nan_stored', result: nanResult })
+const nanText = JSON.stringify([nanStored, valid])
 check(
   nanText.includes('"trimDeg":null'),
   'encodeRoster writes a NaN as null',
@@ -564,7 +566,44 @@ check(
   'the NaN record is dropped, its valid sibling survives',
   `got ${afterNan.length}`,
 )
-check(afterNan[0].id === built.id, 'the surviving sibling is the valid one')
+check(afterNan[0].id === 'rec_valid', 'the surviving sibling is the valid one')
+
+// The create gate that keeps such a record out of the roster at all: a
+// refused record names its reason where a read-time drop leaves a visible
+// record silently vanishing on the next reload.
+let nanRefusal = ''
+try {
+  recordFromSolve('NaN hull', 'd'.repeat(64), sampleInputs, nanResult)
+} catch (err) {
+  nanRefusal = err instanceof Error ? err.message : String(err)
+}
+check(nanRefusal !== '', 'a result with a NaN is refused at creation', nanRefusal)
+check(nanRefusal.includes('non-finite'), 'the refusal names the reason', nanRefusal)
+
+let infRefusal = ''
+try {
+  recordFromSolve('Inf hull', 'e'.repeat(64), sampleInputs, {
+    ...sampleResult,
+    GM: Number.POSITIVE_INFINITY,
+  })
+} catch (err) {
+  infRefusal = err instanceof Error ? err.message : String(err)
+}
+check(infRefusal !== '', 'a result with an Infinity is refused at creation', infRefusal)
+
+let curveRefusal = ''
+try {
+  recordFromSolve('Curve hull', 'f'.repeat(64), sampleInputs, {
+    ...sampleResult,
+    gzCurve: [
+      { heelDeg: 0, GZ: 0 },
+      { heelDeg: 5, GZ: Number.NaN },
+    ],
+  })
+} catch (err) {
+  curveRefusal = err instanceof Error ? err.message : String(err)
+}
+check(curveRefusal !== '', 'a NaN inside the GZ curve is refused too', curveRefusal)
 
 // The inputs are no different: a NaN input restores as null and is filtered.
 const nanInputsText = JSON.stringify([
