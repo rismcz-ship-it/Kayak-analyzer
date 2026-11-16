@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { exportRunRecord, type RunRecord, recordFromSolve, type SlotInputs } from '../lib/compare'
 import { DEFAULT_KG_MM } from '../lib/hydrostatics'
 import { HEEL_MAX, HEEL_MIN, type NumericInputs, parseInputs, scaleNotice } from '../lib/inputs'
@@ -78,6 +78,19 @@ export default function SlotPanel({
   // The STL that does not hash to this record's, awaiting an explicit choice.
   const [mismatch, setMismatch] = useState<LoadedMesh | null>(null)
   const [exportError, setExportError] = useState<string | null>(null)
+
+  // A mesh leaving the slot (Replace STL, a re-pick that loses the cache)
+  // must not drag panel state about the OLD file along: a pending mismatch
+  // gate for a file that was never accepted, or an export error from a hull
+  // that is gone. Both describe a file, and the file is gone. The mismatch
+  // flow itself is unaffected - it is set while the mesh is already null, so
+  // this effect never re-fires under it.
+  useEffect(() => {
+    if (slot.mesh === null) {
+      setMismatch(null)
+      setExportError(null)
+    }
+  }, [slot.mesh])
 
   const parsed = parseInputs(numeric)
   const allValid = parsed.weightKg !== null && parsed.lcgPercent !== null && parsed.kgMm !== null
@@ -172,6 +185,18 @@ export default function SlotPanel({
     // uses below, so the value itself is what gets compared.
     const liveSolve = slot.live
     const displayed = liveSolve ?? record?.result ?? null
+    // A live solve from a mesh the page could not hash names no model at all:
+    // `recordFromSolve` would refuse it with a developer-only message, so the
+    // panel says it in plain language instead. Checked BEFORE the
+    // nothing-to-export gate below: with no hash, modelHash IS '' here, so
+    // that gate would return first and leave an enabled Export click with no
+    // answer at all.
+    if (liveSolve !== null && own && own.sha256Hex === '') {
+      setExportError(
+        'This page cannot hash STLs (no secure context), so this hull cannot be exported as a run record.',
+      )
+      return
+    }
     const conditions =
       liveSolve !== null ? (slot.liveInputs ?? slot.inputs) : (record?.inputs ?? slot.inputs)
     const name = liveSolve !== null && own ? own.fileName : (record?.name ?? own?.fileName ?? '')
@@ -181,15 +206,6 @@ export default function SlotPanel({
     // no saved run to fall back to. The button is disabled before then; this
     // is the same gate in code.
     if (displayed === null || name === '' || modelHash === '') return
-    // A live solve from a mesh the page could not hash names no model at all:
-    // `recordFromSolve` would refuse it with a developer-only message, so the
-    // panel says it in plain language instead.
-    if (liveSolve !== null && own && own.sha256Hex === '') {
-      setExportError(
-        'This page cannot hash STLs (no secure context), so this hull cannot be exported as a run record.',
-      )
-      return
-    }
     try {
       const doc = exportRunRecord(recordFromSolve(name, modelHash, conditions, displayed))
       const url = URL.createObjectURL(
@@ -366,9 +382,17 @@ export default function SlotPanel({
           {slot.error}
         </p>
       )}
-      {!slot.solving && !slot.error && slot.live && (
-        <p className="mt-3 text-xs text-emerald-400">Live — solved at the conditions above.</p>
-      )}
+      {/* Honest prose: the claim "at the conditions above" only holds while
+          every field parses - a field holding garbage leaves slot.inputs at
+          the last valid values, and its own error message says so instead. */}
+      {!slot.solving &&
+        !slot.error &&
+        slot.live &&
+        !parsed.weightError &&
+        !parsed.lcgError &&
+        !parsed.kgError && (
+          <p className="mt-3 text-xs text-emerald-400">Live — solved at the conditions above.</p>
+        )}
       {!slot.solving && !slot.error && !slot.live && record !== null && (
         <p className="mt-3 text-xs text-zinc-500">
           Showing the saved run — edit a condition to re-solve.

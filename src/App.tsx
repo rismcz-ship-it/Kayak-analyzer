@@ -79,9 +79,12 @@ export default function App() {
   const clientRef = useRef<SolverClient | null>(null)
   const mountedRef = useRef(true)
 
-  // Which surface is on screen. Only one 3D canvas is ever mounted: the home
-  // viewer and the compare overlay are alternatives, not neighbours, so
-  // switching tabs tears the other context down instead of paying for two.
+  // Which surface is on screen. Both tabs stay MOUNTED for the whole session
+  // (the main block below hides one with display:none): a tab's state - the
+  // Compare slots above all - dies with its component, and a remount on every
+  // switch wiped it. The price is deliberate: two live WebGL contexts, and a
+  // hidden tab's render loop keeps running (painting the same frame) instead
+  // of being torn down.
   const [tab, setTab] = useState<TabKey>('analyze')
   // The Compare tab's roster: the only Compare state that outlives a reload.
   // Records are immutable snapshots, so an id that arrives twice (a re-import

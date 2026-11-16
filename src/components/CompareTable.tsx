@@ -1,4 +1,4 @@
-import { conditionsDiffer, type RunRecord, type SlotInputs } from '../lib/compare'
+import { conditionsDiffer, type SlotInputs } from '../lib/compare'
 import { fmt, signed } from '../lib/format'
 import { type GzMarks, gzMarks } from '../lib/gz-marks'
 import type { TrimSolveResult } from '../lib/hydrostatics'
@@ -14,7 +14,6 @@ import { SLOT_COLORS } from './Viewer3D'
  * DISPLAYED result answers to, never the ones being typed into the fields.
  */
 export interface CompareColumn {
-  record: RunRecord | null
   /**
    * What the header calls this column: the record's name, or a fresh hull's
    * file name when the slot was loaded straight from an STL. null = the slot

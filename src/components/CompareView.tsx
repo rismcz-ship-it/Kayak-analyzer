@@ -428,21 +428,23 @@ export default function CompareView({
   const shownInputs = (slot: SlotState, record: RunRecord | null): SlotInputs =>
     slot.live !== null ? (slot.liveInputs ?? slot.inputs) : (record?.inputs ?? slot.inputs)
   const columnA: CompareColumn = {
-    record: recordA,
     // A slot loaded straight from an STL is called by its file name.
     name: recordA?.name ?? slotA.mesh?.fileName ?? null,
     result: resultA,
-    inputs: recordA !== null || slotA.mesh !== null ? shownInputs(slotA, recordA) : null,
+    // Conditions only when the column has numbers to pair them with: a mesh
+    // whose solve has not landed (or failed) has no result, and a "different
+    // conditions" note about a column without numbers asserts a comparison
+    // that does not exist.
+    inputs: resultA !== null ? shownInputs(slotA, recordA) : null,
     // A re-solve is in flight: the numbers on screen still answer to the
     // previous conditions, and the table says so instead of letting the delta
     // column imply they are the current ones.
     stale: slotA.solving && slotA.live !== null,
   }
   const columnB: CompareColumn = {
-    record: recordB,
     name: recordB?.name ?? slotB.mesh?.fileName ?? null,
     result: resultB,
-    inputs: recordB !== null || slotB.mesh !== null ? shownInputs(slotB, recordB) : null,
+    inputs: resultB !== null ? shownInputs(slotB, recordB) : null,
     stale: slotB.solving && slotB.live !== null,
   }
 
