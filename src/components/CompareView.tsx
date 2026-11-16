@@ -362,6 +362,28 @@ export default function CompareView({
     [setters, meshCache],
   )
 
+  /**
+   * Forget a slot's STL: the dropzone (or the record's re-pick path) comes
+   * back and the live answer goes, while the record and the typed conditions
+   * stay. This is how a hull in a slot is CHANGED - a new file goes through
+   * the same explicit load path as the first one, never a silent in-place
+   * overwrite.
+   */
+  const clearMesh = useCallback(
+    (index: 0 | 1) => {
+      setters[index]((prev) => ({
+        ...prev,
+        mesh: null,
+        live: null,
+        liveInputs: null,
+        solving: false,
+        progress: null,
+        error: null,
+      }))
+    },
+    [setters],
+  )
+
   const editInputs = (index: 0 | 1, inputs: SlotInputs) => {
     setters[index]((prev) => ({ ...prev, inputs }))
   }
@@ -527,6 +549,7 @@ export default function CompareView({
           record={recordA}
           onInputs={(inputs) => editInputs(0, inputs)}
           onMesh={(mesh) => attachMesh(0, mesh)}
+          onReplaceMesh={() => clearMesh(0)}
         />
         <SlotPanel
           key={`B#${slotB.recordId ?? 'empty'}#${slotB.pickSeq}`}
@@ -535,6 +558,7 @@ export default function CompareView({
           record={recordB}
           onInputs={(inputs) => editInputs(1, inputs)}
           onMesh={(mesh) => attachMesh(1, mesh)}
+          onReplaceMesh={() => clearMesh(1)}
         />
       </div>
 

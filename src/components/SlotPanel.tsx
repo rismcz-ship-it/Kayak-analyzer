@@ -48,6 +48,12 @@ interface SlotPanelProps {
   onInputs: (inputs: SlotInputs) => void
   /** A re-picked (or rescaled) STL for this slot. */
   onMesh: (mesh: LoadedMesh) => void
+  /**
+   * Forget the slot's STL: the dropzone (or the record's re-pick path)
+   * returns and the live answer is dropped, while the record and the typed
+   * conditions stay. The way a loaded hull is swapped for another file.
+   */
+  onReplaceMesh: () => void
 }
 
 function fieldStrings(record: RunRecord | null): NumericInputs {
@@ -58,7 +64,14 @@ function fieldStrings(record: RunRecord | null): NumericInputs {
   }
 }
 
-export default function SlotPanel({ label, slot, record, onInputs, onMesh }: SlotPanelProps) {
+export default function SlotPanel({
+  label,
+  slot,
+  record,
+  onInputs,
+  onMesh,
+  onReplaceMesh,
+}: SlotPanelProps) {
   const colorIndex = label === 'A' ? 0 : 1
   const [numeric, setNumeric] = useState<NumericInputs>(() => fieldStrings(record))
   const [heelDeg, setHeelDeg] = useState(() => record?.inputs.heelDeg ?? 0)
@@ -370,9 +383,22 @@ export default function SlotPanel({ label, slot, record, onInputs, onMesh }: Slo
 
       {slot.mesh ? (
         <div className="mt-3">
-          <p className="text-xs text-emerald-400" title={slot.mesh.orientNote}>
-            STL in memory - {slot.mesh.fileName}
-          </p>
+          <div className="flex items-center gap-2">
+            <p
+              className="min-w-0 flex-1 truncate text-xs text-emerald-400"
+              title={slot.mesh.orientNote}
+            >
+              STL in memory - {slot.mesh.fileName}
+            </p>
+            <button
+              type="button"
+              onClick={onReplaceMesh}
+              title="Forget this file — the typed conditions stay, and a new STL can be dropped in."
+              className="shrink-0 rounded border border-zinc-700 px-2 py-0.5 text-xs text-zinc-300 hover:bg-zinc-800"
+            >
+              Replace STL
+            </button>
+          </div>
           {!slot.mesh.stats.watertight.watertight && (
             <p className="mt-1 text-xs text-amber-400" role="note">
               {slot.mesh.stats.watertight.openEdgeCount} open edges — the solver needs a closed
