@@ -210,6 +210,140 @@ export function applyResultToScene(refs: ViewerRefs, view: ViewerView): void {
   }
 }
 
+/**
+ * The two Compare slot colours — hull A blue, hull B orange, far apart in hue
+ * so the overlay stays readable where the two hulls overlap.
+ */
+export const SLOT_COLORS: readonly [number, number] = [0x38bdf8, 0xfb923c]
+
+/**
+ * One slot in the Compare overlay: the hull and its markers, wrapped in a
+ * group the water seam can move without touching the pose.
+ */
+export interface SlotScene {
+  wrapper: Group
+  refs: ViewerRefs
+}
+
+/**
+ * Build one compare slot: hull mesh plus LCG/LCB markers and leaders, exactly
+ * the construction the single-viewer mount pass makes, inside a wrapper group.
+ *
+ * The hull material is flat, transparent and never depth-writing: the
+ * overlay's whole point is that BOTH hulls stay visible through each other,
+ * and an opaque or depth-writing slot would hide whichever hull is drawn
+ * first.
+ *
+ * `refs.waterPlane` is null on purpose: the shared water surface is a property
+ * of the compare SCENE, not of a slot, so the pose seam's visibility branch has
+ * nothing to write here and the two seams cannot fight over the plane.
+ */
+export function makeSlotScene(positions: Float32Array, color: number, opacity: number): SlotScene {
+  const wrapper = new THREE.Group()
+  const hullGroup = new THREE.Group()
+  wrapper.add(hullGroup)
+
+  const geometry = new THREE.BufferGeometry()
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+  geometry.computeBoundingBox()
+  const bb = geometry.boundingBox
+  const size = new THREE.Vector3()
+  const center = new THREE.Vector3()
+  if (bb) {
+    bb.getSize(size)
+    bb.getCenter(center)
+  }
+  const keelZ = bb ? bb.min.z : 0
+  const hullSizeX = bb ? Math.max(bb.max.x - bb.min.x, 1) : 100
+
+  const mesh = new THREE.Mesh(
+    geometry,
+    new THREE.MeshBasicMaterial({
+      color,
+      transparent: true,
+      opacity,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    }),
+  )
+  hullGroup.add(mesh)
+
+  const markerMat = (c: number) => new THREE.MeshBasicMaterial({ color: c, depthTest: false })
+
+  const lcgSphere = new THREE.Mesh(new THREE.SphereGeometry(hullSizeX * 0.02), markerMat(0xef4444))
+  hullGroup.add(lcgSphere)
+  const lcgLine = createLeader(hullGroup, 0xef4444)
+
+  const lcbSphere = new THREE.Mesh(new THREE.SphereGeometry(hullSizeX * 0.02), markerMat(0x22c55e))
+  hullGroup.add(lcbSphere)
+  const lcbLine = createLeader(hullGroup, 0x22c55e)
+
+  return {
+    wrapper,
+    refs: {
+      hullGroup,
+      hullMesh: mesh,
+      waterPlane: null,
+      lcgSphere,
+      lcgLine,
+      lcbSphere,
+      lcbLine,
+      keelZ,
+      hullCenter: center,
+    },
+  }
+}
+
+/**
+ * Pose one slot from its own solve result.
+ *
+ * Deliberately the SAME seam the single viewer uses, so the frozen sign
+ * translation (`viewer-conventions.ts`) and the pivot chain are not
+ * re-implemented per slot. It touches only `slot.refs`: the wrapper offset
+ * belongs to {@link applySharedWaterSurface}, and a pose seam that also wrote
+ * the wrapper would make the shared surface drift with the trim.
+ */
+export function applySlotResultToScene(slot: SlotScene, view: ViewerView): void {
+  applyResultToScene(slot.refs, view)
+}
+
+/**
+ * Put every slot on ONE shared water surface.
+ *
+ * Each wrapper sits at z = -waterlineZ, so each hull's midship waterline point
+ * lands on world Z 0 and the deeper hull visibly sits lower — the whole point
+ * of the overlay. The plane is centred on the union of the hulls' world bounds
+ * at world Z 0 and scaled 1.2x past them, the same margin the single-viewer
+ * mount uses.
+ *
+ * Idempotent by construction: the wrapper offset is written, never
+ * accumulated, so a re-solve REPLACES the waterline instead of drifting the
+ * hull. The plane's geometry is the unit square this seam scales; Task 6's
+ * compare mount builds it once.
+ *
+ * At zero pose each hull's midship waterline point lands exactly on world Z 0.
+ * A posed hull lifts that point by the second-order rotation residual
+ * dz*(cos(theta)-1) — a translation datum does not re-pose the hull — which is
+ * tenths of a millimetre across the app's +/-4.5 deg sweep.
+ */
+export function applySharedWaterSurface(
+  slots: Array<{ slot: SlotScene; waterlineZ: number }>,
+  waterPlane: Mesh,
+): void {
+  const union = new THREE.Box3()
+  for (const { slot, waterlineZ } of slots) {
+    slot.wrapper.position.z = -waterlineZ
+    slot.wrapper.updateMatrixWorld(true)
+    const box = new THREE.Box3().setFromObject(slot.refs.hullMesh)
+    if (!box.isEmpty()) union.union(box)
+  }
+  if (union.isEmpty()) return
+  const size = union.getSize(new THREE.Vector3())
+  const centre = union.getCenter(new THREE.Vector3())
+  waterPlane.position.set(centre.x, centre.y, 0)
+  waterPlane.scale.set(Math.max(size.x, 1) * 1.2, Math.max(size.y, 1) * 1.2, 1)
+}
+
 export default function Viewer3D({
   geometry,
   waterlineZ = null,
