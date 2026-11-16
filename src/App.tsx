@@ -1,9 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import CompareView from './components/CompareView'
 import ResultsPanel, { statRow } from './components/ResultsPanel'
-import Upload, { type LoadedMesh, rescaleMesh } from './components/Upload'
+import Upload, { type LoadedMesh, rememberMesh, rescaleMesh } from './components/Upload'
 import Viewer3D from './components/Viewer3D'
-import { deleteRecord, type RunRecord, readRoster, writeRoster } from './lib/compare'
+import {
+  deleteRecord,
+  type RunRecord,
+  readRoster,
+  recordFromSolve,
+  writeRoster,
+} from './lib/compare'
 import { fmt } from './lib/format'
 import type { TrimSolveResult } from './lib/hydrostatics'
 import {
@@ -101,6 +107,18 @@ export default function App() {
       // No localStorage, or it is full: carry on without memory.
     }
   }, [roster])
+
+  /**
+   * The session's `modelHash -> mesh` cache, SHARED by both tabs.
+   *
+   * The Map is created once and never replaced, so `meshCacheRef.current` is a
+   * stable object for the component's whole life — safe to pass as a prop and
+   * to name in a dependency list. It is filled on every successful home solve
+   * (below) and on every Compare slot's re-pick (`rememberMesh` in both
+   * places, which also bounds its size), and it dies with the session, exactly
+   * as a record does: a reloaded roster shows its numbers and asks for its STL.
+   */
+  const meshCacheRef = useRef<Map<string, LoadedMesh>>(new Map())
 
   /**
    * Retire whatever is in flight: bump the token so its late continuation is
@@ -202,6 +220,34 @@ export default function App() {
               setTrimResult(trim)
               setIsCalculating(false)
               setProgress(null)
+              // The hull is now identified in the session cache, so picking
+              // this solve's record in the Compare tab shows the overlay
+              // without a re-upload.
+              rememberMesh(meshCacheRef.current, current)
+              // Auto-roster (design spec Part 1): every successful home solve
+              // leaves a record behind; deleting stays manual. The inputs are
+              // this run's OWN four values — the applied heel included — so
+              // the record reproduces the result sitting beside it. An empty
+              // hash means the page could not hash the file, so the record
+              // could never be matched to its STL again and none is written.
+              if (current.sha256Hex !== '') {
+                try {
+                  addRecord(
+                    recordFromSolve(
+                      current.fileName,
+                      current.sha256Hex,
+                      { weightKg, lcgPctLwl: lcgPercent, kgMm, heelDeg },
+                      trim,
+                    ),
+                  )
+                } catch {
+                  // The roster is auxiliary: the solve succeeded and its
+                  // numbers are on screen. The values reaching this path are
+                  // the form's own parsed ones (Calculate is gated on them),
+                  // so this only ever fires on a refusal the form already
+                  // blocks — and an unwritten record costs nothing.
+                }
+              }
             },
             (err: unknown) => {
               // Tested before the guard below, so it stays the single authority:
@@ -231,7 +277,7 @@ export default function App() {
         setProgress(null)
       }
     },
-    [],
+    [addRecord],
   )
 
   const calculateDraft = useCallback(() => {
@@ -332,7 +378,12 @@ export default function App() {
 
       <main className="flex min-h-0 flex-1 flex-col p-4">
         {tab === 'compare' ? (
-          <CompareView roster={roster} onAddRecord={addRecord} onDeleteRecord={removeRecord} />
+          <CompareView
+            roster={roster}
+            onAddRecord={addRecord}
+            onDeleteRecord={removeRecord}
+            meshCache={meshCacheRef.current}
+          />
         ) : mesh && s ? (
           <div className="flex flex-col min-h-0 flex-1 gap-4 lg:flex-row">
             {/*

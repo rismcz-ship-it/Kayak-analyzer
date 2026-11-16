@@ -85,6 +85,38 @@ interface UploadProps {
   compact?: boolean
 }
 
+/**
+ * The session's geometry cache ceiling. Every entry holds a whole geometry and
+ * nothing else ever releases one, so an unbounded map is a slow leak on a
+ * re-pick-heavy session.
+ */
+export const MESH_CACHE_MAX = 8
+
+/**
+ * Remember a mesh in the session cache, keyed by its file identity.
+ *
+ * Both tabs share ONE cache — App owns it, fills it on every successful home
+ * solve, and hands it to the Compare tab — so a hull solved at home is already
+ * there when its record is picked and the overlay appears without a re-upload.
+ *
+ * An EMPTY hash means the page could not hash the file (no `crypto.subtle`):
+ * it identifies nothing, so it is not cached under a key no record will ever
+ * look up (`recordFromSolve` refuses the empty string for the same reason).
+ *
+ * The oldest entry leaves first — a `Map` keeps insertion order. A slot already
+ * displaying that mesh keeps it in its own state, so an eviction only costs a
+ * re-upload the next time the record is picked.
+ */
+export function rememberMesh(cache: Map<string, LoadedMesh>, mesh: LoadedMesh): void {
+  if (mesh.sha256Hex === '') return
+  cache.set(mesh.sha256Hex, mesh)
+  while (cache.size > MESH_CACHE_MAX) {
+    const oldest = cache.keys().next()
+    if (oldest.done) return
+    cache.delete(oldest.value)
+  }
+}
+
 export default function Upload({ onLoaded, compact = false }: UploadProps) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [dragging, setDragging] = useState(false)

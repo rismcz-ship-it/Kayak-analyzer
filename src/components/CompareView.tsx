@@ -29,7 +29,7 @@ import {
 import { SlotSolver } from '../lib/slot-solver'
 import CompareTable, { type CompareColumn } from './CompareTable'
 import SlotPanel from './SlotPanel'
-import type { LoadedMesh } from './Upload'
+import { type LoadedMesh, rememberMesh } from './Upload'
 import {
   applySharedWaterSurface,
   applySlotResultToScene,
@@ -51,14 +51,29 @@ import {
  *    read the same slot and must never hold two copies of it;
  *  - one `SlotSolver` per slot (`lib/slot-solver.ts`), so editing slot A can
  *    never cancel slot B's worker;
- *  - an in-memory geometry cache keyed by the STL's hash — a slot shows the
+ *  - the slot logic over ONE session-wide geometry cache, which App owns and
+ *    shares with the home tab (keyed by the STL's hash): a slot shows the
  *    overlay when it has its mesh, and shows its numbers and asks for the STL
  *    when it does not. It dies with the session, exactly as a record does.
+ */
+/**
+ * Pinned here for Task 7's wire-in (the plan's Step 1 asks for the final
+ * shape). App owns the roster, the storage writers and ONE session-wide
+ * geometry cache; this component owns the slots and nothing above them.
  */
 interface CompareViewProps {
   roster: RunRecord[]
   onAddRecord: (record: RunRecord) => void
   onDeleteRecord: (id: string) => void
+  /**
+   * The session's `modelHash -> mesh` cache, SHARED with the home tab.
+   *
+   * The Map object itself is stable for App's lifetime (it is never replaced),
+   * so it is safe to name in a dependency list. A record's mesh is here when
+   * its hull was solved at home this session; a re-pick adds to it through
+   * `rememberMesh`, which also bounds its size.
+   */
+  meshCache: Map<string, LoadedMesh>
 }
 
 /** What one slot holds: which record it shows, its mesh, and its own solve. */
@@ -98,13 +113,6 @@ export interface SlotState {
 
 /** ~300 ms of quiet between an edit and the re-solve it triggers. */
 const SOLVE_DEBOUNCE_MS = 300
-
-/**
- * The session's geometry cache ceiling. A couple of megabytes per entry and
- * nothing else ever releases one, so an unbounded map is a slow leak on a
- * re-pick-heavy session.
- */
-const MESH_CACHE_MAX = 8
 
 /**
  * Both hulls are translucent by design (`makeSlotScene`): the overlay's whole
@@ -259,7 +267,12 @@ function useSlotSolve(
   }, [mesh, weightKg, lcgPctLwl, kgMm, heelDeg, setSlot, solver])
 }
 
-export default function CompareView({ roster, onAddRecord, onDeleteRecord }: CompareViewProps) {
+export default function CompareView({
+  roster,
+  onAddRecord,
+  onDeleteRecord,
+  meshCache,
+}: CompareViewProps) {
   const [slotA, setSlotA] = useState<SlotState>(emptySlot)
   const [slotB, setSlotB] = useState<SlotState>(emptySlot)
   // One solver per slot, created once: `SlotSolver` spawns no worker until it
@@ -271,7 +284,6 @@ export default function CompareView({ roster, onAddRecord, onDeleteRecord }: Com
     () => [setSlotA, setSlotB],
     [],
   )
-  const meshCache = useRef<Map<string, LoadedMesh>>(new Map())
   const importInputRef = useRef<HTMLInputElement>(null)
   const [importError, setImportError] = useState<string | null>(null)
 
@@ -298,7 +310,7 @@ export default function CompareView({ roster, onAddRecord, onDeleteRecord }: Com
    */
   const pickRecord = useCallback(
     (index: 0 | 1, record: RunRecord) => {
-      const cached = meshCache.current.get(record.modelHash) ?? null
+      const cached = meshCache.get(record.modelHash) ?? null
       setters[index]((prev) => ({
         recordId: record.id,
         mesh: cached,
@@ -312,27 +324,15 @@ export default function CompareView({ roster, onAddRecord, onDeleteRecord }: Com
         pickSeq: prev.pickSeq + 1,
       }))
     },
-    [setters],
+    [setters, meshCache],
   )
 
   /** A re-picked (or rescaled) STL becomes this slot's mesh, cached by hash. */
   const attachMesh = useCallback(
     (index: 0 | 1, mesh: LoadedMesh) => {
-      // An empty hash means the page could not hash: it identifies nothing, so
-      // it is not cached under a key no record will ever look up.
-      if (mesh.sha256Hex !== '') {
-        meshCache.current.set(mesh.sha256Hex, mesh)
-        // Bound the session's growth: each entry holds a whole geometry, and
-        // nothing on the re-pick path ever removes one. The oldest leaves
-        // first (Map keeps insertion order); a slot already displaying that
-        // mesh keeps it in its own state, so an eviction only costs a re-upload
-        // the next time the record is picked.
-        while (meshCache.current.size > MESH_CACHE_MAX) {
-          const oldest = meshCache.current.keys().next()
-          if (oldest.done) break
-          meshCache.current.delete(oldest.value)
-        }
-      }
+      // Same cache the home tab fills: `rememberMesh` refuses the empty hash
+      // (it identifies nothing) and bounds the session's growth.
+      rememberMesh(meshCache, mesh)
       // The new geometry invalidates the live answer: until its own solve
       // lands, the slot displays the record's snapshot - which is fine,
       // because every consumer reads the conditions that pair belongs to.
@@ -346,7 +346,7 @@ export default function CompareView({ roster, onAddRecord, onDeleteRecord }: Com
         error: null,
       }))
     },
-    [setters],
+    [setters, meshCache],
   )
 
   const editInputs = (index: 0 | 1, inputs: SlotInputs) => {
