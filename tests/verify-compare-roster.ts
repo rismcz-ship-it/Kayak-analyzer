@@ -52,9 +52,10 @@ import {
   readRoster,
   recordFromSolve,
   type SlotInputs,
+  writeRoster,
 } from '../src/lib/compare.js'
 import type { TrimSolveResult } from '../src/lib/hydrostatics.js'
-import type { StorageReader } from '../src/lib/inputs.js'
+import type { StorageReader, StorageWriter } from '../src/lib/inputs.js'
 
 let failures = 0
 function check(ok: boolean, label: string, detail = ''): void {
@@ -198,6 +199,42 @@ check(
   'an empty array reads back as []',
 )
 
+// writeRoster is the injected MIRROR of readRoster: the caller owns the
+// storage global (Task 7's auto-add after a home solve), so the pair can be
+// driven without one - and a browser whose storage throws on access throws
+// inside this module, not inside an unrelated render path.
+const store: Record<string, string> = {}
+const writeTo: StorageWriter = (key, value) => {
+  store[key] = value
+}
+writeRoster([built, built2], writeTo)
+check(
+  Object.hasOwn(store, COMPARE_STORAGE_KEY),
+  'writeRoster writes the compare key',
+  Object.keys(store).join(', '),
+)
+check(
+  deepEqual(readRoster(storage({ [COMPARE_STORAGE_KEY]: store[COMPARE_STORAGE_KEY] })), [
+    built,
+    built2,
+  ]),
+  'writeRoster feeds readRoster a lossless round trip',
+)
+writeRoster([], writeTo)
+check(
+  deepEqual(readRoster(storage({ [COMPARE_STORAGE_KEY]: store[COMPARE_STORAGE_KEY] })), []),
+  'an empty roster written by writeRoster reads back as []',
+)
+let writerThrowEscaped = false
+try {
+  writeRoster([built], () => {
+    throw new Error('storage is disabled (private mode)')
+  })
+} catch {
+  writerThrowEscaped = true
+}
+check(writerThrowEscaped, 'a throwing writer propagates to its caller', 'no throw')
+
 // --- 3. hostile storage ------------------------------------------------------
 
 console.log('\n=== hostile storage ===')
@@ -263,6 +300,9 @@ const badEntries: Array<[string, Record<string, unknown>]> = [
   ['a missing name', entry({ name: undefined })],
   ['a missing modelHash', entry({ modelHash: undefined })],
   ['an empty modelHash', entry({ modelHash: '' })],
+  // One definition of a hash, at the storage door too: 'abc' is not 64
+  // lowercase hex characters, so it could never match the STL it claims.
+  ['a modelHash that is not a SHA-256 hash', entry({ modelHash: 'abc' })],
   ['a missing result', entry({ result: undefined })],
   ['a non-object result', entry({ result: 5 })],
   ['a result missing gzCurve', entry({ result: { ...sampleResult, gzCurve: undefined } })],
@@ -288,6 +328,53 @@ const badEntries: Array<[string, Record<string, unknown>]> = [
     entry({ result: { ...sampleResult, draftMm: '127.94' } }),
   ],
   ['a result with a NaN required number', entry({ result: { ...sampleResult, draftMm: NaN } })],
+  // The WHOLE result is validated, not a projection of it: a record missing
+  // any field a real solve emits is filtered rather than restored half-alive
+  // (F3's finding - the old subset check let displacementKg, the pivot and
+  // the sweep verdict through, and every consumer reading one then saw
+  // undefined off a "restored" record).
+  [
+    'a result missing displacementKg',
+    entry({ result: { ...sampleResult, displacementKg: undefined } }),
+  ],
+  ['a result missing targetKg', entry({ result: { ...sampleResult, targetKg: undefined } })],
+  [
+    'a result missing lcbLcgOffsetMm',
+    entry({ result: { ...sampleResult, lcbLcgOffsetMm: undefined } }),
+  ],
+  [
+    'a result missing planesEvaluated',
+    entry({ result: { ...sampleResult, planesEvaluated: undefined } }),
+  ],
+  ['a result missing the pivot', entry({ result: { ...sampleResult, pivot: undefined } })],
+  ['a missing converged flag', entry({ result: { ...sampleResult, converged: undefined } })],
+  // A real boolean, not truthiness: the text 'true' and the number 1 are
+  // documents that mean yes from a producer that did not write a boolean.
+  ['a text converged flag', entry({ result: { ...sampleResult, converged: 'true' } })],
+  ['a numeric converged flag', entry({ result: { ...sampleResult, converged: 1 } })],
+  // The one NULLABLE number: a hull whose ends immerse at some heel carries
+  // an angle, one that never immerses carries null - and text or undefined is
+  // neither.
+  ['a text endTipImmersionDeg', entry({ result: { ...sampleResult, endTipImmersionDeg: 'null' } })],
+  [
+    'a missing endTipImmersionDeg',
+    entry({ result: { ...sampleResult, endTipImmersionDeg: undefined } }),
+  ],
+  // The curve is sampled in ASCENDING heel order - gzMarks' peak scan walks
+  // forward and its vanishing-stability angle interpolates between
+  // neighbours, so a shuffled curve breaks both (F5).
+  [
+    'a gzCurve out of ascending heel order',
+    entry({
+      result: {
+        ...sampleResult,
+        gzCurve: [
+          { heelDeg: 5, GZ: 8.9 },
+          { heelDeg: 0, GZ: 0 },
+        ],
+      },
+    }),
+  ],
   ['an lcb missing its z', entry({ result: { ...sampleResult, lcb: { x: -59.95, y: 0.1 } } })],
   ['a wrong-typed lcb', entry({ result: { ...sampleResult, lcb: 'centre' } })],
   ['a missing inputs', entry({ inputs: undefined })],
@@ -304,6 +391,16 @@ for (const [label, bad] of badEntries) {
     JSON.stringify(kept),
   )
 }
+
+// The gate is not over-tight in the other direction either: the one nullable
+// number in the result is null for a hull whose ends never immerse, and that
+// record must be KEPT - `endTipImmersionDeg: null` is the normal case, not a
+// defect the validator should filter.
+check(
+  rosterWith(entry({ id: 'rec_never_immerses' })).length === 1,
+  'a null endTipImmersionDeg (ends never immerse) is kept',
+  JSON.stringify(rosterWith(entry({ id: 'rec_never_immerses' })).length),
+)
 
 // --- 5. the shared bounds gate, at both doors ---------------------------------
 
@@ -356,6 +453,18 @@ try {
 }
 check(hashMessage !== '', 'an empty modelHash is refused by recordFromSolve', 'no throw')
 check(hashMessage.includes('modelHash'), 'the refusal names modelHash', hashMessage)
+
+// One definition of a hash, held at the CREATION door (not just storage):
+// 'abc' is not 64 lowercase hex characters, so a hash no re-pick could ever
+// match is refused here too, and the refusal says so.
+let badHashMessage = ''
+try {
+  recordFromSolve('Bad hash', 'abc', sampleInputs, sampleResult)
+} catch (error) {
+  badHashMessage = error instanceof Error ? error.message : String(error)
+}
+check(badHashMessage !== '', 'a malformed modelHash is refused by recordFromSolve', 'no throw')
+check(/hex|SHA-256/i.test(badHashMessage), 'the refusal names the hash rule', badHashMessage)
 
 // --- 6. snapshot immunity -----------------------------------------------------
 

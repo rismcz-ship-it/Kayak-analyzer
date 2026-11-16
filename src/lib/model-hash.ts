@@ -30,10 +30,16 @@ export const SECURE_CONTEXT_ERROR =
 export const SHA256_HEX_PATTERN = /^[0-9a-f]{64}$/
 
 export async function sha256Hex(bytes: ArrayBuffer): Promise<string> {
-  if (!crypto?.subtle) {
+  // `globalThis.crypto`, not a bare `crypto`: when the binding is absent
+  // entirely (an older runtime, a stripped page), the bare identifier throws a
+  // ReferenceError instead of the named error below, and the caller cannot
+  // match on the cause. Reading the property off the global object turns an
+  // absent binding into the same named refusal an absent `.subtle` gives.
+  const subtle = globalThis.crypto?.subtle
+  if (!subtle) {
     throw new Error(SECURE_CONTEXT_ERROR)
   }
-  const digest = await crypto.subtle.digest('SHA-256', bytes)
+  const digest = await subtle.digest('SHA-256', bytes)
   const view = new Uint8Array(digest)
   let hex = ''
   for (let i = 0; i < view.length; i++) {

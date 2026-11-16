@@ -32,8 +32,8 @@ behavior without a dedicated suite yet — verify by hand when touching them.
 ## Workflow Rules & Seams
 
 1. **Git Control**: Do not commit blindly. Follow the user's workflow. There is no in-app event log yet — `HistoryManager` is referenced in older plans but does not exist in `src/`.
-2. **References & Schemas**: Event schemas live in `references/` — five of them, and **none of them is a description of current output**. Nothing in `src/` emits any of them yet; they are target formats for a future "save a run" feature.
-   - `kayak_analyzer_solver.json` — one solve run. `lwl_mm` / `bwl_mm` are reachable (the solver returns them as `LWL` / `BWL`); `kg_mm` is now **required** (the UI exposes KG, so a run without it cannot be reproduced); `model_hash`, `phase`, `stations_csv_path` and the `coefficients` block have no implementation. `waterline_polygon` is not in `required` — the clipper discards the contour after measuring its area and second moment, so the points are not available.
+2. **References & Schemas**: Event schemas live in `references/` — five target formats for a future "save a run" feature, of which `kayak_analyzer_solver.json` is now produced by the Compare run-record export and read back by its import (both in `src/lib/compare.ts`, gated by `tests/verify-run-records.ts`). The other four have no producer in `src/` yet.
+   - `kayak_analyzer_solver.json` — one solve run, and the one the app emits today. `lwl_mm` / `bwl_mm` are reachable (the solver returns them as `LWL` / `BWL`); `kg_mm` is now **required** (the UI exposes KG, so a run without it cannot be reproduced); `model_hash`, `format_version`, the `full_coefficients` phase gate, the `coefficients` block and the carried `converged` / `planes_evaluated` are all implemented. `stations_csv_path` and `solver_time_ms` have no implementation. `waterline_polygon` is not in `required` — the clipper discards the contour after measuring its area and second moment, so the points are not available.
    - `kayak_analyzer_model.json` — an uploaded STL.
    - `kayak_analyzer_config.json` — a weight/LCG/KG change.
    - `kayak_analyzer_comparison.json` — two models compared.

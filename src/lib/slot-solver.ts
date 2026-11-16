@@ -16,20 +16,17 @@
 //     heelDeg is the marine sign, + = the -Y side down. Both cross to the
 //     worker exactly as the slot's inputs carry them; the solver's own
 //     fallbacks (KG 280, heel 0) and its narrower default ±3.5° sweep must
-//     never be able to stand in for a slot's answer. The app always asks for
-//     the documented ±4.5° / 0.1° sweep, which is what a slot's solve runs on.
-//
-//     The ±4.5° / 0.1° pair is the same literal App.tsx passes for the
-//     single-viewer solve (its own inline value, not a shared constant):
-//     unifying them is a refactor beyond this task's closed file list, so the
-//     suite pins the slot side and this note keeps the twin visible until the
-//     two flows are merged.
+//     never be able to stand in for a slot's answer. The sweep pair comes from
+//     the shared `solve-params` constants App.tsx also imports, so the slot
+//     flow and the single-viewer flow can never drift apart onto different
+//     trim ladders.
 //
 // It is tested from Node against a fake Worker global (all of
 // tests/verify-slot-solver.ts), the same seam the protocol suite drives.
 
 import type { SlotInputs } from './compare'
 import type { TrimSolveResult } from './hydrostatics'
+import { MAX_TRIM_DEG, TRIM_STEP_DEG } from './solve-params'
 import { SolverClient } from './solver-client'
 import type { SolveRequest } from './solver-worker'
 
@@ -57,8 +54,11 @@ export class SlotSolver {
       kgMm: inputs.kgMm,
       // + = the -Y side down, verbatim (Review Focus 3).
       fixedHeelDeg: inputs.heelDeg,
-      maxTrimDeg: 4.5,
-      trimStepDeg: 0.1,
+      // The documented +-4.5° / 0.1° sweep, from the shared constants - the
+      // solver's own fallback is the narrower +-3.5°, and a request that
+      // dropped these would search a different ladder.
+      maxTrimDeg: MAX_TRIM_DEG,
+      trimStepDeg: TRIM_STEP_DEG,
       positions,
     }
     return this.client.run(request, onProgress)

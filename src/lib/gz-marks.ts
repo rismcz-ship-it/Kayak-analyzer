@@ -3,8 +3,15 @@ import type { GZPoint } from './hydrostatics'
 /**
  * The angles a righting-arm curve is read by, derived from the SAME points the
  * chart draws. One definition, because the panel's "an end immerses first"
- * warning and the chart's markers must agree about them — two scans would
+ * warning and the chart's markers must agree about them - two scans would
  * drift, and the warning would then contradict the drawing under it.
+ *
+ * The curve this reads is sampled in ASCENDING heel order: the peak scan walks
+ * it forward, and the angle-of-vanishing-stability interpolation reads the two
+ * samples either side of the crossing. That ordering is a contract, not luck -
+ * the run-record reader enforces it on import (`readGzCurve`) and the roster
+ * validator enforces it on restore (`isSolveResultLike`), so no undocumented
+ * curve reaches here.
  */
 export interface GzMarks {
   /**

@@ -1,10 +1,15 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "Kayak Analyzer Solver Run",
-  "description": "One Kayak Analyzer solver run. FRAME: every position in this document is in the HULL's own frame — the uploaded STL after auto-orientation to Z-up, with X = LOA (bow at +X), Y = beam, Z up — in millimetres, and every height is measured from the keel, the hull's lowest Z. Angles follow the solver's conventions: trim + is bow up, heel + drops the -Y side.",
+  "description": "One Kayak Analyzer solver run. FRAME: the geometry is the HULL's own frame — the uploaded STL after auto-orientation to Z-up (X = LOA, bow at +X; Y = beam; Z up) and centring — in millimetres, with the origin at the bounding-box centre. THREE DATUMS appear in this document and they are not interchangeable: the vectors (lcb_xyz, lcg_xyz, pivot_xyz) and waterline_z_mm are ABSOLUTE coordinates in that frame, so their z values are routinely negative; draft_mm and kg_mm are heights above the keel, the hull's lowest z (draft_mm = waterline_z_mm minus the keel); the freeboards are heights above the WATERLINE, not the keel. lcb_lcg_offset_mm is the one POSED-frame number — the frame the waterplane is horizontal in, which is the frame trim equilibrium is a property of. Angles follow the solver's conventions: trim + is bow up, heel + drops the -Y side.",
   "type": "object",
-  "required": ["model_hash", "targets", "results", "coefficients", "phase"],
+  "required": ["model_hash", "format_version", "targets", "results", "coefficients", "phase"],
   "properties": {
+    "format_version": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "The version of this document's shape. 1 is what this app writes and the only version its reader accepts: a future format change (a new field, a changed datum) must be refused loudly rather than read by a reader that assumes today's meaning."
+    },
     "model_hash": {
       "type": "string",
       "pattern": "^[0-9a-f]{64}$",
@@ -54,7 +59,9 @@
         "pivot_xyz",
         "bow_freeboard_mm",
         "stern_freeboard_mm",
-        "waterline_z_mm"
+        "waterline_z_mm",
+        "planes_evaluated",
+        "converged"
       ],
       "properties": {
         "draft_mm": {
@@ -114,6 +121,15 @@
           "type": "number",
           "description": "Waterline plane height at midship, mm, in the hull's own frame; draft_mm is this minus the keel"
         },
+        "planes_evaluated": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "How many waterplane heights the trim sweep evaluated. Carried rather than re-derived: a reader cannot know how much work a foreign solve did, and the number distinguishes a cheap equilibrium from an exhausted sweep."
+        },
+        "converged": {
+          "type": "boolean",
+          "description": "Whether the trim sweep reached equilibrium before exhausting the sweep. Carried rather than assumed: a non-converged answer is a best estimate, and a reader that assumed true would present every record as a solved one."
+        },
         "gz_curve": {
           "type": "array",
           "items": {
@@ -128,7 +144,7 @@
               }
             }
           },
-          "description": "Optional: the righting-arm curve, one sample per heel angle. Emitted by the app's export; absent on a trimmed record."
+          "description": "Optional: the righting-arm curve, one sample per heel angle in ASCENDING heel order - every reader interpolates between neighbouring samples and scans forward from the peak, so an out-of-order curve is a different curve. Emitted by the app's export; absent on a trimmed record."
         },
         "waterline_polygon": {
           "type": "array",

@@ -25,10 +25,11 @@
  *
  * Layering: the imports are the `TrimSolveResult` and `GZPoint` types (erased
  * at compile time), the `Vec3` type, one unit constant (`MM3_PER_KG`, fresh
- * water), one solver function (`endTipImmersionHeelDeg` — the only diagnostic
+ * water), one solver function (`endTipImmersionHeelDeg` - the only diagnostic
  * an import recomputes), the pattern `sha256Hex`'s own output is checked
- * against, and four value predicates from `inputs.ts`. Framework-free, so the
- * suite runs in Node with no browser shims.
+ * against, and four value predicates plus the two storage function types from
+ * `inputs.ts`. Framework-free, so the suite runs in Node with no browser
+ * shims.
  */
 
 import type { Vec3 } from './geometry'
@@ -38,7 +39,14 @@ import {
   MM3_PER_KG,
   type TrimSolveResult,
 } from './hydrostatics'
-import { heelUsable, kgUsable, lcgUsable, type StorageReader, weightUsable } from './inputs'
+import {
+  heelUsable,
+  kgUsable,
+  lcgUsable,
+  type StorageReader,
+  type StorageWriter,
+  weightUsable,
+} from './inputs'
 import { SHA256_HEX_PATTERN } from './model-hash'
 
 /** One slot's conditions. Heel 0 is upright; + heels the −Y side down. */
@@ -61,17 +69,17 @@ export interface RunRecord {
   modelHash: string
   inputs: SlotInputs
   /**
-   * The solved metrics the comparison renders. A record built by
-   * `recordFromSolve` carries the solver's whole result; one restored from
-   * storage is guaranteed only the subset `readRoster` validates —
-   * `RESULT_NUMBERS` plus the two vectors and `gzCurve`. The solve's
-   * diagnostics (`planesEvaluated`, `wettedSurfaceAreaMm2` and the rest)
-   * may be absent on such a record, so no Compare consumer may read them
-   * off one; the comparison table's rows all sit inside the guaranteed
-   * subset. The rotation `pivot` is the one diagnostic the run-record
-   * format carries (`pivot_xyz`), so an IMPORTED record has the solver's
-   * own rotation centre — the pivot a live solve used, not the LCG a
-   * fallback would guess.
+   * The solved metrics the comparison renders. A record carries the solver's
+   * WHOLE result: `readRoster` validates the full field set (every number,
+   * `converged`, the three vectors, `endTipImmersionDeg` and the curve, in
+   * ascending heel order), so an entry missing a field a real solve emits is
+   * filtered rather than restored half-alive. An IMPORTED record fills the
+   * five fields the run-record format does not name (waterplane area, midship
+   * area, wetted surface, second moment, loop count) with neutral zeros; no
+   * Compare consumer may read them off one, and every row the table renders
+   * sits inside the set the format carries. `converged` and `planesEvaluated`
+   * ARE carried - they are named by the schema - so an imported record has
+   * the truth about the run it came from.
    */
   result: TrimSolveResult
   savedAt: number
@@ -143,8 +151,10 @@ export function recordFromSolve(
   if (problem) {
     throw new Error(`recordFromSolve: an input the form rejects cannot build a record (${problem})`)
   }
-  if (typeof modelHash !== 'string' || modelHash.length === 0) {
-    throw new Error('recordFromSolve: modelHash must be a non-empty SHA-256 hex string')
+  if (typeof modelHash !== 'string' || !SHA256_HEX_PATTERN.test(modelHash)) {
+    throw new Error(
+      'recordFromSolve: modelHash must be 64 lowercase hex characters (a SHA-256 of the raw STL bytes)',
+    )
   }
   const savedAt = Date.now()
   const inputsSnapshot: SlotInputs = { ...inputs }
@@ -191,6 +201,18 @@ export function readRoster(read: StorageReader): RunRecord[] {
   }
   if (!Array.isArray(parsed)) return []
   return parsed.filter(isRunRecord)
+}
+
+/**
+ * Persist the roster. The mirror of `readRoster`, injected for the same
+ * reason: a module that reached for the storage global itself could not be
+ * driven from a suite, and a browser page whose storage throws on ACCESS
+ * (private mode, quota) would throw inside this module instead of inside its
+ * caller's catch. The writer is one `setItem`; a throwing one propagates to
+ * the caller, exactly as a throwing reader is handled inside `readRoster`.
+ */
+export function writeRoster(records: RunRecord[], write: StorageWriter): void {
+  write(COMPARE_STORAGE_KEY, encodeRoster(records))
 }
 
 /** Remove exactly the target id; anything else is returned unchanged. */
@@ -245,6 +267,8 @@ type Xyz = [number, number, number]
  * bound rather than pretending it is exact.
  */
 export interface RunRecordDocument {
+  /** The only shape this app writes. The import refuses any other version. */
+  format_version: number
   model_hash: string
   targets: {
     weight_kg: number
@@ -265,6 +289,18 @@ export interface RunRecordDocument {
     bow_freeboard_mm: number
     stern_freeboard_mm: number
     waterline_z_mm: number
+    /**
+     * How many waterplane heights the trim sweep evaluated, an integer.
+     * Carried rather than re-derived: a reader cannot know how much work a
+     * foreign solve did, and the number says whether the answer was hard won.
+     */
+    planes_evaluated: number
+    /**
+     * Whether the trim sweep reached equilibrium before exhausting the sweep.
+     * Carried rather than assumed: a non-converged answer is a best estimate,
+     * and a reader that assumed true would present it as a solved one.
+     */
+    converged: boolean
     gz_curve?: { heel_deg: number; gz_mm: number; min_freeboard_mm?: number }[]
   }
   coefficients: {
@@ -291,6 +327,7 @@ export function exportRunRecord(record: RunRecord): RunRecordDocument {
   const lcgXyz: Xyz = [r.lcg.x, r.lcg.y, r.lcg.z]
   const pivotXyz: Xyz = [r.pivot.x, r.pivot.y, r.pivot.z]
   return {
+    format_version: 1,
     model_hash: record.modelHash,
     targets: {
       weight_kg: record.inputs.weightKg,
@@ -311,6 +348,8 @@ export function exportRunRecord(record: RunRecord): RunRecordDocument {
       bow_freeboard_mm: r.bowFreeboardMm,
       stern_freeboard_mm: r.sternFreeboardMm,
       waterline_z_mm: r.waterlineZ,
+      planes_evaluated: r.planesEvaluated,
+      converged: r.converged,
       gz_curve: r.gzCurve.map((point) => ({
         heel_deg: point.heelDeg,
         gz_mm: point.GZ,
@@ -351,6 +390,7 @@ const RESULT_KEYS = [
   'bow_freeboard_mm',
   'stern_freeboard_mm',
   'waterline_z_mm',
+  'planes_evaluated',
 ] as const
 
 /** The document's `coefficients` keys, in the schema's own order. */
@@ -419,6 +459,21 @@ function readNumber(parent: Record<string, unknown>, key: string, path: string):
   return { ok: true, value: field }
 }
 
+/**
+ * One named boolean, own-field checked like {@link readNumber}. The format
+ * carries `converged` as a real boolean: a text "true", a 1 or an empty string
+ * is a document some other producer wrote, and reading it as truthy would let
+ * a non-converged run claim it solved.
+ */
+function readBoolean(parent: Record<string, unknown>, key: string, path: string): Read<boolean> {
+  if (!Object.hasOwn(parent, key)) return { ok: false, error: `${path}.${key} is missing` }
+  const field = parent[key]
+  if (typeof field !== 'boolean') {
+    return { ok: false, error: `${path}.${key} must be a boolean` }
+  }
+  return { ok: true, value: field }
+}
+
 /** One `[x, y, z]` array, exactly three finite numbers. */
 function readVec3(parent: Record<string, unknown>, key: string, path: string): Read<Vec3> {
   if (!Object.hasOwn(parent, key)) return { ok: false, error: `${path}.${key} is missing` }
@@ -438,11 +493,17 @@ function readVec3(parent: Record<string, unknown>, key: string, path: string): R
 
 /**
  * The optional curve. Absent reads as empty (a trimmed record): the schema
- * marks the field optional, so its absence is not an error — but a present
+ * marks the field optional, so its absence is not an error - but a present
  * one that is not an array of `{heel_deg, gz_mm}` pairs is. Each sample may
  * also carry its `min_freeboard_mm`, the stem-tip clearance the end-tip
  * immersion angle is recomputed from; it is optional, and a present one
  * must be a number.
+ *
+ * The samples must arrive in ASCENDING heel order. Every reader of the curve
+ * (the peak scan in `gzMarks`, the angle-of-vanishing-stability interpolation
+ * between neighbouring samples, the chart's polyline) walks it in order, so a
+ * shuffled curve is not a tidy-up away from being usable - it is a different
+ * curve whose marks and interpolations would all be wrong.
  */
 function readGzCurve(value: unknown): Read<GZPoint[]> {
   if (value === undefined) return { ok: true, value: [] }
@@ -450,6 +511,7 @@ function readGzCurve(value: unknown): Read<GZPoint[]> {
     return { ok: false, error: 'results.gz_curve must be an array of {heel_deg, gz_mm} samples' }
   }
   const points: GZPoint[] = []
+  let previousHeel = Number.NEGATIVE_INFINITY
   for (let index = 0; index < value.length; index++) {
     const element = value[index]
     if (typeof element !== 'object' || element === null) {
@@ -472,6 +534,13 @@ function readGzCurve(value: unknown): Read<GZPoint[]> {
         error: `results.gz_curve[${index}] must be an object with heel_deg and gz_mm`,
       }
     }
+    if (!(heel > previousHeel)) {
+      return {
+        ok: false,
+        error: `results.gz_curve[${index}].heel_deg must be greater than the previous sample`,
+      }
+    }
+    previousHeel = heel
     const point: GZPoint = { heelDeg: heel, GZ: arm }
     const freeboard = ownField(sample, 'min_freeboard_mm')
     if (freeboard !== undefined) {
@@ -497,7 +566,7 @@ function readGzCurve(value: unknown): Read<GZPoint[]> {
  * path and the bar together.
  */
 const RESULT_KEYS_POSITIVE = ['volume_liters', 'lwl_mm', 'bwl_mm'] as const
-const RESULT_KEYS_NON_NEGATIVE = ['draft_mm', 'lcb_lcg_offset_mm'] as const
+const RESULT_KEYS_NON_NEGATIVE = ['draft_mm', 'lcb_lcg_offset_mm', 'planes_evaluated'] as const
 const COEFFICIENT_KEYS_NON_NEGATIVE = [
   'cb',
   'cp',
@@ -549,10 +618,12 @@ function magnitudeProblem(
  * unreadable here.
  *
  * An imported record carries what the format states and nothing more. The
- * solve's diagnostics — planes evaluated, wetted surface, waterplane second
- * moment, loop count — are NOT part of the format and come back neutral; no
- * Compare consumer may read them off an imported record (the table's rows
- * all sit inside `RESULT_NUMBERS`).
+ * schema names `converged` and `planes_evaluated`, so those two come back as
+ * the DOCUMENT stated them - never as what a completed solve would emit. The
+ * remaining diagnostics the format does not name (waterplane area, midship
+ * area, wetted surface, waterplane second moment, loop count) come back
+ * neutral; no Compare consumer may read them off an imported record, and
+ * every row the table renders sits inside the set the format carries.
  *
  * What the format states is CARRIED, never re-derived, because a reader's
  * arithmetic would change the number: `lcb_lcg_offset_mm` is the sweep
@@ -595,6 +666,17 @@ export function parseRunRecordImport(
     return { ok: false, error: `phase must be 'full_coefficients', not '${String(phase)}'` }
   }
 
+  // The document's shape version, the second "which document is this" gate.
+  // This app writes 1 and reads 1: a future format change (a new field, a
+  // changed datum) must be refused loudly rather than read by a reader that
+  // assumes today's meaning of every key. `ownField` like every other read -
+  // an inherited `format_version` must not pass for a written one.
+  const formatVersion = ownField(doc, 'format_version')
+  if (formatVersion === undefined) return { ok: false, error: 'format_version is missing' }
+  if (formatVersion !== 1) {
+    return { ok: false, error: `format_version must be 1, not '${String(formatVersion)}'` }
+  }
+
   const modelHash = ownField(doc, 'model_hash')
   if (typeof modelHash !== 'string' || !SHA256_HEX_PATTERN.test(modelHash)) {
     return {
@@ -618,6 +700,8 @@ export function parseRunRecordImport(
   if (!results.ok) return { ok: false, error: results.error }
   const resultFields = readNumbers(results.value, RESULT_KEYS, 'results')
   if (!resultFields.ok) return { ok: false, error: resultFields.error }
+  const converged = readBoolean(results.value, 'converged', 'results')
+  if (!converged.ok) return { ok: false, error: converged.error }
   const lcb = readVec3(results.value, 'lcb_xyz', 'results')
   if (!lcb.ok) return { ok: false, error: lcb.error }
   const lcg = readVec3(results.value, 'lcg_xyz', 'results')
@@ -692,8 +776,10 @@ export function parseRunRecordImport(
     pivot: pivot.value,
     lcbLcgOffsetMm: r.lcb_lcg_offset_mm,
     waterplaneAreaMm2: 0,
-    planesEvaluated: 0,
-    converged: true,
+    // Carried, not fabricated: the format names both, so an imported record
+    // reports whether its run converged and how much work it did.
+    planesEvaluated: r.planes_evaluated,
+    converged: converged.value,
     Cb: c.cb,
     LWL: r.lwl_mm,
     BWL: r.bwl_mm,
@@ -760,42 +846,55 @@ function isSlotInputs(value: unknown): value is SlotInputs {
 }
 
 /**
- * The result fields a stored record must carry: every number the comparison
- * table and the delta column render, plus the two the run-record export
- * round-trips back in (`waterlineZ`, `displacedVolumeMm3`) and the two that
- * make a restored GM reproducible (`heelDeg`, `kgMm`). A result missing any
- * of them cannot render completely — the spec's "no blank rows" — so the
- * entry is filtered rather than restored half-alive.
+ * The WHOLE number set of a `TrimSolveResult` - the full {@link isSolveResultLike}
+ * contract, not a projection of it. A validator that checked a subset let a
+ * half-written, hand-edited or future-versioned entry through as "valid",
+ * and every Compare consumer that reached for a field outside the subset
+ * then read undefined off a restored record. Checking the full set makes
+ * "restored" mean restored, and it costs nothing: the importer and the live
+ * solve both produce the complete result anyway.
  *
- * Fields outside this list (`planesEvaluated`, `pivot`, `wettedSurfaceAreaMm2`
- * and the rest of the solve's diagnostics) are carried when a live solve
- * produced the record and absent on an imported one; neither path renders
- * them, so their absence is not a defect.
+ * `converged` is validated beside it as a boolean, `endTipImmersionDeg` as a
+ * number-or-null, the three vectors as Vec3, and the curve in ascending heel
+ * order. The five diagnostics the run-record format does not carry
+ * (`waterplaneAreaMm2`, `midshipAreaMm2`, `wettedSurfaceAreaMm2`,
+ * `waterplaneIyyMm4`, `waterplaneLoopCount`) are still validated here: an
+ * imported record fills them with the neutral 0, and an anything-but-0 entry
+ * is a live record that renders them truthfully.
  */
 const RESULT_NUMBERS: readonly (keyof TrimSolveResult)[] = [
   'trimDeg',
   'draftMm',
   'waterlineZ',
   'displacedVolumeMm3',
+  'displacementKg',
+  'targetKg',
+  'lcbLcgOffsetMm',
+  'waterplaneAreaMm2',
+  'planesEvaluated',
+  'Cb',
   'LWL',
   'BWL',
-  'Cb',
+  'midshipAreaMm2',
   'Cp',
   'Cm',
-  'Cwp',
   'KB',
   'BM',
   'KM',
   'GM',
   'bowFreeboardMm',
   'sternFreeboardMm',
-  'waterplaneCentroidX',
-  'tpcTonnesPerCm',
   'heelDeg',
   'kgMm',
+  'waterplaneLoopCount',
+  'Cwp',
+  'wettedSurfaceAreaMm2',
+  'waterplaneCentroidX',
+  'waterplaneIyyMm4',
+  'tpcTonnesPerCm',
 ]
 
-const RESULT_VECTORS: readonly (keyof TrimSolveResult)[] = ['lcb', 'lcg']
+const RESULT_VECTORS: readonly (keyof TrimSolveResult)[] = ['lcb', 'lcg', 'pivot']
 
 /** One plotted curve sample: an angle and a GZ, both finite. */
 function isGzPoint(value: unknown): boolean {
@@ -813,10 +912,17 @@ function isSolveResultLike(value: unknown): boolean {
   if (typeof value !== 'object' || value === null) return false
   const v = value as Record<string, unknown>
   if (!Array.isArray(v.gzCurve)) return false
-  // Element shape, not just array-ness: a null or text element would
-  // otherwise survive here and raise a TypeError in gzMarks/GzChart later.
+  // Element shape AND order, not just array-ness: a null or text element
+  // would otherwise survive here and raise a TypeError in gzMarks/GzChart
+  // later, and a curve sampled out of heel order would break the peak scan
+  // and the angle-of-vanishing-stability interpolation (`gz-marks.ts`
+  // documents the ordering contract the solver and the import both keep).
+  let previousHeel = Number.NEGATIVE_INFINITY
   for (const point of v.gzCurve) {
     if (!isGzPoint(point)) return false
+    const sample = point as GZPoint
+    if (!(sample.heelDeg > previousHeel)) return false
+    previousHeel = sample.heelDeg
   }
   for (const key of RESULT_NUMBERS) {
     const field = v[key]
@@ -825,6 +931,12 @@ function isSolveResultLike(value: unknown): boolean {
   for (const key of RESULT_VECTORS) {
     if (!isVec3(v[key])) return false
   }
+  // A real boolean, not truthiness: 'false' and 0 are both docs that mean no.
+  if (typeof v.converged !== 'boolean') return false
+  // The one nullable number in the result: a hull whose ends never immerse
+  // carries null, and anything else must be a finite angle.
+  const endTip = v.endTipImmersionDeg
+  if (endTip !== null && (typeof endTip !== 'number' || !Number.isFinite(endTip))) return false
   return true
 }
 
@@ -835,8 +947,10 @@ function isRunRecord(value: unknown): value is RunRecord {
     typeof r.id === 'string' &&
     r.id.length > 0 &&
     typeof r.name === 'string' &&
+    // The same gate as the import and the creation: a hash is 64 lowercase hex
+    // characters, or it is not a hash the re-pick could ever match.
     typeof r.modelHash === 'string' &&
-    r.modelHash.length > 0 &&
+    SHA256_HEX_PATTERN.test(r.modelHash) &&
     typeof r.savedAt === 'number' &&
     r.savedAt > 0 &&
     isSlotInputs(r.inputs) &&

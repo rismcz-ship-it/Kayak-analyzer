@@ -30,7 +30,7 @@ import { readFileSync } from 'node:fs'
 import { BufferAttribute, BufferGeometry } from 'three'
 import { type LoadedMesh, rescaleMesh } from '../src/components/Upload.js'
 import { analyzeMesh } from '../src/lib/geometry.js'
-import { sha256Hex } from '../src/lib/model-hash.js'
+import { SECURE_CONTEXT_ERROR, sha256Hex } from '../src/lib/model-hash.js'
 
 let failures = 0
 function check(ok: boolean, label: string, detail = ''): void {
@@ -117,6 +117,49 @@ check(realHash === independent, 'sha256Hex over real STL bytes matches node:cryp
 check(
   realHash !== abcHash && /^[0-9a-f]{64}$/.test(realHash),
   'the real-bytes digest is its own 64-hex value, not the text digests',
+)
+
+// --- 2c. the non-secure-context refusal is NAMED, not an opaque TypeError ----
+//
+// crypto.subtle exists only in a secure context. A dev server bound to a LAN
+// IP or a plain-http preview of dist/ on a phone has no subtle, and a bare
+// `crypto.subtle.digest` there throws `TypeError: Cannot read properties of
+// undefined`. Upload.tsx catches the module's named error by MESSAGE and hides
+// only that one banner, so the refusal must be recognisable - otherwise the
+// best-effort try/catch would swallow every error and report "no hash possible"
+// for a genuine bug. The failure is per-call, not sticky: restore the global
+// and the very next hash still works.
+
+console.log('\n=== the non-secure-context refusal ===')
+
+const cryptoDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'crypto')
+Object.defineProperty(globalThis, 'crypto', {
+  value: undefined,
+  writable: true,
+  configurable: true,
+})
+let secureError = 'no throw'
+try {
+  await sha256Hex(bytes('abc'))
+} catch (error) {
+  secureError = error instanceof Error ? error.message : String(error)
+}
+// Restore BEFORE checking, so a failure below can never leak the stub into
+// the sections that follow (and the restore path is itself the check that the
+// stub was configurable - which is why this is Node ≥ 19 only, per the header).
+if (cryptoDescriptor) {
+  Object.defineProperty(globalThis, 'crypto', cryptoDescriptor)
+} else {
+  delete (globalThis as { crypto?: unknown }).crypto
+}
+check(
+  secureError === SECURE_CONTEXT_ERROR,
+  'without crypto.subtle sha256Hex throws the named SECURE_CONTEXT_ERROR',
+  secureError,
+)
+check(
+  (await sha256Hex(bytes('abc'))) === abcHash,
+  'the refusal is per-call: the next hash after recovery still works',
 )
 
 // --- 3. the hash survives rescaling -----------------------------------------

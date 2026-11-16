@@ -35,7 +35,11 @@ export interface LoadedMesh {
   /**
    * SHA-256 (lowercase hex) of the file's RAW bytes, computed at load before
    * orientation or centring. The mesh's identity: it survives the ×1000
-   * rescale (same file, corrected units) and identifies re-picks.
+   * rescale (same file, corrected units) and identifies re-picks. EMPTY when
+   * the page could not hash (no `crypto.subtle` - a plain-http host, an older
+   * runtime): the load still completes, because the viewer and the solve do
+   * not need the hash, and `recordFromSolve` refuses the empty string so a
+   * record with no identity can never enter the roster.
    */
   sha256Hex: string
 }
@@ -101,8 +105,20 @@ export default function Upload({ onLoaded, compact = false }: UploadProps) {
       setBusy(true)
       try {
         const buffer = await file.arrayBuffer()
-        // Identity of the RAW bytes, before any pipeline step can rewrite them.
-        const hash = await sha256Hex(buffer)
+        // Identity of the RAW bytes, before any pipeline step can rewrite
+        // them. Best-effort: a page that cannot hash still loads its mesh -
+        // the viewer, the solve and the form do not read the hash - and
+        // carries '' with a note, rather than losing the load to a
+        // Compare-only capability. Anything else a hashing failure could be
+        // still aborts here, as before. `recordFromSolve` refuses '' later, so
+        // a record with no identity never enters the roster.
+        let hash = ''
+        try {
+          hash = await sha256Hex(buffer)
+        } catch (err) {
+          if (err instanceof Error && err.message !== SECURE_CONTEXT_ERROR) throw err
+          setError(`Loaded without a model hash: ${SECURE_CONTEXT_ERROR}`)
+        }
         const geometry = new STLLoader().parse(buffer) // non-indexed, mm units
 
         const positions = geometry.getAttribute('position').array as Float32Array

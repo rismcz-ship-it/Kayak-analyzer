@@ -40,6 +40,7 @@
 import type { SlotInputs } from '../src/lib/compare.js'
 import type { TrimSolveResult } from '../src/lib/hydrostatics.js'
 import { SlotSolver } from '../src/lib/slot-solver.js'
+import { MAX_TRIM_DEG, TRIM_STEP_DEG } from '../src/lib/solve-params.js'
 
 let fails = 0
 let checks = 0
@@ -232,9 +233,39 @@ const expectMapping = (worker: FakeWorker, inputs: SlotInputs, which: string, st
   // The app always asks for the documented ±4.5° / 0.1° sweep; the solver's
   // own fallback is ±3.5°, so a request that dropped these would search a
   // different ladder and land on a different trim.
-  check(`${which}: maxTrimDeg is the app's 4.5`, req.maxTrimDeg === 4.5, String(req.maxTrimDeg))
-  check(`${which}: trimStepDeg is the app's 0.1`, req.trimStepDeg === 0.1, String(req.trimStepDeg))
+  // Through the SHARED constants, not a second copy of the numbers: comparing
+  // against the imported values is what makes this check follow the parameter
+  // table instead of pinning literals a future edit would silently skip.
+  check(
+    `${which}: maxTrimDeg is the shared MAX_TRIM_DEG`,
+    req.maxTrimDeg === MAX_TRIM_DEG,
+    String(req.maxTrimDeg),
+  )
+  check(
+    `${which}: trimStepDeg is the shared TRIM_STEP_DEG`,
+    req.trimStepDeg === TRIM_STEP_DEG,
+    String(req.trimStepDeg),
+  )
 }
+
+// --- the shared sweep parameters --------------------------------------------
+//
+// The app always asks for the documented sweep, through src/lib/solve-params.ts.
+// The solver's own inline fallback is the narrower +3.5, so the shared values
+// are checked to be the wider documented ones - and slot-solver.ts is checked
+// to forward the imported constants rather than restate them (F8's finding:
+// App.tsx and slot-solver.ts each carried their own literal copy of 4.5/0.1,
+// and nothing tied them together).
+
+console.log('=== the shared sweep parameters ===')
+
+check('MAX_TRIM_DEG is 4.5', MAX_TRIM_DEG === 4.5, String(MAX_TRIM_DEG))
+check('TRIM_STEP_DEG is 0.1', TRIM_STEP_DEG === 0.1, String(TRIM_STEP_DEG))
+check(
+  'MAX_TRIM_DEG is wider than the solver inline fallback',
+  MAX_TRIM_DEG > 3.5,
+  `4.5 against 3.5 (${String(MAX_TRIM_DEG)})`,
+)
 
 // --- 1. two slots, solved concurrently --------------------------------------
 //

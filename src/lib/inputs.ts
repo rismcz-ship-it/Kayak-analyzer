@@ -98,6 +98,15 @@ export type PersistableInputs = {
 export type StorageReader = (key: string) => string | null
 
 /**
+ * The storage WRITE the modules need, and no more - the mirror of
+ * {@link StorageReader}. It is a function for the same reasons: a test can hand
+ * it a bag that records, a module never reaches for the storage global itself,
+ * and a browser whose storage throws on access (private mode, quota) throws
+ * inside the caller's catch rather than inside an unrelated render path.
+ */
+export type StorageWriter = (key: string, value: string) => void
+
+/**
  * `Number('')` is 0 — the historic defect that produced this rule, fixed in
  * `4b6ba2a` when the state moved from numeric setters to raw strings: clearing
  * a field must never hand the solver a 0 kg kayak. Empty, whitespace and

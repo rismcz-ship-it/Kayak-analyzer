@@ -14,6 +14,7 @@ import {
   readStoredInputs,
   scaleNotice,
 } from './lib/inputs'
+import { MAX_TRIM_DEG, TRIM_STEP_DEG } from './lib/solve-params'
 import { SolverClient } from './lib/solver-client'
 
 function positionsOf(mesh: LoadedMesh): Float32Array {
@@ -148,8 +149,12 @@ export default function App() {
               targetLcgPercentFromBow: lcgPercent,
               kgMm,
               fixedHeelDeg: heelDeg,
-              maxTrimDeg: 4.5,
-              trimStepDeg: 0.1,
+              // The documented sweep, from the shared constants
+              // (`src/lib/solve-params.ts`) the Compare slots import too: one
+              // literal, so the two flows can never drift onto the solver's
+              // narrower +-3.5 degrees fallback.
+              maxTrimDeg: MAX_TRIM_DEG,
+              trimStepDeg: TRIM_STEP_DEG,
             },
             (p) => {
               if (calcToken.current === token) setProgress({ done: p.done, total: p.total })

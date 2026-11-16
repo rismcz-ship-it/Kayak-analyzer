@@ -265,6 +265,34 @@ check(
 check(schemaResults?.properties?.lcb_lcg_offset_mm !== undefined, 'lcb_lcg_offset_mm is named')
 check(schemaResults?.properties?.pivot_xyz !== undefined, 'pivot_xyz is named')
 
+// The document's shape version (F10): the import writes 1 and reads 1, so a
+// future format change is refused loudly rather than read by a reader that
+// assumes today's meaning of every key.
+check(
+  schema.required?.includes('format_version') === true,
+  'format_version is required at the root',
+)
+check(
+  schema.properties?.format_version?.type === 'integer' &&
+    schema.properties.format_version.minimum === 1,
+  'format_version is an integer of at least 1',
+)
+
+// The sweep verdict is CARRIED, not assumed (F2): a document may state a run
+// that never converged, and a reader that fabricated `converged: true` would
+// present every record as a solved one.
+check(
+  schemaResults?.required?.includes('planes_evaluated') === true,
+  'planes_evaluated is required in results',
+)
+check(schemaResults?.required?.includes('converged') === true, 'converged is required in results')
+check(
+  schemaResults?.properties?.planes_evaluated?.type === 'integer' &&
+    schemaResults.properties.planes_evaluated.minimum === 0,
+  'planes_evaluated is a non-negative integer',
+)
+check(schemaResults?.properties?.converged?.type === 'boolean', 'converged is a boolean')
+
 // The bounds are the app's own form gate, so a document outside them is one
 // the app could never have produced (F5).
 check(schemaTargets?.properties?.weight_kg?.minimum === 20, 'weight_kg minimum is 20')
@@ -288,13 +316,27 @@ check(
     !hashPattern.test('f'.repeat(63)),
   'the pattern admits 64 lowercase hex only',
 )
-
-// The frame is written down, not left for the reader to assume (F8).
+// The record the roster ACCEPTS exports a hash that satisfies it: the gate at
+// the creation door and the pattern in the schema are the same rule (F11).
 check(
-  typeof schema.description === 'string' &&
-    /hull'?s own frame|hull frame/i.test(schema.description),
-  'the root description states the hull frame',
-  String(schema.description).slice(0, 60),
+  hashPattern.test(String(asObject(exportRunRecord(sample)).model_hash)),
+  'an accepted record exports a hash the schema pattern admits',
+  String(asObject(exportRunRecord(sample)).model_hash),
+)
+
+// The frame AND the datums are written down, not left for the reader to
+// assume (F8, F1): THREE datums appear in this document - ABSOLUTE hull-frame
+// vectors and waterline_z_mm, keel-relative heights (draft, kg) and
+// waterline-relative freeboards - and a reader that mixed them up would
+// silently mis-read every z in the file.
+const rootDescription = String(schema.description)
+check(
+  /hull'?s own frame|hull frame/i.test(rootDescription) &&
+    /absolute/i.test(rootDescription) &&
+    /keel/i.test(rootDescription) &&
+    /waterline/i.test(rootDescription),
+  'the root description states the hull frame and all three datums',
+  rootDescription.slice(0, 60),
 )
 check(
   typeof schemaCoefficients?.properties?.lcf_mm?.description === 'string' &&
@@ -310,6 +352,13 @@ check(
 check(
   schemaResults?.properties?.gz_curve?.items?.required?.includes('min_freeboard_mm') !== true,
   'min_freeboard_mm is optional, not required',
+)
+// The curve's ORDER is part of the format (F5): every reader interpolates
+// between neighbouring samples and scans forward from the peak.
+check(
+  /ascending/i.test(String(schemaResults?.properties?.gz_curve?.description)),
+  'gz_curve documents the ascending heel order',
+  String(schemaResults?.properties?.gz_curve?.description),
 )
 
 // --- 2. the export answers to every path the schema demands -----------------
@@ -369,7 +418,9 @@ for (const path of schemaPaths) {
   const typed =
     node?.type === undefined ||
     (node.type === 'number' ? typeof value === 'number' && Number.isFinite(value) : true) ||
+    (node.type === 'integer' ? typeof value === 'number' && Number.isInteger(value) : true) ||
     (node.type === 'string' ? typeof value === 'string' : true) ||
+    (node.type === 'boolean' ? typeof value === 'boolean' : true) ||
     (node.type === 'object' ? typeof value === 'object' && value !== null : true)
   check(present && typed, `the export emits the required path ${path}`, JSON.stringify(value))
 }
@@ -457,6 +508,19 @@ check(
   results.waterline_z_mm === sampleResult.waterlineZ,
   'results.waterline_z_mm is the hull-frame midship waterline',
 )
+// The sweep verdict crosses as the solver reported it (F2): carried, never
+// re-derived, because a reader cannot know how much work a foreign solve did.
+check(
+  results.planes_evaluated === sampleResult.planesEvaluated,
+  'results.planes_evaluated is the sweep size the solver reported',
+  String(results.planes_evaluated),
+)
+check(
+  results.converged === sampleResult.converged,
+  'results.converged is the solver verdict',
+  String(results.converged),
+)
+check(exported.format_version === 1, 'format_version is 1', String(exported.format_version))
 const emittedCurve = results.gz_curve as Array<Record<string, number>>
 check(Array.isArray(emittedCurve), 'results.gz_curve is an array')
 check(emittedCurve.length === sampleResult.gzCurve.length, 'the curve keeps every sample')
@@ -504,6 +568,9 @@ console.log('\n=== the import maps a document field by field ===')
 // Distinct values from the sample above: a field mapped to the wrong place
 // would still pass if both documents carried the same numbers.
 const importDocument: Record<string, unknown> = {
+  // The only shape this app writes. This document states it: a missing or
+  // future version is refused, not read as if it were today's format.
+  format_version: 1,
   model_hash: 'a1'.repeat(32),
   targets: { weight_kg: 82.31, lcg_pct_lwl: 54.5, kg_mm: 305, heel_deg: 12 },
   results: {
@@ -521,6 +588,12 @@ const importDocument: Record<string, unknown> = {
     bow_freeboard_mm: 205.25,
     stern_freeboard_mm: 29.75,
     waterline_z_mm: -31.25,
+    // CARRIED, not assumed: a foreign document may state a non-converged run
+    // (false here, against the sample's true) and however many planes its own
+    // sweep evaluated. An import that fabricated `converged: true` and 0 would
+    // present this as a cheap, solved run - which it never claimed to be.
+    planes_evaluated: 991,
+    converged: false,
     // 40 to -8 over 0 to 10 degrees interpolates an end-tip immersion at 8.3.
     gz_curve: [
       { heel_deg: 0, gz_mm: 0, min_freeboard_mm: 40 },
@@ -646,22 +719,32 @@ if (!parsed.ok) {
     JSON.stringify(record.result.gzCurve),
   )
 
-  // The solve's diagnostics are NOT part of the run-record format. An
-  // imported record carries neutral values for them, and no Compare consumer
-  // may read them (the table's rows all sit inside the guaranteed subset) —
-  // pinned here so a future consumer cannot quietly depend on them.
-  // endTipImmersionDeg is NOT here: the format carries the freeboards it is
-  // computed from, so the import recomputes it rather than faking null.
-  check(record.result.planesEvaluated === 0, 'planesEvaluated is neutral (not carried)')
+  // The five diagnostics the run-record format does NOT name come back
+  // neutral, and no Compare consumer may read them (the table's rows all sit
+  // inside the set the format carries) - pinned here so a future consumer
+  // cannot quietly depend on them.
+  // `converged` and `planes_evaluated` are NOT in that list: the schema names
+  // both, so the import carries what the DOCUMENT stated - false and 991
+  // above, deliberately unlike the sample's true. A reader that assumed true
+  // would present an unconverged run as a solved one, and one that wrote 0
+  // would hide how much work the foreign solve actually did.
+  // endTipImmersionDeg is NOT here either: the format carries the freeboards
+  // it is computed from, so the import recomputes it rather than faking null.
+  check(
+    record.result.planesEvaluated === 991,
+    'planes_evaluated is CARRIED, not neutral',
+    String(record.result.planesEvaluated),
+  )
+  check(
+    record.result.converged === false,
+    'converged is CARRIED, not assumed',
+    String(record.result.converged),
+  )
   check(record.result.waterplaneAreaMm2 === 0, 'waterplaneAreaMm2 is neutral (not carried)')
   check(record.result.midshipAreaMm2 === 0, 'midshipAreaMm2 is neutral (not carried)')
   check(record.result.waterplaneLoopCount === 0, 'waterplaneLoopCount is neutral (not carried)')
   check(record.result.wettedSurfaceAreaMm2 === 0, 'wettedSurfaceAreaMm2 is neutral (not carried)')
   check(record.result.waterplaneIyyMm4 === 0, 'waterplaneIyyMm4 is neutral (not carried)')
-  check(
-    record.result.converged === true,
-    'converged is true: a full coefficient set only a completed solve emits',
-  )
 
   check(record.id.startsWith('rec_'), 'the import builds a fresh id', record.id)
   check(
@@ -711,12 +794,17 @@ if (!roundTripped.ok) {
   console.log(`  FAIL the exported sample would not import — ${roundTripped.error}`)
 } else {
   check(
-    roundTripped.record.result.planesEvaluated === 0 &&
+    roundTripped.record.result.planesEvaluated === 991 &&
       roundTripped.record.result.waterplaneAreaMm2 === 0 &&
       roundTripped.record.result.wettedSurfaceAreaMm2 === 0 &&
       sample.result.planesEvaluated === 991,
-    'the diagnostics the format omits are not fabricated on import',
+    'planes_evaluated is carried across the round trip while the omitted diagnostics stay neutral',
     `planesEvaluated ${roundTripped.record.result.planesEvaluated}`,
+  )
+  check(
+    roundTripped.record.result.converged === sample.result.converged,
+    'converged survives the round trip as the document stated it',
+    String(roundTripped.record.result.converged),
   )
   check(deepEqual(roundTripped.record.inputs, sample.inputs), 'the inputs survive the round trip')
   check(
@@ -919,6 +1007,48 @@ expectError('a draft_only phase', doc({ phase: 'draft_only' }), 'phase')
 expectError('a trim_lcg_lcb phase', doc({ phase: 'trim_lcg_lcb' }), 'phase')
 expectError('a nonsense phase', doc({ phase: 'complete' }), 'phase')
 
+// The format-version gate (F10): the second "which document is this" question.
+// A future format change must be refused loudly rather than read by a reader
+// that assumes today's meaning of every key.
+expectError('a missing format_version', doc({ format_version: undefined }), 'format_version')
+expectError('a future format_version', doc({ format_version: 2 }), 'format_version')
+expectError('a text format_version', doc({ format_version: '1' }), 'format_version')
+
+// The carried diagnostics are required, and typed (F2): a document that
+// states its sweep verdict as text, or omits the plane count, is not this
+// format.
+expectError('a missing results.converged', results_({ converged: undefined }), 'results.converged')
+expectError('a text results.converged', results_({ converged: 'true' }), 'results.converged')
+expectError(
+  'a missing results.planes_evaluated',
+  results_({ planes_evaluated: undefined }),
+  'results.planes_evaluated',
+)
+expectError(
+  'a text results.planes_evaluated',
+  results_({ planes_evaluated: '991' }),
+  'results.planes_evaluated',
+)
+expectError(
+  'a negative results.planes_evaluated',
+  results_({ planes_evaluated: -1 }),
+  'results.planes_evaluated',
+)
+
+// The curve's order is part of the format (F5): a shuffled curve is a
+// different curve, whose peak and vanishing-stability angle would both be
+// wrong for every reader that trusts the order.
+expectError(
+  'a gz_curve out of ascending heel order',
+  results_({
+    gz_curve: [
+      { heel_deg: 10, gz_mm: 21.5, min_freeboard_mm: -8 },
+      { heel_deg: 5, gz_mm: 12.25, min_freeboard_mm: 20 },
+    ],
+  }),
+  'heel_deg must be greater',
+)
+
 // The hash is one definition of a hash, not "some non-empty string" (F11).
 expectError('a 32-character model_hash', doc({ model_hash: 'ab'.repeat(16) }), 'model_hash')
 expectError('an uppercase model_hash', doc({ model_hash: 'A1'.repeat(32) }), 'model_hash')
@@ -961,6 +1091,7 @@ console.log('\n=== an inherited field is not a document field ===')
 const PROTOTYPE_FIELDS: Record<string, unknown> = {
   model_hash: 'a1'.repeat(32),
   phase: 'full_coefficients',
+  format_version: 1,
   file_name: 'inherited.stl',
   targets: { weight_kg: 82.31, lcg_pct_lwl: 54.5, kg_mm: 305, heel_deg: 12 },
   results: 'inherited',
@@ -976,6 +1107,8 @@ const PROTOTYPE_FIELDS: Record<string, unknown> = {
   bow_freeboard_mm: 205.25,
   stern_freeboard_mm: 29.75,
   waterline_z_mm: -31.25,
+  planes_evaluated: 991,
+  converged: true,
   cb: 0.4381,
   cp: 0.5241,
   cm: 0.8366,
@@ -1006,7 +1139,14 @@ try {
   )
 
   // Root fields: each must read as missing, not as inherited.
-  for (const key of ['model_hash', 'phase', 'targets', 'results', 'coefficients']) {
+  for (const key of [
+    'model_hash',
+    'phase',
+    'format_version',
+    'targets',
+    'results',
+    'coefficients',
+  ]) {
     expectError(`a document missing ${key} reads it off the prototype`, withoutKeys([key]), key)
   }
 
@@ -1030,6 +1170,8 @@ try {
     'bow_freeboard_mm',
     'stern_freeboard_mm',
     'waterline_z_mm',
+    'planes_evaluated',
+    'converged',
   ]) {
     expectError(
       `a results missing ${key} reads it off the prototype`,
