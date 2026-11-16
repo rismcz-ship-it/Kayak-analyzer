@@ -13,15 +13,20 @@ import { SLOT_COLORS } from './Viewer3D'
  * The panel owns the four fields as RAW STRINGS the way App owns its form
  * (`lib/inputs.ts` — `Number('')` is 0, the historic bug), and reuses
  * `parseInputs` itself, so a slot is gated by exactly the predicate the home
- * form is. It is keyed on the record id by CompareView, so a pick remounts it
- * and the strings fall back to that record's own values without a sync effect.
+ * form is. CompareView keys it on the record id plus a per-pick counter, so a
+ * pick - including a re-pick of the record the slot already shows - remounts
+ * it and the strings fall back to that record's own values without a sync
+ * effect.
  *
  * Two store-picked details:
  *
  *  - A record's numbers are FROZEN (`compare.ts`), so the slot's editable
  *    inputs live in CompareView and arrive here as `slot.inputs`.
- *  - Export captures what the slot DISPLAYS (`slot.live ?? record.result`),
- *    never the stale record a re-solved slot may have been picked from.
+ *  - Export captures what the slot DISPLAYS - the result AND the conditions
+ *    that pair was produced at (`slot.live` with `slot.liveInputs`, else the
+ *    record's own). Pairing the record's results with the slot's edited
+ *    targets would write a document asserting a solve at conditions that
+ *    never ran.
  */
 interface SlotPanelProps {
   /** Which slot this is: the badge, its overlay colour, and its input ids. */
@@ -85,13 +90,20 @@ export default function SlotPanel({
     }
   }
 
-  /** The heel slider is bounded, so it is always a value the gate accepts. */
+  /**
+   * The heel slider is bounded, so its value is always one the gate accepts -
+   * and it is pushed even while a text field is momentarily invalid. Keeping
+   * the old heel while the slider shows a new one left the slider and the
+   * solved conditions out of sync until the next good commit.
+   */
   const commitHeel = (value: number) => {
     setHeelDeg(value)
     const p = parseInputs(numeric)
-    if (p.weightKg !== null && p.lcgPercent !== null && p.kgMm !== null) {
-      onInputs({ weightKg: p.weightKg, lcgPctLwl: p.lcgPercent, kgMm: p.kgMm, heelDeg: value })
-    }
+    const parsed =
+      p.weightKg !== null && p.lcgPercent !== null && p.kgMm !== null
+        ? { weightKg: p.weightKg, lcgPctLwl: p.lcgPercent, kgMm: p.kgMm }
+        : slot.inputs
+    onInputs({ ...parsed, heelDeg: value })
   }
 
   /**
@@ -132,24 +144,37 @@ export default function SlotPanel({
     // screen, which is the slot's own re-picked STL when it has one: exporting
     // the record's hash against a different hull's numbers would tag the run
     // with a model it was not solved from, and the re-import would then ask for
-    // an STL that is sitting in memory right now. The result is the displayed
-    // pair (`slot.live ?? record.result`); a slot with neither throws inside
-    // recordFromSolve, which the catch below shows inline.
+    // an STL that is sitting in memory right now.
+    //
+    // The conditions travel WITH the result: the live solve's own while it has
+    // one, the record's own when its snapshot is what is on screen. Pairing
+    // the displayed results with the slot's EDITED targets instead would write
+    // a document whose reproduction inputs never produced its numbers
+    // (`exportRunRecord` copies `record.inputs` into `targets` verbatim) - and
+    // a slot whose STL is not in memory has no live solve at all, so that was
+    // the default state of every imported record.
     const own = slot.mesh
     const name = own ? own.fileName : record.name
     const modelHash = own ? own.sha256Hex : record.modelHash
+    const displayed = slot.live ?? record.result
+    const conditions = slot.live !== null ? (slot.liveInputs ?? slot.inputs) : record.inputs
     try {
-      const doc = exportRunRecord(
-        recordFromSolve(name, modelHash, slot.inputs, slot.live ?? record.result),
-      )
+      const doc = exportRunRecord(recordFromSolve(name, modelHash, conditions, displayed))
       const url = URL.createObjectURL(
         new Blob([JSON.stringify(doc, null, 2)], { type: 'application/json' }),
       )
+      // `kayak.stl` downloads as `kayak.run.json`, not `kayak.stl.run.json`.
+      const base = name.replace(/\.stl$/i, '')
       const link = document.createElement('a')
       link.href = url
-      link.download = `${name}.run.json`
+      link.download = `${base}.run.json`
+      // Appended, clicked, removed: Chromium downloads a detached link, other
+      // engines do not. The URL is revoked on the next task rather than in
+      // this tick, which some browsers read as cancelling the download.
+      document.body.appendChild(link)
       link.click()
-      URL.revokeObjectURL(url)
+      link.remove()
+      setTimeout(() => URL.revokeObjectURL(url), 0)
     } catch (err) {
       setExportError(err instanceof Error ? err.message : 'The export failed.')
     }
@@ -162,6 +187,17 @@ export default function SlotPanel({
         slot.mesh.stats.bounds.size.z,
       )
     : 0
+
+  // The record's snapshot is on screen over a DIFFERENT file's geometry: the
+  // numbers describe a hull that is not the one being drawn. The hash match is
+  // the only test - an empty hash means the page could not hash the file, so
+  // nothing is known and no claim is made either way.
+  const foreignGeometry =
+    slot.mesh !== null &&
+    slot.live === null &&
+    record !== null &&
+    slot.mesh.sha256Hex !== '' &&
+    slot.mesh.sha256Hex !== record.modelHash
 
   return (
     <section className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-4">
@@ -346,6 +382,12 @@ export default function SlotPanel({
           {!slot.solving && !slot.error && !slot.live && (
             <p className="mt-3 text-xs text-zinc-500">
               Showing the saved run — edit a condition to re-solve.
+            </p>
+          )}
+          {foreignGeometry && (
+            <p className="mt-1 text-xs text-amber-400" role="note">
+              The STL in memory is a different hull from the one this record was solved on — the
+              numbers above are that record's, posed on the file below.
             </p>
           )}
 

@@ -6,13 +6,27 @@ import { SLOT_COLORS } from './Viewer3D'
 
 /**
  * One column of the comparison: the record a slot shows, what it displays
- * (`live ?? record.result`) and the conditions it is currently at.
+ * (`live ?? record.result`), and the conditions THAT PAIR was produced at.
+ *
+ * `inputs` is deliberately not the slot's editable conditions: an edit moves
+ * those without invalidating the answer on screen, so the note - and anything
+ * else that puts numbers next to conditions - must read the ones the
+ * DISPLAYED result answers to, never the ones being typed into the fields.
  */
 export interface CompareColumn {
   record: RunRecord | null
   result: TrimSolveResult | null
-  /** The slot's current (editable) conditions; null when the slot is empty. */
+  /**
+   * The conditions the displayed result was produced at; null when the slot
+   * is empty.
+   */
   inputs: SlotInputs | null
+  /**
+   * A re-solve is in flight: the numbers on screen still answer to the
+   * previous conditions, and the column header says so rather than letting
+   * the delta imply they are the current ones.
+   */
+  stale: boolean
 }
 
 interface CompareTableProps {
@@ -46,9 +60,12 @@ interface Section {
  * inside the set the format carries, which is the rule
  * `parseRunRecordImport` documents.
  *
- * `Waterline Z`, `LCG X` and `LCB X` are hull-frame X/heights measured from
- * each mesh's OWN centre, so across two hulls they are not comparable; the
- * comparable difference (`LCB–LCG offset`) has its own row.
+ * `LCG X` and `LCB X` are IN, and `Waterline Z` stays out: both meshes are
+ * centred on their own bounding box at upload (`Upload.tsx`), so each X is
+ * that centre's distance from the hull's own midpoint - the same datum
+ * `ResultsPanel` documents for the single hull, and comparable the way the
+ * draft row is. `Waterline Z` is a height above each hull's own keel, and two
+ * keels are not one datum.
  */
 function buildSections(a: TrimSolveResult, b: TrimSolveResult, aMarks: GzMarks, bMarks: GzMarks) {
   const metric = (label: string, pick: (r: TrimSolveResult) => number, unit = '', digits = 1) => ({
@@ -75,6 +92,17 @@ function buildSections(a: TrimSolveResult, b: TrimSolveResult, aMarks: GzMarks, 
         : null,
   }
 
+  // A non-converged sweep's numbers are a best estimate. The row marks them
+  // as such instead of letting them sit beside a settled run's in every other
+  // row and in the delta. Both fields are carried by the run-record format, so
+  // an imported record shows its own answer, not a live hull's.
+  const convergedRow: MetricRow = {
+    label: 'Converged',
+    a: a.converged ? `yes (${a.planesEvaluated} planes)` : `approx (${a.planesEvaluated} planes)`,
+    b: b.converged ? `yes (${b.planesEvaluated} planes)` : `approx (${b.planesEvaluated} planes)`,
+    delta: null,
+  }
+
   const sections: Section[] = [
     {
       title: 'Equilibrium',
@@ -84,9 +112,12 @@ function buildSections(a: TrimSolveResult, b: TrimSolveResult, aMarks: GzMarks, 
         metric('Displacement', (r) => r.displacementKg, ' kg'),
         metric('Waterline length (LWL)', (r) => r.LWL, ' mm'),
         metric('Waterline beam (BWL)', (r) => r.BWL, ' mm'),
+        metric('LCG X', (r) => r.lcg.x, ' mm'),
+        metric('LCB X', (r) => r.lcb.x, ' mm'),
         metric('LCB–LCG offset', (r) => r.lcbLcgOffsetMm, ' mm'),
         metric('Bow freeboard', (r) => r.bowFreeboardMm, ' mm'),
         metric('Stern freeboard', (r) => r.sternFreeboardMm, ' mm'),
+        convergedRow,
       ],
     },
     {
@@ -130,7 +161,10 @@ export default function CompareTable({ a, b }: CompareTableProps) {
 
   // A visible note, not an error: the two runs may legitimately be at
   // different conditions (that is often WHY they are being compared), but the
-  // numbers then describe different loadings, not one comparison.
+  // numbers then describe different loadings, not one comparison. It reads the
+  // conditions the DISPLAYED results were produced at, so an edit that has not
+  // re-solved yet raises no false difference - and two columns really were
+  // solved differently says so.
   const conditions = a.inputs && b.inputs ? conditionsDiffer(a.inputs, b.inputs) : []
 
   return (
@@ -154,10 +188,18 @@ export default function CompareTable({ a, b }: CompareTableProps) {
               Metric
             </th>
             <th scope="col" className="py-1 text-right font-medium" style={columnStyle(0)}>
-              A · <span className="font-normal text-zinc-400">{a.record?.name ?? 'empty'}</span>
+              A ·{' '}
+              <span className="font-normal text-zinc-400">
+                {a.record?.name ?? 'empty'}
+                {a.stale ? ' (re-solving)' : ''}
+              </span>
             </th>
             <th scope="col" className="py-1 text-right font-medium" style={columnStyle(1)}>
-              B · <span className="font-normal text-zinc-400">{b.record?.name ?? 'empty'}</span>
+              B ·{' '}
+              <span className="font-normal text-zinc-400">
+                {b.record?.name ?? 'empty'}
+                {b.stale ? ' (re-solving)' : ''}
+              </span>
             </th>
             <th scope="col" className="py-1 text-right font-medium text-zinc-400">
               Δ (A − B)

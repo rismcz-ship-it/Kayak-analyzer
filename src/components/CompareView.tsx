@@ -64,19 +64,47 @@ interface CompareViewProps {
 /** What one slot holds: which record it shows, its mesh, and its own solve. */
 export interface SlotState {
   recordId: string | null
-  /** Present only when the mesh cache carries this record's modelHash. */
+  /**
+   * Present only when the mesh cache carries this record's modelHash.
+   *
+   * It may be a DIFFERENT file from the record's: the re-pick path's explicit
+   * "Use anyway" choice, which is why every displayed pair records the
+   * conditions it was actually solved at (`liveInputs`).
+   */
   mesh: LoadedMesh | null
   /** Adopted (a copy) from the record on pick; editable afterwards. */
   inputs: SlotInputs
   /** The live solve result; null until a solve has answered this session. */
   live: TrimSolveResult | null
+  /**
+   * The conditions `live` was solved at - null exactly when `live` is null.
+   *
+   * An edit does not drop `live` (the table would go blank mid-typing), so
+   * `inputs` move on while `live` still answers to the OLD ones. Every
+   * consumer that shows the pair together - the table, the conditions note,
+   * the export - reads the result's own conditions, never the edited ones.
+   */
+  liveInputs: SlotInputs | null
   solving: boolean
   progress: { done: number; total: number } | null
   error: string | null
+  /**
+   * Bumped on every pick so the panel remounts: re-picking the record a slot
+   * already shows must reset its field strings to that record's own values,
+   * and a key on the record id alone does not change on a re-pick.
+   */
+  pickSeq: number
 }
 
 /** ~300 ms of quiet between an edit and the re-solve it triggers. */
 const SOLVE_DEBOUNCE_MS = 300
+
+/**
+ * The session's geometry cache ceiling. A couple of megabytes per entry and
+ * nothing else ever releases one, so an unbounded map is a slow leak on a
+ * re-pick-heavy session.
+ */
+const MESH_CACHE_MAX = 8
 
 /**
  * Both hulls are translucent by design (`makeSlotScene`): the overlay's whole
@@ -104,9 +132,11 @@ function emptySlot(): SlotState {
     // no record, and no such slot has numbers to solve.
     inputs: { weightKg: 75, lcgPctLwl: 52, kgMm: DEFAULT_KG_MM, heelDeg: 0 },
     live: null,
+    liveInputs: null,
     solving: false,
     progress: null,
     error: null,
+    pickSeq: 0,
   }
 }
 
@@ -172,7 +202,14 @@ function useSlotSolve(
       setSlot((prev) =>
         prev.error === problem && prev.live === null && !prev.solving
           ? prev
-          : { ...prev, error: problem, live: null, solving: false, progress: null },
+          : {
+              ...prev,
+              error: problem,
+              live: null,
+              liveInputs: null,
+              solving: false,
+              progress: null,
+            },
       )
       return
     }
@@ -190,6 +227,9 @@ function useSlotSolve(
             setSlot((prev) => ({
               ...prev,
               live: result,
+              // The conditions this answer belongs to, captured before any
+              // later edit could move `inputs` out from under it.
+              liveInputs: conditions,
               solving: false,
               progress: null,
               error: null,
@@ -203,6 +243,7 @@ function useSlotSolve(
               solving: false,
               progress: null,
               live: null,
+              liveInputs: null,
               error: err instanceof Error ? err.message : 'The solve failed.',
             }))
           },
@@ -247,20 +288,29 @@ export default function CompareView({ roster, onAddRecord, onDeleteRecord }: Com
     }
   }, [solvers])
 
-  /** Pick a record into a slot: its inputs (a copy) and its mesh if cached. */
+  /**
+   * Pick a record into a slot: its inputs (a copy) and its mesh if cached.
+   *
+   * `pickSeq` advances on EVERY pick, including a re-pick of the record the
+   * slot already shows: the panel is keyed on it, so its field strings fall
+   * back to this record's own values instead of keeping whatever was typed
+   * into them while the slot showed the previous pick.
+   */
   const pickRecord = useCallback(
     (index: 0 | 1, record: RunRecord) => {
       const cached = meshCache.current.get(record.modelHash) ?? null
-      setters[index]({
+      setters[index]((prev) => ({
         recordId: record.id,
         mesh: cached,
         // A record's inputs are frozen; the slot adopts a copy it may edit.
         inputs: { ...record.inputs },
         live: null,
+        liveInputs: null,
         solving: false,
         progress: null,
         error: null,
-      })
+        pickSeq: prev.pickSeq + 1,
+      }))
     },
     [setters],
   )
@@ -270,11 +320,27 @@ export default function CompareView({ roster, onAddRecord, onDeleteRecord }: Com
     (index: 0 | 1, mesh: LoadedMesh) => {
       // An empty hash means the page could not hash: it identifies nothing, so
       // it is not cached under a key no record will ever look up.
-      if (mesh.sha256Hex !== '') meshCache.current.set(mesh.sha256Hex, mesh)
+      if (mesh.sha256Hex !== '') {
+        meshCache.current.set(mesh.sha256Hex, mesh)
+        // Bound the session's growth: each entry holds a whole geometry, and
+        // nothing on the re-pick path ever removes one. The oldest leaves
+        // first (Map keeps insertion order); a slot already displaying that
+        // mesh keeps it in its own state, so an eviction only costs a re-upload
+        // the next time the record is picked.
+        while (meshCache.current.size > MESH_CACHE_MAX) {
+          const oldest = meshCache.current.keys().next()
+          if (oldest.done) break
+          meshCache.current.delete(oldest.value)
+        }
+      }
+      // The new geometry invalidates the live answer: until its own solve
+      // lands, the slot displays the record's snapshot - which is fine,
+      // because every consumer reads the conditions that pair belongs to.
       setters[index]((prev) => ({
         ...prev,
         mesh,
         live: null,
+        liveInputs: null,
         solving: false,
         progress: null,
         error: null,
@@ -318,15 +384,28 @@ export default function CompareView({ roster, onAddRecord, onDeleteRecord }: Com
   // record's own snapshot. Export and the overlay read the same pair.
   const resultA = slotA.live ?? recordA?.result ?? null
   const resultB = slotB.live ?? recordB?.result ?? null
+  // The conditions that pair ANSWERS to - the live solve's own while it is
+  // live (an edit moves `inputs` without invalidating the answer on screen),
+  // and the record's own when its snapshot is what is being shown. Never the
+  // edited fields: the note and the export compares what is displayed, and a
+  // document that pairs the recorded results with the edited targets asserts
+  // a solve at conditions that never ran.
+  const shownInputs = (slot: SlotState, record: RunRecord | null): SlotInputs =>
+    slot.live !== null ? (slot.liveInputs ?? slot.inputs) : (record?.inputs ?? slot.inputs)
   const columnA: CompareColumn = {
     record: recordA,
     result: resultA,
-    inputs: recordA ? slotA.inputs : null,
+    inputs: recordA ? shownInputs(slotA, recordA) : null,
+    // A re-solve is in flight: the numbers on screen still answer to the
+    // previous conditions, and the table says so instead of letting the delta
+    // column imply they are the current ones.
+    stale: slotA.solving && slotA.live !== null,
   }
   const columnB: CompareColumn = {
     record: recordB,
     result: resultB,
-    inputs: recordB ? slotB.inputs : null,
+    inputs: recordB ? shownInputs(slotB, recordB) : null,
+    stale: slotB.solving && slotB.live !== null,
   }
 
   return (
@@ -366,7 +445,7 @@ export default function CompareView({ roster, onAddRecord, onDeleteRecord }: Com
           </p>
         )}
         <SlotPanel
-          key={slotA.recordId ?? 'empty-A'}
+          key={`${slotA.recordId ?? 'empty-A'}#${slotA.pickSeq}`}
           label="A"
           slot={slotA}
           record={recordA}
@@ -377,7 +456,7 @@ export default function CompareView({ roster, onAddRecord, onDeleteRecord }: Com
           onMesh={(mesh) => attachMesh(0, mesh)}
         />
         <SlotPanel
-          key={slotB.recordId ?? 'empty-B'}
+          key={`${slotB.recordId ?? 'empty-B'}#${slotB.pickSeq}`}
           label="B"
           slot={slotB}
           record={recordB}
@@ -597,13 +676,19 @@ function CompareOverlay({
     // Frame to whatever is loaded now (the mount pass framed an empty overlay).
     const built = sceneRef.current
     if (built) {
+      // The radius comes from the MESH STATS, not `geometry.boundingBox`:
+      // nothing on the upload path computes that box (`STLLoader.parse` and
+      // `Upload` do not), so it is null for every mesh loaded here - the
+      // single viewer never hits this because it computes it in its own mount
+      // pass. A null box made the radius collapse to 1 mm and put the camera
+      // inside the hull, so the overlay showed a solid wash of hull colour.
       const radius = Math.max(
         ...entries
           .filter((e) => e.mesh !== null)
           .flatMap((e) => {
-            const bb = e.mesh?.geometry.boundingBox
-            if (!bb) return [1]
-            return [Math.max(bb.max.x - bb.min.x, bb.max.y - bb.min.y, bb.max.z - bb.min.z)]
+            const size = e.mesh?.stats.bounds.size
+            if (!size) return [1]
+            return [Math.max(size.x, size.y, size.z)]
           }),
         1,
       )
@@ -622,6 +707,12 @@ function CompareOverlay({
       const view = viewOf(entry.index === 0 ? resultA : resultB)
       // POSE first for BOTH slots ...
       applySlotResultToScene(slot, view)
+      // A slot with no result to pose it with is NOT floating: drawn unposed
+      // and at the origin it would sit in mid-air outside the shared surface
+      // with nothing on screen saying why, so it stays hidden until a result
+      // exists. Every real solve reports a finite waterline height, so this
+      // only ever fires on the empty view.
+      slot.refs.hullGroup.visible = view.waterlineZ !== null
       if (view.waterlineZ !== null && Number.isFinite(view.waterlineZ)) {
         posed.push({ slot, waterlineZ: view.waterlineZ })
       }
