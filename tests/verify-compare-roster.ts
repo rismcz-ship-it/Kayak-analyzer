@@ -44,12 +44,17 @@
 // Run: npm.cmd exec -- tsx tests/verify-compare-roster.ts
 
 import {
+  addRosterRecord,
   COMPARE_STORAGE_KEY,
+  canonicalRecord,
   conditionsDiffer,
   deleteRecord,
   encodeRoster,
+  exportRunRecord,
+  parseRunRecordImport,
   type RunRecord,
   readRoster,
+  recordFingerprint,
   recordFromSolve,
   type SlotInputs,
   writeRoster,
@@ -667,6 +672,87 @@ check(
   conditionsDiffer({ ...same, heelDeg: 0 }, { ...same, heelDeg: 0 }).length === 0,
   'two upright slots do not differ',
 )
+
+// --- 10. the roster's de-dup -------------------------------------------------
+
+console.log('\n=== roster de-dup ===')
+
+// A record's id is minted per creation, so the SAME run arriving twice gets
+// two ids: importing the same .run.json twice, or solving the same hull at
+// the same conditions twice, would otherwise fill the roster with copies of
+// one run. The run's CONTENT is what identifies it.
+const runA = recordFromSolve('Hull', 'a'.repeat(64), sampleInputs, sampleResult)
+const runACopy = recordFromSolve('Hull', 'a'.repeat(64), sampleInputs, sampleResult)
+check(
+  runA.id !== runACopy.id,
+  'the same run built twice gets two ids',
+  `${runA.id} vs ${runACopy.id}`,
+)
+check(
+  recordFingerprint(runA) === recordFingerprint(runACopy),
+  'the same run has one fingerprint',
+  `${recordFingerprint(runA)} vs ${recordFingerprint(runACopy)}`,
+)
+
+const afterDuplicate = addRosterRecord([runA], runACopy)
+check(afterDuplicate.length === 1, 'the same run is not duplicated', `got ${afterDuplicate.length}`)
+check(afterDuplicate[0].id === runA.id, 'the entry already in the roster keeps its identity')
+check(
+  canonicalRecord([runA], runACopy).id === runA.id,
+  'the canonical record of a duplicate is the one already stored',
+)
+
+// A DIFFERENT run stays a separate entry: same hull, different conditions,
+// and the same conditions on a different hull are three different runs.
+const heavier = recordFromSolve(
+  'Hull',
+  'a'.repeat(64),
+  { ...sampleInputs, weightKg: 90 },
+  sampleResult,
+)
+const otherHull = recordFromSolve('Other hull', 'b'.repeat(64), sampleInputs, sampleResult)
+check(
+  addRosterRecord([runA], heavier).length === 2,
+  'the same hull at different conditions is a separate entry',
+)
+check(
+  addRosterRecord([runA], otherHull).length === 2,
+  'a different hull at the same conditions is a separate entry',
+)
+check(
+  recordFingerprint(runA) !== recordFingerprint(heavier),
+  'different conditions are a different fingerprint',
+)
+
+// The export/import round trip is the case that matters: the document's
+// volume passes through liters on the way out and back, and that trip can
+// move the last bit of the number. The same run must still be the same run.
+const exported = exportRunRecord(runA)
+const reimported = parseRunRecordImport(JSON.stringify(exported))
+check(reimported.ok, 'the exported document re-imports', reimported.ok ? '' : reimported.error)
+if (reimported.ok) {
+  check(
+    recordFingerprint(reimported.record) === recordFingerprint(runA),
+    'an imported copy of a run has the same fingerprint as the live one',
+  )
+  check(
+    addRosterRecord([runA], reimported.record).length === 1,
+    're-importing the same run does not duplicate the roster entry',
+    `got ${addRosterRecord([runA], reimported.record).length}`,
+  )
+  check(
+    canonicalRecord([runA], reimported.record).id === runA.id,
+    'the canonical record of a re-imported run is the one already stored',
+  )
+}
+
+// The roster functions hand back new containers and never their input.
+const rosterInput = [runA]
+const rosterOutput = addRosterRecord(rosterInput, otherHull)
+check(rosterOutput !== rosterInput, 'addRosterRecord returns a new array')
+check(rosterInput.length === 1 && rosterInput[0] === runA, 'addRosterRecord leaves its input alone')
+check(rosterOutput[0] === otherHull, 'the new record is carried over, not re-cloned')
+check(rosterOutput[1] === runA, 'the older entries are carried over in order')
 
 console.log(failures === 0 ? '\nALL ROSTER CHECKS PASSED' : `\n${failures} ROSTER CHECK(S) FAILED`)
 process.exit(failures === 0 ? 0 : 1)

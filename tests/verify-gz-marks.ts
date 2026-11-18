@@ -49,6 +49,11 @@ console.log('=== 1. the degenerate and empty curves ===')
   const empty = gzMarks([])
   check('empty curve -> no marks', empty.gzMax === null && empty.avsDeg === null, 'both null')
   check('empty curve -> maxHeelDeg 0', empty.maxHeelDeg === 0, `${empty.maxHeelDeg}`)
+  // The sample count is what tells an EMPTY curve apart from a curve that
+  // was sampled and found to have no positive arm: the Compare table's AVS
+  // cell reads it, so an imported record whose document omits the optional
+  // `gz_curve` cannot claim a sweep that never ran.
+  check('empty curve -> sampleCount 0', empty.sampleCount === 0, `${empty.sampleCount}`)
 
   const single = gzMarks(curve([[0, 0]]))
   check('single point -> no peak', single.gzMax === null, `${single.gzMax}`)
@@ -76,6 +81,7 @@ console.log('=== 1. the degenerate and empty curves ===')
   check('all-negative curve -> no peak', sinking.gzMax === null, `${sinking.gzMax}`)
   check('all-negative curve -> no AVS', sinking.avsDeg === null, `${sinking.avsDeg}`)
   check('all-negative curve -> maxHeelDeg 10', sinking.maxHeelDeg === 10, `${sinking.maxHeelDeg}`)
+  check('all-negative curve -> sampleCount 3', sinking.sampleCount === 3, `${sinking.sampleCount}`)
 }
 
 // ---------------------------------------------------------------------------
@@ -231,6 +237,7 @@ console.log('=== 6. the end-tip warning predicate ===')
     gzMax: { heelDeg: 5, GZ: 10 },
     avsDeg,
     maxHeelDeg: 45,
+    sampleCount: 4,
   })
   const before = endTipWetsBeforeVanishing(38.4, marksAt(40.7))
   check(

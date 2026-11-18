@@ -1,4 +1,4 @@
-import { conditionsDiffer, type SlotInputs } from '../lib/compare'
+import { avsCellText, conditionsDiffer, type SlotInputs } from '../lib/compare'
 import { fmt, signed } from '../lib/format'
 import { type GzMarks, gzMarks } from '../lib/gz-marks'
 import type { TrimSolveResult } from '../lib/hydrostatics'
@@ -27,9 +27,12 @@ export interface CompareColumn {
    */
   inputs: SlotInputs | null
   /**
-   * A re-solve is in flight: the numbers on screen still answer to the
-   * previous conditions, and the column header says so rather than letting
-   * the delta imply they are the current ones.
+   * This column's answer is out of date with its own conditions: a re-solve
+   * is in flight, or the conditions have moved on and the new solve has not
+   * answered yet (the ~300 ms debounce, and the frame before the solver even
+   * starts). Either way the numbers on screen still answer to the PREVIOUS
+   * conditions, and the header says so rather than letting the delta imply
+   * they are the current ones.
    */
   stale: boolean
 }
@@ -71,28 +74,41 @@ interface Section {
  * `ResultsPanel` documents for the single hull, and comparable the way the
  * draft row is. `Waterline Z` is a height above each hull's own keel, and two
  * keels are not one datum.
+ *
+ * A slot with no run yet is a NULL column, not a missing section: the Compare
+ * slots compute on their own (a hull that is loaded solves itself), so a single
+ * hull's numbers are worth reading while the other slot is still empty - its
+ * column and every delta wait for the second run. The caller only asks for
+ * sections when at least one of the two has one.
  */
-function buildSections(a: TrimSolveResult, b: TrimSolveResult, aMarks: GzMarks, bMarks: GzMarks) {
+function buildSections(
+  a: TrimSolveResult | null,
+  b: TrimSolveResult | null,
+  aMarks: GzMarks | null,
+  bMarks: GzMarks | null,
+) {
+  const EMPTY = '—'
   const metric = (label: string, pick: (r: TrimSolveResult) => number, unit = '', digits = 1) => ({
     label,
-    a: `${fmt(pick(a), digits)}${unit}`,
-    b: `${fmt(pick(b), digits)}${unit}`,
-    delta: `${signed(pick(a) - pick(b), digits)}${unit}`,
+    a: a === null ? EMPTY : `${fmt(pick(a), digits)}${unit}`,
+    b: b === null ? EMPTY : `${fmt(pick(b), digits)}${unit}`,
+    delta: a === null || b === null ? null : `${signed(pick(a) - pick(b), digits)}${unit}`,
   })
 
   const gzRow: MetricRow = {
     label: 'GZ peak',
-    a: aMarks.gzMax ? `${fmt(aMarks.gzMax.GZ)} mm @ ${fmt(aMarks.gzMax.heelDeg)}°` : '—',
-    b: bMarks.gzMax ? `${fmt(bMarks.gzMax.GZ)} mm @ ${fmt(bMarks.gzMax.heelDeg)}°` : '—',
-    delta: aMarks.gzMax && bMarks.gzMax ? `${signed(aMarks.gzMax.GZ - bMarks.gzMax.GZ)} mm` : null,
+    a: aMarks?.gzMax ? `${fmt(aMarks.gzMax.GZ)} mm @ ${fmt(aMarks.gzMax.heelDeg)}°` : EMPTY,
+    b: bMarks?.gzMax ? `${fmt(bMarks.gzMax.GZ)} mm @ ${fmt(bMarks.gzMax.heelDeg)}°` : EMPTY,
+    delta:
+      aMarks?.gzMax && bMarks?.gzMax ? `${signed(aMarks.gzMax.GZ - bMarks.gzMax.GZ)} mm` : null,
   }
 
   const avsRow: MetricRow = {
     label: 'Angle of vanishing stability',
-    a: aMarks.avsDeg === null ? `not within ${fmt(aMarks.maxHeelDeg)}°` : `${fmt(aMarks.avsDeg)}°`,
-    b: bMarks.avsDeg === null ? `not within ${fmt(bMarks.maxHeelDeg)}°` : `${fmt(bMarks.avsDeg)}°`,
+    a: aMarks === null ? EMPTY : avsCellText(aMarks),
+    b: bMarks === null ? EMPTY : avsCellText(bMarks),
     delta:
-      aMarks.avsDeg !== null && bMarks.avsDeg !== null
+      aMarks !== null && bMarks !== null && aMarks.avsDeg !== null && bMarks.avsDeg !== null
         ? `${signed(aMarks.avsDeg - bMarks.avsDeg)}°`
         : null,
   }
@@ -101,10 +117,17 @@ function buildSections(a: TrimSolveResult, b: TrimSolveResult, aMarks: GzMarks, 
   // as such instead of letting them sit beside a settled run's in every other
   // row and in the delta. Both fields are carried by the run-record format, so
   // an imported record shows its own answer, not a live hull's.
+  const convergedCell = (r: TrimSolveResult | null): string =>
+    r === null
+      ? EMPTY
+      : r.converged
+        ? `yes (${r.planesEvaluated} planes)`
+        : `approx (${r.planesEvaluated} planes)`
+
   const convergedRow: MetricRow = {
     label: 'Converged',
-    a: a.converged ? `yes (${a.planesEvaluated} planes)` : `approx (${a.planesEvaluated} planes)`,
-    b: b.converged ? `yes (${b.planesEvaluated} planes)` : `approx (${b.planesEvaluated} planes)`,
+    a: convergedCell(a),
+    b: convergedCell(b),
     delta: null,
   }
 
@@ -159,10 +182,11 @@ export default function CompareTable({ a, b }: CompareTableProps) {
   const aMarks = a.result ? gzMarks(a.result.gzCurve) : null
   const bMarks = b.result ? gzMarks(b.result.gzCurve) : null
   const both = a.result !== null && b.result !== null && aMarks !== null && bMarks !== null
-  const sections =
-    a.result && b.result && aMarks && bMarks
-      ? buildSections(a.result, b.result, aMarks, bMarks)
-      : []
+  // A loaded slot solves itself (the Compare solve is automatic), so a single
+  // run is worth reading on its own: the empty column and every delta wait for
+  // the second hull. With neither run there is no number to show at all.
+  const any = a.result !== null || b.result !== null
+  const sections = any ? buildSections(a.result, b.result, aMarks, bMarks) : []
 
   // A visible note, not an error: the two runs may legitimately be at
   // different conditions (that is often WHY they are being compared), but the
@@ -175,8 +199,14 @@ export default function CompareTable({ a, b }: CompareTableProps) {
   return (
     <section className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-4">
       <h2 className="mb-3 text-sm font-semibold text-zinc-200">Comparison</h2>
-      {!both && (
+      {!any && (
         <p className="mb-2 text-xs text-zinc-500">Both slots need a run with numbers to compare.</p>
+      )}
+      {any && !both && (
+        <p className="mb-2 text-xs text-zinc-500">
+          Only one slot has a run — its numbers are below, and the other column and the deltas fill
+          in once the second hull solves.
+        </p>
       )}
       {conditions.length > 0 && (
         <p

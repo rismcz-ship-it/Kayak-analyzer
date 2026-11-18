@@ -32,6 +32,13 @@ export interface GzMarks {
   avsDeg: number | null
   /** Largest heel angle the curve samples, degrees; 0 when it samples none. */
   maxHeelDeg: number
+  /**
+   * How many samples the curve holds. It is what tells an EMPTY curve apart
+   * from a curve that WAS sampled and never had a positive arm: the Compare
+   * table's angle-of-vanishing cell reads it, so a record whose document
+   * omitted the optional `gz_curve` cannot claim a sweep that never ran.
+   */
+  sampleCount: number
 }
 
 /**
@@ -71,6 +78,7 @@ export function gzMarks(curve: GZPoint[]): GzMarks {
     gzMax: hasPositiveArm ? curve[peak] : null,
     avsDeg,
     maxHeelDeg,
+    sampleCount: curve.length,
   }
 }
 

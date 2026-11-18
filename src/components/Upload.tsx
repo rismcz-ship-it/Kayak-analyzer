@@ -1,4 +1,12 @@
-import { type DragEvent, useCallback, useRef, useState } from 'react'
+import {
+  type DragEvent,
+  type Ref,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+} from 'react'
 import { BufferAttribute, BufferGeometry } from 'three'
 import { STLLoader } from 'three/addons/loaders/STLLoader.js'
 import {
@@ -80,11 +88,34 @@ export function rescaleMesh(mesh: LoadedMesh, factor: number): LoadedMesh {
   }
 }
 
+/**
+ * What a parent can do to a mounted Upload: open the OS file picker itself.
+ *
+ * Compare's "Replace STL" uses it so the picker comes up on that one click,
+ * instead of emptying the slot first and asking for another click on a drop
+ * zone. React 19 passes `ref` straight to a function component, so this is a
+ * plain prop rather than `forwardRef`.
+ */
+export interface UploadHandle {
+  open: () => void
+}
+
 interface UploadProps {
   onLoaded: (mesh: LoadedMesh) => void
   compact?: boolean
   /** Overrides the compact variant's "Load another hull" wording. */
   prompt?: string
+  ref?: Ref<UploadHandle>
+  /**
+   * What the component is doing, for a parent that cannot show the component
+   * itself.
+   *
+   * Compare's "Replace STL" mounts the picker behind a `display:none`
+   * wrapper, so the button's own "Parsing…" and error text are invisible: a
+   * file that failed to parse would vanish without a word. A parent that
+   * mounts the Upload out of sight reports its state here instead.
+   */
+  onStatus?: (status: { busy: boolean; error: string | null }) => void
 }
 
 /**
@@ -123,11 +154,27 @@ export function rememberMesh(cache: Map<string, LoadedMesh>, mesh: LoadedMesh): 
   }
 }
 
-export default function Upload({ onLoaded, compact = false, prompt }: UploadProps) {
+export default function Upload({ onLoaded, compact = false, prompt, ref, onStatus }: UploadProps) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [dragging, setDragging] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  /**
+   * Report the component's state to a parent that cannot show the component.
+   *
+   * The report is guarded by the last one sent, so a parent whose callback is
+   * rebuilt on every render is not called back on every render — which would
+   * be a render loop for a parent that stores the report in state.
+   */
+  const reportedRef = useRef<{ busy: boolean; error: string | null } | null>(null)
+  useEffect(() => {
+    if (!onStatus) return
+    const last = reportedRef.current
+    if (last && last.busy === busy && last.error === error) return
+    reportedRef.current = { busy, error }
+    onStatus({ busy, error })
+  }, [busy, error, onStatus])
 
   const handleFile = useCallback(
     async (file: File) => {
@@ -218,7 +265,13 @@ export default function Upload({ onLoaded, compact = false, prompt }: UploadProp
     if (file) void handleFile(file)
   }
 
-  const openPicker = () => inputRef.current?.click()
+  // Stable: the imperative handle and the button share it, and a handle that
+  // rebuilt its callback on every render would be a new handle every render.
+  const openPicker = useCallback(() => inputRef.current?.click(), [])
+
+  // The handle only opens the picker; the parse pipeline stays in the change
+  // event, so both entry points behave identically.
+  useImperativeHandle(ref, () => ({ open: openPicker }), [openPicker])
 
   return (
     <>

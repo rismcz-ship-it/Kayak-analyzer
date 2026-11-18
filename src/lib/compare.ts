@@ -32,7 +32,9 @@
  * shims.
  */
 
+import { fmt } from './format'
 import type { Vec3 } from './geometry'
+import type { GzMarks } from './gz-marks'
 import {
   endTipImmersionHeelDeg,
   type GZPoint,
@@ -57,6 +59,86 @@ export interface SlotInputs {
   /** Height of the centre of gravity above the keel, mm — never an absolute Z. */
   kgMm: number
   heelDeg: number
+}
+
+/** The three numeric conditions a slot's form holds; the heel rule is separate. */
+export interface SlotNumericInputs {
+  weightKg: number
+  lcgPctLwl: number
+  kgMm: number
+}
+
+/**
+ * The conditions a slot actually SOLVES at: the numeric fields as typed, plus
+ * the APPLIED heel.
+ *
+ * The heel slider and its toggle are two different things, and the home tab
+ * (`App.tsx`) has always applied the rule `showHeelInput ? inputs.heelDeg : 0`
+ * - the slider's value is a LEFTOVER while the toggle is off, and an applied
+ * angle only while it is on. The rule lives here so the slot panel cannot
+ * express the wrong one: a numeric edit used to emit the slider's raw value,
+ * so editing the weight with the toggle off silently re-applied an angle the
+ * panel said was not applied, and the slot then solved heeled while the UI
+ * claimed upright.
+ */
+export function slotConditions(
+  numeric: SlotNumericInputs,
+  showHeel: boolean,
+  heelDeg: number,
+): SlotInputs {
+  return { ...numeric, heelDeg: showHeel ? heelDeg : 0 }
+}
+
+/**
+ * True when two condition sets are the SAME solve.
+ *
+ * A live result answers to the conditions it was solved at, and the panel's
+ * "Live - solved at the conditions above" claim and the table's "(re-solving)"
+ * marker are both derived from this pair: the result's own conditions against
+ * the ones now on screen. Comparing the fields being typed into instead would
+ * let a stale answer describe itself as current.
+ */
+export function sameSlotInputs(a: SlotInputs, b: SlotInputs): boolean {
+  return (
+    a.weightKg === b.weightKg &&
+    a.lcgPctLwl === b.lcgPctLwl &&
+    a.kgMm === b.kgMm &&
+    a.heelDeg === b.heelDeg
+  )
+}
+
+/**
+ * Is the live answer an answer to THESE conditions?
+ *
+ * A live result belongs to the conditions it was solved at, so a claim like
+ * "Live — solved at the conditions above" may only be made while the two
+ * agree: after an edit the panel re-renders once with the new conditions and
+ * the old answer, and the claim would be a lie for that frame.
+ *
+ * `liveInputs` is null exactly when there is no live answer, so it carries
+ * both facts and the panel cannot get the pairing wrong.
+ */
+export function liveAnswerIsCurrent(liveInputs: SlotInputs | null, shown: SlotInputs): boolean {
+  return liveInputs !== null && sameSlotInputs(liveInputs, shown)
+}
+
+/**
+ * Is this column's displayed answer out of date with its own conditions?
+ *
+ * Two ways to be out of date, and the table says so in both: a re-solve is in
+ * flight, or the conditions have moved on and the new solve has not answered
+ * yet (the ~300 ms debounce, and the frame before the solver even starts).
+ * The test is the LIVE answer's own conditions against the slot's current
+ * ones — never the numbers being typed into, which are the slot's `inputs`.
+ */
+export function columnIsStale(
+  liveInputs: SlotInputs | null,
+  solving: boolean,
+  inputs: SlotInputs,
+): boolean {
+  if (liveInputs === null) return false
+  if (solving) return true
+  return !sameSlotInputs(liveInputs, inputs)
 }
 
 /** A saved comparison record: an immutable snapshot of one solved hull. */
@@ -261,6 +343,222 @@ export function conditionsDiffer(a: SlotInputs, b: SlotInputs): string[] {
   if (a.kgMm !== b.kgMm) labels.push('KG')
   if (a.heelDeg !== b.heelDeg) labels.push('heel')
   return labels
+}
+
+// --- the display seams -------------------------------------------------------
+
+/**
+ * The angle-of-vanishing-stability cell: what the comparison table says about
+ * a curve, in words that do not claim more than the curve carries.
+ *
+ * Three states, and the old cell conflated two of them:
+ *
+ *   1. **No samples at all** — an imported record whose document omitted the
+ *      optional `gz_curve`. There is no curve to read, so the cell is an em
+ *      dash. "not within 0°" (what the old cell said) is a STABILITY claim
+ *      about a sweep that never ran.
+ *   2. **Sampled, but never a positive arm** — the curve was measured and the
+ *      hull never righted itself. That is its own sentence, and it is not the
+ *      same as "we never looked".
+ *   3. **Sampled and still positive at its last sample** — the sweep went as
+ *      far as the curve does and the arm never came back to zero, so the cell
+ *      says HOW FAR it went.
+ */
+export function avsCellText(marks: GzMarks): string {
+  if (marks.sampleCount === 0) return '—'
+  if (marks.avsDeg !== null) return `${fmt(marks.avsDeg)}°`
+  if (marks.gzMax === null) return 'no positive arm'
+  return `not within ${fmt(marks.maxHeelDeg)}°`
+}
+
+/**
+ * What one slot contributes to the overlay.
+ *
+ * The overlay draws a hull only when the slot holds BOTH an STL and a result
+ * to pose it with, so the caption is built from the same facts the picture is.
+ * A slot holding a record but no STL in memory shows its NUMBERS in the table
+ * and nothing at all in the 3D view — calling that a solved hull would put
+ * "both hulls sit on one shared waterline" over an empty canvas.
+ *
+ * A DRAWN hull is not necessarily a SOLVED one, and the state that separates
+ * them is the one thing this type exists to keep straight: a slot can draw an
+ * STL posed with a record's result — the record's snapshot stayed on screen
+ * over a re-picked, different file, because the new hull's own solve had not
+ * landed yet. The picture is real (the STL really is there), but "the deeper
+ * hull floats lower" is a claim about the numbers, and those numbers describe
+ * a DIFFERENT hull. Counting that pair as two solved hulls put the shared
+ * waterline caption over a comparison of one hull with another hull's answer.
+ */
+export type CompareOverlaySlot =
+  /** Nothing in the slot: no STL, no numbers. */
+  | 'empty'
+  /** An STL is in memory but no solve has landed yet: nothing is drawn. */
+  | 'loaded'
+  /** An STL and ITS OWN solve: the hull is drawn on the shared surface. */
+  | 'shown'
+  /**
+   * A record's numbers with no STL in memory: nothing is drawn.
+   */
+  | 'record-only'
+  /**
+   * An STL is drawn, but the pose on it is a RECORD's — the result was solved
+   * from a different hull. Drawn, but not solved: this state carries a number
+   * that describes geometry other than the one on screen.
+   */
+  | 'foreign-pose'
+
+export interface CompareOverlayState {
+  a: CompareOverlaySlot
+  b: CompareOverlaySlot
+}
+
+/**
+ * The caption under the overlay — one sentence about what is actually on
+ * screen.
+ *
+ * The caption used to claim "Both hulls sit on one shared waterline" over an
+ * overlay that could hold one hull or none, and a hull that was loaded but not
+ * solved yet simply did not appear, with nothing on screen saying why. The
+ * states are the facts the overlay itself is built from, so the sentence cannot
+ * drift from the picture.
+ *
+ * The shared-waterline line belongs to two SOLVED hulls and to nothing else.
+ * A `foreign-pose` slot is drawn, so the caption names it as drawn — but its
+ * numbers are a different hull's, so it is not counted as solved and the
+ * order the line predicts ("the deeper hull floats lower") is not claimed.
+ */
+export function compareOverlayCaption(state: CompareOverlayState): string {
+  const slots: Array<{ label: 'A' | 'B'; view: CompareOverlaySlot }> = [
+    { label: 'A', view: state.a },
+    { label: 'B', view: state.b },
+  ]
+  const shown = slots.filter((slot) => slot.view === 'shown')
+  if (shown.length === 2) {
+    return 'Both hulls sit on one shared waterline — the deeper hull floats lower.'
+  }
+  const sentences: string[] = []
+  if (shown.length === 1) sentences.push('One hull is solved.')
+  for (const slot of slots) {
+    if (slot.view === 'shown') continue
+    if (slot.view === 'empty') {
+      // Worth saying only when there is something else to compare with.
+      if (slots.some((other) => other.view !== 'empty')) {
+        sentences.push(`Load an STL into Slot ${slot.label} to compare it.`)
+      }
+      continue
+    }
+    if (slot.view === 'foreign-pose') {
+      // Drawn, but posed with a record's numbers: those describe the record's
+      // hull, not the file on screen. Say both halves - the panel's own note
+      // says the same thing about the same slot, and they must agree.
+      sentences.push(
+        `Slot ${slot.label}'s STL is drawn, but the pose shown is its record's — solved from a different hull.`,
+      )
+      continue
+    }
+    sentences.push(
+      slot.view === 'loaded'
+        ? `Slot ${slot.label}'s STL is loaded but not drawn yet.`
+        : `Slot ${slot.label}'s numbers are shown, but its STL is not loaded.`,
+    )
+  }
+  if (sentences.length === 0) return 'Load an STL into a slot to compare hulls.'
+  return sentences.join(' ')
+}
+
+// --- the roster's de-dup -----------------------------------------------------
+
+/**
+ * One number as text, rounded to TWELVE significant digits.
+ *
+ * The export/import round trip moves the last bit of the displacement: the
+ * document carries liters, the solver counts mm³, and the two conversions
+ * compose into a ≤1 ulp difference (~1e-16 relative). Twelve digits absorb
+ * that with a wide margin, while still telling apart runs whose numbers differ
+ * beyond the precision the physics has.
+ *
+ * The fingerprint is the DOCUMENT's content: the fields the run-record format
+ * does not carry (the wetted area, the waterplane diagnostics) are not part of
+ * it. They are derived from the same mesh and the same conditions, so two runs
+ * that agree on everything the document carries are the same run.
+ */
+function canonicalNumber(value: number): string {
+  if (!Number.isFinite(value)) return String(value)
+  if (value === 0) return '0'
+  return value.toPrecision(12)
+}
+
+/**
+ * A stable text form of a JSON value: object keys sorted, numbers at twelve
+ * significant digits, `undefined` members dropped. Two documents with the same
+ * content therefore produce the same text whatever order their keys were
+ * written in.
+ */
+function canonicalJson(value: unknown): string {
+  if (typeof value === 'number') return canonicalNumber(value)
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`
+  if (typeof value === 'object' && value !== null) {
+    const entries = Object.entries(value as Record<string, unknown>)
+      .filter(([, member]) => member !== undefined)
+      .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    return `{${entries.map(([key, member]) => `${JSON.stringify(key)}:${canonicalJson(member)}`).join(',')}}`
+  }
+  return JSON.stringify(value) ?? 'null'
+}
+
+/**
+ * A run's CONTENT identity: what it measured, at what conditions, from which
+ * mesh.
+ *
+ * A record's `id` is minted per CREATION, so the same run arriving twice gets
+ * two ids — importing the same `.run.json` twice, or solving the same hull at
+ * the same conditions twice, would otherwise fill the roster with copies of
+ * one run. The fingerprint is built from the exported document, so it is the
+ * run that is identified, not the record object that carries it.
+ */
+export function recordFingerprint(record: RunRecord): string {
+  return canonicalJson(exportRunRecord(record))
+}
+
+/**
+ * Add a record to the roster, without duplicating a run that is already there.
+ *
+ * A run whose fingerprint is already stored is NOT added again: the entry
+ * already in the roster keeps its identity (its id, and therefore whatever a
+ * slot picked by that id), and the newcomer is dropped. A record carrying an
+ * id the roster already holds replaces that entry in place — same creation,
+ * refreshed content — and anything else goes to the front, newest first.
+ *
+ * The id branch is NOT dead code, though nothing in-app can reach it: ids are
+ * minted per creation (`rec_${nextRecordId++}_${savedAt36}`), so two records
+ * created by the app never share one. Only a hand-edited or externally seeded
+ * roster can hold a duplicate, and `readRoster` does not check id uniqueness -
+ * so this branch is the defensive answer to that, not an oversight. Dropping
+ * it would turn a duplicate id into two entries a slot cannot tell apart.
+ */
+export function addRosterRecord(roster: RunRecord[], record: RunRecord): RunRecord[] {
+  const fingerprint = recordFingerprint(record)
+  if (roster.some((entry) => recordFingerprint(entry) === fingerprint)) return [...roster]
+  const sameId = roster.findIndex((entry) => entry.id === record.id)
+  if (sameId >= 0) {
+    const next = [...roster]
+    next[sameId] = record
+    return next
+  }
+  return [record, ...roster]
+}
+
+/**
+ * The roster entry that REPRESENTS a run: the stored one when the run is
+ * already there, the record itself otherwise.
+ *
+ * An import that lands on a run the roster already holds must not mint a
+ * second copy of it — the slot then shows the stored entry, so the roster
+ * list, the slot's pick and the exported document all name one run.
+ */
+export function canonicalRecord(roster: RunRecord[], record: RunRecord): RunRecord {
+  const fingerprint = recordFingerprint(record)
+  return roster.find((entry) => recordFingerprint(entry) === fingerprint) ?? record
 }
 
 // --- run-record export / import ----------------------------------------------

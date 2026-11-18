@@ -4,6 +4,8 @@ import ResultsPanel, { statRow } from './components/ResultsPanel'
 import Upload, { type LoadedMesh, rememberMesh, rescaleMesh } from './components/Upload'
 import Viewer3D from './components/Viewer3D'
 import {
+  addRosterRecord,
+  canonicalRecord,
   deleteRecord,
   type RunRecord,
   readRoster,
@@ -87,27 +89,58 @@ export default function App() {
   // of being torn down.
   const [tab, setTab] = useState<TabKey>('analyze')
   // The Compare tab's roster: the only Compare state that outlives a reload.
-  // Records are immutable snapshots, so an id that arrives twice (a re-import
-  // of a record already in the roster) replaces rather than duplicates.
+  // Records are immutable snapshots, and the roster de-duplicates by the run's
+  // CONTENT: the same run arriving twice (a re-import, a re-solve of the same
+  // conditions) keeps ONE entry, and the entry already there keeps its id.
   const [roster, setRoster] = useState<RunRecord[]>(() =>
     readRoster((key) => localStorage.getItem(key)),
   )
+  // The same array in a ref, so `addRecord`/`removeRecord` can read it while
+  // they are also replacing it. A `setRoster(prev => ...)` updater alone cannot
+  // answer WITH the entry it stored — the updater's return is the next state,
+  // not a value the caller can use — and the Compare import needs that answer
+  // to point a slot at the record the roster actually kept. Keeping the ref in
+  // step with the state (and the initial state with the ref) is what makes the
+  // answer true.
+  const rosterRef = useRef<RunRecord[]>(roster)
 
   const addRecord = useCallback((record: RunRecord) => {
-    setRoster((prev) => [record, ...prev.filter((entry) => entry.id !== record.id)])
+    const next = addRosterRecord(rosterRef.current, record)
+    rosterRef.current = next
+    setRoster(next)
+    // The entry the roster KEEPS: the stored one when this run is already
+    // there (it keeps its id, so every slot that picked it still resolves).
+    return canonicalRecord(next, record)
   }, [])
 
   const removeRecord = useCallback((id: string) => {
-    setRoster((prev) => deleteRecord(prev, id))
+    const next = deleteRecord(rosterRef.current, id)
+    rosterRef.current = next
+    setRoster(next)
   }, [])
 
-  // Same swallow-the-throw rule as the inputs above: a browser with no usable
-  // storage simply runs without a roster, and the Compare tab still works.
+  /**
+   * A roster write that failed (private mode, quota) is SURFACED, not
+   * swallowed: the runs stay in memory and the app keeps working, but a saved
+   * run that silently never persisted is a lie the user finds out about at the
+   * next reload. The cause travels with the warning - a quota error and a
+   * refused write mean very different things to whoever reads it.
+   */
+  const [rosterError, setRosterError] = useState<string | null>(null)
   useEffect(() => {
     try {
       writeRoster(roster, (key, value) => localStorage.setItem(key, value))
-    } catch {
-      // No localStorage, or it is full: carry on without memory.
+      setRosterError(null)
+    } catch (err) {
+      // The write still runs for an EMPTY roster - clearing it on reload is the
+      // point - but a refusal there has nothing to lose: the banner would fire
+      // on every startup over "0 runs · this session", which is noise that
+      // teaches the user to ignore the banner when it matters.
+      setRosterError(
+        roster.length === 0
+          ? null
+          : `This browser refused to save the run roster — the runs are in memory only and will be lost on reload. (${err instanceof Error ? err.message : String(err)})`,
+      )
     }
   }, [roster])
 
@@ -380,6 +413,19 @@ export default function App() {
       </header>
 
       <main className="flex min-h-0 flex-1 flex-col p-4">
+        {/*
+          The roster warning sits ABOVE both tabs on purpose: it is raised by
+          the ANALYZE tab (every home solve auto-rosters its run), so a Compare
+          -only banner tells the user about a loss they have already caused,
+          only once they happen to switch. */}
+        {rosterError && (
+          <p
+            className="mb-3 shrink-0 rounded border border-amber-900 bg-amber-950/40 p-2 text-xs text-amber-200"
+            role="status"
+          >
+            {rosterError}
+          </p>
+        )}
         {/*
           Both tabs stay MOUNTED for the whole session - switching only hides
           one. A tab's state dies with its component (the Compare slots, their

@@ -1,9 +1,16 @@
-import { useEffect, useState } from 'react'
-import { exportRunRecord, type RunRecord, recordFromSolve, type SlotInputs } from '../lib/compare'
+import { useCallback, useRef, useState } from 'react'
+import {
+  exportRunRecord,
+  liveAnswerIsCurrent,
+  type RunRecord,
+  recordFromSolve,
+  type SlotInputs,
+  slotConditions,
+} from '../lib/compare'
 import { DEFAULT_KG_MM } from '../lib/hydrostatics'
 import { HEEL_MAX, HEEL_MIN, type NumericInputs, parseInputs, scaleNotice } from '../lib/inputs'
 import type { SlotState } from './CompareView'
-import Upload, { type LoadedMesh, rescaleMesh } from './Upload'
+import Upload, { type LoadedMesh, rescaleMesh, type UploadHandle } from './Upload'
 import { SLOT_COLORS } from './Viewer3D'
 
 /**
@@ -49,11 +56,11 @@ interface SlotPanelProps {
   /** A re-picked (or rescaled) STL for this slot. */
   onMesh: (mesh: LoadedMesh) => void
   /**
-   * Forget the slot's STL: the dropzone (or the record's re-pick path)
-   * returns and the live answer is dropped, while the record and the typed
-   * conditions stay. The way a loaded hull is swapped for another file.
+   * Unload this slot's STL: the mesh and the live answer it produced go, while
+   * the record and the typed conditions stay. The explicit inverse of a
+   * re-pick - the panel returns to asking for the file.
    */
-  onReplaceMesh: () => void
+  onClearMesh: () => void
 }
 
 function fieldStrings(record: RunRecord | null): NumericInputs {
@@ -70,65 +77,119 @@ export default function SlotPanel({
   record,
   onInputs,
   onMesh,
-  onReplaceMesh,
+  onClearMesh,
 }: SlotPanelProps) {
   const colorIndex = label === 'A' ? 0 : 1
   const [numeric, setNumeric] = useState<NumericInputs>(() => fieldStrings(record))
   const [heelDeg, setHeelDeg] = useState(() => record?.inputs.heelDeg ?? 0)
+  // The Analyze tab's fixed-heel toggle: heel is an APPLIED angle, so with the
+  // toggle off the slot solves at 0 whatever the slider last read. A restored
+  // record picks the toggle up from its own heel - a non-zero one could only
+  // have been written with the toggle on, which is the same rule
+  // `readStoredInputs` boots the home form with.
+  const [showHeel, setShowHeel] = useState(() => (record?.inputs.heelDeg ?? 0) !== 0)
   // The STL that does not hash to this record's, awaiting an explicit choice.
   const [mismatch, setMismatch] = useState<LoadedMesh | null>(null)
   const [exportError, setExportError] = useState<string | null>(null)
-
-  // A mesh leaving the slot (Replace STL, a re-pick that loses the cache)
-  // must not drag panel state about the OLD file along: a pending mismatch
-  // gate for a file that was never accepted, or an export error from a hull
-  // that is gone. Both describe a file, and the file is gone. The mismatch
-  // flow itself is unaffected - it is set while the mesh is already null, so
-  // this effect never re-fires under it.
-  useEffect(() => {
-    if (slot.mesh === null) {
-      setMismatch(null)
-      setExportError(null)
-    }
-  }, [slot.mesh])
+  /**
+   * What the HIDDEN picker is doing.
+   *
+   * With a hull in memory the picker is mounted behind a `display:none`
+   * wrapper (the "Replace STL" button opens it), so its own "Parsing…" and
+   * error text are invisible: a file that failed to parse would vanish
+   * without a word. The Upload reports its state here instead.
+   */
+  const [pickStatus, setPickStatus] = useState<{ busy: boolean; error: string | null } | null>(null)
+  const reportPickStatus = useCallback((status: { busy: boolean; error: string | null }) => {
+    setPickStatus(status)
+  }, [])
+  // All three panel states mount exactly one Upload, so this one ref always
+  // has a mounted input behind it: with a hull in memory that mount is hidden
+  // behind the "Replace STL" button, which opens its picker on its own click.
+  const uploadRef = useRef<UploadHandle | null>(null)
 
   const parsed = parseInputs(numeric)
   const allValid = parsed.weightKg !== null && parsed.lcgPercent !== null && parsed.kgMm !== null
+  /**
+   * The conditions the panel is showing RIGHT NOW: the typed numbers (or the
+   * slot's own last valid triple while a field is momentarily invalid) and the
+   * APPLIED heel.
+   */
+  const shownConditions = slotConditions(
+    parsed.weightKg !== null && parsed.lcgPercent !== null && parsed.kgMm !== null
+      ? { weightKg: parsed.weightKg, lcgPctLwl: parsed.lcgPercent, kgMm: parsed.kgMm }
+      : slot.inputs,
+    showHeel,
+    heelDeg,
+  )
+  /**
+   * Is the live answer an answer to THESE conditions? A live result belongs to
+   * the conditions it was solved at, so the claim below may only be made while
+   * the two agree: after an edit the panel re-renders once with the new
+   * conditions and the old answer, and "Live - solved at the conditions above"
+   * would be a lie for that frame.
+   */
+  const liveIsCurrent = liveAnswerIsCurrent(slot.liveInputs, shownConditions)
 
   /**
    * Commit the three text fields and emit the set only when the whole set is
    * one the form's gate accepts — an intermediate "9" in the weight field must
    * never reach a solver, exactly as the home form never lets it reach its
    * Calculate button.
+   *
+   * The heel travels with the set under the toggle's rule (`slotConditions`):
+   * the slider's value is applied only while the toggle is on, so editing the
+   * weight with the toggle off must not quietly re-apply a leftover angle the
+   * panel says is not applied.
    */
   const commitNumeric = (patch: Partial<NumericInputs>) => {
     const next = { ...numeric, ...patch }
     setNumeric(next)
     const p = parseInputs(next)
     if (p.weightKg !== null && p.lcgPercent !== null && p.kgMm !== null) {
-      onInputs({
-        weightKg: p.weightKg,
-        lcgPctLwl: p.lcgPercent,
-        kgMm: p.kgMm,
-        heelDeg,
-      })
+      onInputs(
+        slotConditions(
+          { weightKg: p.weightKg, lcgPctLwl: p.lcgPercent, kgMm: p.kgMm },
+          showHeel,
+          heelDeg,
+        ),
+      )
     }
   }
 
   /**
-   * The heel slider is bounded, so its value is always one the gate accepts -
-   * and it is pushed even while a text field is momentarily invalid. Keeping
-   * the old heel while the slider shows a new one left the slider and the
-   * solved conditions out of sync until the next good commit.
+   * Push one condition set into the slot: the numeric triple as typed (or the
+   * slot's own last valid triple while a text field is momentarily invalid) and
+   * the heel under the toggle's rule.
    */
-  const commitHeel = (value: number) => {
-    setHeelDeg(value)
+  const emitConditions = (showHeelNow: boolean, heelNow: number) => {
     const p = parseInputs(numeric)
     const parsed =
       p.weightKg !== null && p.lcgPercent !== null && p.kgMm !== null
         ? { weightKg: p.weightKg, lcgPctLwl: p.lcgPercent, kgMm: p.kgMm }
         : slot.inputs
-    onInputs({ ...parsed, heelDeg: value })
+    onInputs(slotConditions(parsed, showHeelNow, heelNow))
+  }
+
+  /**
+   * Moving the slider REPLACES the applied angle outright - it is already
+   * revealed, so there is no leftover to preserve. `emitConditions` carries the
+   * value past a momentarily invalid text field, so a slider move is never
+   * dropped by an unrelated keystroke.
+   */
+  const commitHeel = (value: number) => {
+    setHeelDeg(value)
+    emitConditions(showHeel, value)
+  }
+
+  /**
+   * The fixed-heel toggle. Turning it OFF solves at 0 - the slider's value is
+   * kept as the leftover exactly as the home form does, so turning it back on
+   * re-applies the same angle rather than jumping to 0.
+   */
+  const toggleHeel = (on: boolean) => {
+    setShowHeel(on)
+    emitConditions(on, heelDeg)
   }
 
   /**
@@ -335,22 +396,56 @@ export default function SlotPanel({
           )}
         </div>
         <div>
-          <label htmlFor={`${label}-heel`} className="mb-1 block text-xs text-zinc-400">
-            Heel (°) — + = −Y side down
-          </label>
-          <div className="flex items-center gap-2">
+          {/* The Analyze tab's fixed-heel toggle: heel is an APPLIED angle,
+              so off means this slot solves at 0 and the slider stays out of
+              the way until it is asked for. */}
+          <label className="mb-1 flex cursor-pointer items-center gap-2 group">
+            <div
+              className={`w-8 h-4 rounded-full border border-zinc-700 transition-colors ${showHeel ? 'border-sky-400 bg-sky-600' : 'bg-zinc-800'}`}
+            >
+              <div
+                className={`h-3 w-3 m-0.5 rounded-full bg-white transition-transform ${showHeel ? 'translate-x-4' : 'translate-x-0'}`}
+              />
+            </div>
             <input
-              id={`${label}-heel`}
-              type="range"
-              min={HEEL_MIN}
-              max={HEEL_MAX}
-              step={1}
-              value={heelDeg}
-              onChange={(e) => commitHeel(Number(e.target.value))}
-              className="h-1.5 flex-1 appearance-none rounded-lg bg-zinc-700 accent-sky-500"
+              type="checkbox"
+              className="hidden"
+              checked={showHeel}
+              onChange={(e) => toggleHeel(e.target.checked)}
             />
-            <span className="w-8 text-right font-mono text-xs text-zinc-300">{heelDeg}°</span>
-          </div>
+            <span className="text-xs text-zinc-400 group-hover:text-zinc-300">
+              Set fixed heel angle
+            </span>
+          </label>
+          {showHeel && (
+            <>
+              <label htmlFor={`${label}-heel`} className="mb-1 block text-xs text-zinc-400">
+                Heel (°) — + = −Y side down
+              </label>
+              <div className="flex items-center gap-2">
+                <input
+                  id={`${label}-heel`}
+                  type="range"
+                  min={HEEL_MIN}
+                  max={HEEL_MAX}
+                  step={1}
+                  value={heelDeg}
+                  onChange={(e) => commitHeel(Number(e.target.value))}
+                  className="h-1.5 flex-1 appearance-none rounded-lg bg-zinc-700 accent-sky-500"
+                />
+                <span className="w-8 text-right font-mono text-xs text-zinc-300">{heelDeg}°</span>
+              </div>
+            </>
+          )}
+          {/* The leftover is kept while the toggle is off, so it is SAYING so
+              too: the slider is out of sight, and a hidden angle that silently
+              comes back when the toggle is switched on is a trap. */}
+          {!showHeel && heelDeg !== 0 && (
+            <p className="mt-1 text-xs text-zinc-500">
+              Heel {heelDeg}° is kept as a leftover — this slot solves upright until the toggle is
+              switched on.
+            </p>
+          )}
         </div>
       </div>
 
@@ -383,11 +478,14 @@ export default function SlotPanel({
         </p>
       )}
       {/* Honest prose: the claim "at the conditions above" only holds while
-          every field parses - a field holding garbage leaves slot.inputs at
-          the last valid values, and its own error message says so instead. */}
+          every field parses AND the live answer belongs to those conditions -
+          a field holding garbage leaves slot.inputs at the last valid values,
+          and its own error message says so instead; and an edited condition
+          makes the answer on screen the PREVIOUS solve's, which the solver
+          status says instead. */}
       {!slot.solving &&
         !slot.error &&
-        slot.live &&
+        liveIsCurrent &&
         !parsed.weightError &&
         !parsed.lcgError &&
         !parsed.kgError && (
@@ -416,11 +514,26 @@ export default function SlotPanel({
             </p>
             <button
               type="button"
-              onClick={onReplaceMesh}
-              title="Forget this file — the typed conditions stay, and a new STL can be dropped in."
+              onClick={() => uploadRef.current?.open()}
+              title="Choose another STL for this slot - the picker opens right here, and cancelling leaves the loaded hull in place."
               className="shrink-0 rounded border border-zinc-700 px-2 py-0.5 text-xs text-zinc-300 hover:bg-zinc-800"
             >
               Replace STL
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                // Both describe the mesh that is leaving: a pending mismatch
+                // gate for a file that was never adopted, and an export error
+                // from a hull that is gone.
+                setMismatch(null)
+                setExportError(null)
+                onClearMesh()
+              }}
+              title="Unload this slot's STL — the record and the typed conditions stay."
+              className="shrink-0 rounded border border-zinc-700 px-2 py-0.5 text-xs text-zinc-300 hover:bg-zinc-800"
+            >
+              Clear model
             </button>
           </div>
           {!slot.mesh.stats.watertight.watertight && (
@@ -443,51 +556,44 @@ export default function SlotPanel({
               )}
             </p>
           )}
+          {/* The page could not hash the file (no secure context), so this hull
+              has no model identity: it cannot be exported as a run record.
+              Said HERE, as soon as the file is loaded — the Export click used
+              to be the only place the user found out, and the click produced
+              no file at all. */}
+          {slot.mesh.sha256Hex === '' && (
+            <p className="mt-1 text-xs text-amber-400" role="note">
+              This page cannot hash STLs (no secure context), so this hull cannot be exported as a
+              run record.
+            </p>
+          )}
+          {/* The picker behind "Replace STL": hidden, because the button above
+              is this state's whole loading affordance. Mounted here so
+              `uploadRef` always has an input to open, whichever state the slot
+              is in - a pick in any state reaches the same `handleRepick`.
+              Its own "Parsing…" and error text live inside its button, so it
+              REPORTS them here instead - otherwise a file that failed to parse
+              would disappear without a word. */}
+          <div className="hidden">
+            <Upload ref={uploadRef} onLoaded={handleRepick} compact onStatus={reportPickStatus} />
+          </div>
+          {pickStatus?.busy && (
+            <p className="mt-1 text-xs text-zinc-400" role="status">
+              Parsing the picked file…
+            </p>
+          )}
+          {pickStatus?.error && (
+            <p className="mt-1 text-xs text-rose-300" role="alert">
+              {pickStatus.error}
+            </p>
+          )}
         </div>
       ) : record !== null ? (
         <div className="mt-3">
           <p className="mb-2 text-xs text-zinc-500">
             This record's STL is not in memory — load it to see the hull in the overlay.
           </p>
-          <Upload onLoaded={handleRepick} compact />
-          {mismatch && (
-            <div
-              className="mt-2 rounded border border-amber-800 bg-amber-950/50 p-2 text-xs text-amber-300"
-              role="note"
-            >
-              <p className="mb-2">
-                This file hashes to{' '}
-                <span className="font-mono" title={mismatch.sha256Hex}>
-                  {mismatch.sha256Hex === '' ? 'nothing' : `${mismatch.sha256Hex.slice(0, 12)}…`}
-                </span>
-                , but the record was saved from{' '}
-                <span className="font-mono" title={record.modelHash}>
-                  {record.modelHash.slice(0, 12)}…
-                </span>
-                . It may be a different hull, or the same one edited — its numbers would be posed on
-                this file's geometry.
-              </p>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    onMesh(mismatch)
-                    setMismatch(null)
-                  }}
-                  className="rounded border border-amber-600/60 px-2 py-0.5 text-amber-200 hover:bg-amber-950/40"
-                >
-                  Use anyway
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setMismatch(null)}
-                  className="rounded border border-zinc-700 px-2 py-0.5 text-zinc-300 hover:bg-zinc-800"
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          )}
+          <Upload ref={uploadRef} onLoaded={handleRepick} compact />
         </div>
       ) : (
         <div className="mt-3">
@@ -495,7 +601,49 @@ export default function SlotPanel({
             Drop an STL here to solve it fresh — its numbers stay live in this slot, and its Export
             writes a run record once the solve lands.
           </p>
-          <Upload onLoaded={handleRepick} compact prompt="Drop an STL hull here" />
+          <Upload ref={uploadRef} onLoaded={handleRepick} compact prompt="Drop an STL hull here" />
+        </div>
+      )}
+      {/* The re-pick gate's answer, whichever state the pick happened in: a
+          "Replace STL" click with a hull already in memory can pick a foreign
+          file too, and that choice must render there exactly as it does on the
+          record's own empty drop zone. */}
+      {mismatch && record !== null && (
+        <div
+          className="mt-2 rounded border border-amber-800 bg-amber-950/50 p-2 text-xs text-amber-300"
+          role="note"
+        >
+          <p className="mb-2">
+            This file hashes to{' '}
+            <span className="font-mono" title={mismatch.sha256Hex}>
+              {mismatch.sha256Hex === '' ? 'nothing' : `${mismatch.sha256Hex.slice(0, 12)}…`}
+            </span>
+            , but the record was saved from{' '}
+            <span className="font-mono" title={record.modelHash}>
+              {record.modelHash.slice(0, 12)}…
+            </span>
+            . It may be a different hull, or the same one edited — its numbers would be posed on
+            this file's geometry.
+          </p>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                onMesh(mismatch)
+                setMismatch(null)
+              }}
+              className="rounded border border-amber-600/60 px-2 py-0.5 text-amber-200 hover:bg-amber-950/40"
+            >
+              Use anyway
+            </button>
+            <button
+              type="button"
+              onClick={() => setMismatch(null)}
+              className="rounded border border-zinc-700 px-2 py-0.5 text-zinc-300 hover:bg-zinc-800"
+            >
+              Cancel
+            </button>
+          </div>
         </div>
       )}
       {exportError && (

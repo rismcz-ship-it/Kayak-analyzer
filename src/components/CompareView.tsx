@@ -9,7 +9,14 @@ import {
 } from 'react'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
-import { parseRunRecordImport, type RunRecord, type SlotInputs } from '../lib/compare'
+import {
+  type CompareOverlaySlot,
+  columnIsStale,
+  compareOverlayCaption,
+  parseRunRecordImport,
+  type RunRecord,
+  type SlotInputs,
+} from '../lib/compare'
 import type { TrimSolveResult } from '../lib/hydrostatics'
 import { DEFAULT_KG_MM } from '../lib/hydrostatics'
 import {
@@ -63,7 +70,14 @@ import {
  */
 interface CompareViewProps {
   roster: RunRecord[]
-  onAddRecord: (record: RunRecord) => void
+  /**
+   * Add a record to the roster and answer with the entry the roster KEEPS.
+   *
+   * The answer is the STORED entry when the run is already there (it keeps
+   * its id), so the slot this fills always points at a record the roster
+   * holds - never at the newcomer's id, which the roster may drop.
+   */
+  onAddRecord: (record: RunRecord) => RunRecord
   onDeleteRecord: (id: string) => void
   /**
    * The session's `modelHash -> mesh` cache, SHARED with the home tab.
@@ -181,6 +195,59 @@ function viewOf(result: TrimSolveResult | null): ViewerView {
     lcb: result.lcb,
     pivot: result.pivot,
   }
+}
+
+/**
+ * What one slot contributes to the overlay, from the two facts the picture is
+ * built from: an STL in memory and a result to pose it with.
+ *
+ * The overlay draws a hull only with BOTH, so a slot holding a record but no
+ * STL in memory shows its numbers in the table and nothing at all here.
+ *
+ * And a drawn hull is not automatically a solved one: with a foreign STL in
+ * memory the slot still DISPLAYS the record's snapshot over it until the new
+ * hull's own solve lands, so that pair is `foreign-pose` — drawn, but posed
+ * with numbers solved from a different hull.
+ */
+function overlaySlot(hasMesh: boolean, hasResult: boolean, foreign: boolean): CompareOverlaySlot {
+  if (hasMesh && hasResult) return foreign ? 'foreign-pose' : 'shown'
+  if (hasMesh) return 'loaded'
+  if (hasResult) return 'record-only'
+  return 'empty'
+}
+
+/**
+ * Is this slot's drawn geometry posed with a result solved from a DIFFERENT
+ * hull?
+ *
+ * Exactly the panel's own `foreignGeometry` test (`SlotPanel.tsx`): a record
+ * on screen, its snapshot what is being displayed (no live answer), and a mesh
+ * in memory whose hash is not the record's. The hash is the only test - an
+ * empty one means the page could not hash the file, so nothing is known and no
+ * claim is made either way. A live answer always belongs to the mesh in
+ * memory (every mesh setter clears it), so a slot with one is `shown`.
+ */
+function foreignPose(slot: SlotState, record: RunRecord | null): boolean {
+  return (
+    slot.mesh !== null &&
+    slot.live === null &&
+    record !== null &&
+    slot.mesh.sha256Hex !== '' &&
+    slot.mesh.sha256Hex !== record.modelHash
+  )
+}
+
+/**
+ * Is this slot's displayed answer out of date with its own conditions?
+ *
+ * Two ways to be out of date, and the table says so in both: a re-solve is in
+ * flight, or the conditions have moved on and the new solve has not answered
+ * yet (the ~300 ms debounce, and the frame before the solver even starts).
+ * The test is the LIVE answer's own conditions against the slot's current
+ * ones - never the numbers being typed into, which are the slot's `inputs`.
+ */
+function columnStale(slot: SlotState): boolean {
+  return columnIsStale(slot.liveInputs, slot.solving, slot.inputs)
 }
 
 /**
@@ -363,11 +430,10 @@ export default function CompareView({
   )
 
   /**
-   * Forget a slot's STL: the dropzone (or the record's re-pick path) comes
-   * back and the live answer goes, while the record and the typed conditions
-   * stay. This is how a hull in a slot is CHANGED - a new file goes through
-   * the same explicit load path as the first one, never a silent in-place
-   * overwrite.
+   * Forget a slot's STL, on the panel's explicit "Clear model": the dropzone
+   * comes back and the live answer goes, while the record and the typed
+   * conditions stay. A hull is CHANGED through the re-pick path - the picker
+   * "Replace STL" opens - so this is the unload, not the swap.
    */
   const clearMesh = useCallback(
     (index: 0 | 1) => {
@@ -403,11 +469,15 @@ export default function CompareView({
         setImportError(parsed.error)
         return
       }
-      onAddRecord(parsed.record)
+      // The run may already be in the roster: importing the same file twice
+      // must not mint a second copy of one run. The roster answers with the
+      // entry it KEEPS, so the slot, the roster list and the exported document
+      // all name one run - and the slot's id is one the roster holds.
+      const record = onAddRecord(parsed.record)
       // Drop the import into the first empty slot: its numbers show at once
       // and its missing STL is asked for, which is what an import is for.
-      if (slotA.recordId === null) pickRecord(0, parsed.record)
-      else if (slotB.recordId === null) pickRecord(1, parsed.record)
+      if (slotA.recordId === null) pickRecord(0, record)
+      else if (slotB.recordId === null) pickRecord(1, record)
     } catch (err) {
       setImportError(err instanceof Error ? err.message : 'Could not read the file.')
     }
@@ -436,16 +506,17 @@ export default function CompareView({
     // conditions" note about a column without numbers asserts a comparison
     // that does not exist.
     inputs: resultA !== null ? shownInputs(slotA, recordA) : null,
-    // A re-solve is in flight: the numbers on screen still answer to the
+    // A re-solve is in flight, or the conditions have moved on and the new
+    // solve has not answered yet: the numbers on screen still answer to the
     // previous conditions, and the table says so instead of letting the delta
     // column imply they are the current ones.
-    stale: slotA.solving && slotA.live !== null,
+    stale: columnStale(slotA),
   }
   const columnB: CompareColumn = {
     name: recordB?.name ?? slotB.mesh?.fileName ?? null,
     result: resultB,
     inputs: resultB !== null ? shownInputs(slotB, recordB) : null,
-    stale: slotB.solving && slotB.live !== null,
+    stale: columnStale(slotB),
   }
 
   return (
@@ -551,7 +622,7 @@ export default function CompareView({
           record={recordA}
           onInputs={(inputs) => editInputs(0, inputs)}
           onMesh={(mesh) => attachMesh(0, mesh)}
-          onReplaceMesh={() => clearMesh(0)}
+          onClearMesh={() => clearMesh(0)}
         />
         <SlotPanel
           key={`B#${slotB.recordId ?? 'empty'}#${slotB.pickSeq}`}
@@ -560,7 +631,7 @@ export default function CompareView({
           record={recordB}
           onInputs={(inputs) => editInputs(1, inputs)}
           onMesh={(mesh) => attachMesh(1, mesh)}
-          onReplaceMesh={() => clearMesh(1)}
+          onClearMesh={() => clearMesh(1)}
         />
       </div>
 
@@ -580,7 +651,10 @@ export default function CompareView({
             resultB={resultB}
           />
           <div className="px-1 pb-1 pt-2 text-center text-xs text-zinc-500">
-            Both hulls sit on one shared waterline — the deeper hull floats lower.
+            {compareOverlayCaption({
+              a: overlaySlot(slotA.mesh !== null, resultA !== null, foreignPose(slotA, recordA)),
+              b: overlaySlot(slotB.mesh !== null, resultB !== null, foreignPose(slotB, recordB)),
+            })}
           </div>
         </section>
         <div className="min-h-0 flex-1 overflow-y-auto">
