@@ -14,6 +14,7 @@ import {
   columnIsStale,
   compareOverlayCaption,
   parseRunRecordImport,
+  poseIsForeign,
   type RunRecord,
   type SlotInputs,
 } from '../lib/compare'
@@ -207,7 +208,7 @@ function viewOf(result: TrimSolveResult | null): ViewerView {
  * And a drawn hull is not automatically a solved one: with a foreign STL in
  * memory the slot still DISPLAYS the record's snapshot over it until the new
  * hull's own solve lands, so that pair is `foreign-pose` — drawn, but posed
- * with numbers solved from a different hull.
+ * with numbers solved on a hull the file is not known to be.
  */
 function overlaySlot(hasMesh: boolean, hasResult: boolean, foreign: boolean): CompareOverlaySlot {
   if (hasMesh && hasResult) return foreign ? 'foreign-pose' : 'shown'
@@ -218,23 +219,12 @@ function overlaySlot(hasMesh: boolean, hasResult: boolean, foreign: boolean): Co
 
 /**
  * Is this slot's drawn geometry posed with a result solved from a DIFFERENT
- * hull?
- *
- * Exactly the panel's own `foreignGeometry` test (`SlotPanel.tsx`): a record
- * on screen, its snapshot what is being displayed (no live answer), and a mesh
- * in memory whose hash is not the record's. The hash is the only test - an
- * empty one means the page could not hash the file, so nothing is known and no
- * claim is made either way. A live answer always belongs to the mesh in
- * memory (every mesh setter clears it), so a slot with one is `shown`.
+ * hull? The same predicate the panel's own `foreignGeometry` note uses, from
+ * `compare.ts` so the two cannot drift apart — including the empty-hash rule,
+ * which the caption's "both hulls on one waterline" line depends on.
  */
 function foreignPose(slot: SlotState, record: RunRecord | null): boolean {
-  return (
-    slot.mesh !== null &&
-    slot.live === null &&
-    record !== null &&
-    slot.mesh.sha256Hex !== '' &&
-    slot.mesh.sha256Hex !== record.modelHash
-  )
+  return poseIsForeign(slot.mesh?.sha256Hex ?? null, record?.modelHash ?? null, slot.live !== null)
 }
 
 /**

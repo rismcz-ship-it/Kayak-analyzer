@@ -141,6 +141,39 @@ export function columnIsStale(
   return !sameSlotInputs(liveInputs, inputs)
 }
 
+/**
+ * Is the geometry in a slot posed with a result solved on a DIFFERENT hull?
+ *
+ * The overlay's slot state and the panel's warning both ask this, and they must
+ * answer alike: it decides whether the numbers on screen describe the hull
+ * being drawn. A slot showing a record with no live answer is displaying that
+ * record's snapshot, and the hash is the only thing that can tie a mesh to the
+ * hull the record was solved on.
+ *
+ * An EMPTY mesh hash is the case that looks like a match and is not one: it
+ * means the page could not hash the file at all (no `crypto.subtle` — a
+ * plain-HTTP origin), so the file is not known to be the record's hull either.
+ * Letting it pass as a match is what put "Both hulls sit on one shared
+ * waterline" over an unverified file, so it counts as foreign: drawn, but not
+ * solved. It can only ever be the mesh's hash that is empty — `recordFromSolve`
+ * and the import both gate `modelHash` on the SHA-256 pattern, so a stored
+ * record always carries a real one and "two empty hashes" never arises. A live
+ * answer always belongs to the mesh in memory, so a slot with one is never
+ * foreign.
+ */
+export function poseIsForeign(
+  meshSha256Hex: string | null,
+  recordModelHash: string | null,
+  hasLiveAnswer: boolean,
+): boolean {
+  return (
+    meshSha256Hex !== null &&
+    !hasLiveAnswer &&
+    recordModelHash !== null &&
+    meshSha256Hex !== recordModelHash
+  )
+}
+
 /** A saved comparison record: an immutable snapshot of one solved hull. */
 export interface RunRecord {
   /** `rec_` + counter + timestamp — unique within a session and across reloads. */
@@ -402,8 +435,9 @@ export type CompareOverlaySlot =
   | 'record-only'
   /**
    * An STL is drawn, but the pose on it is a RECORD's — the result was solved
-   * from a different hull. Drawn, but not solved: this state carries a number
-   * that describes geometry other than the one on screen.
+   * on a hull this file is not known to be (a different one, or an unhashable
+   * page that cannot tell). Drawn, but not solved: the numbers on screen
+   * describe geometry other than the one being drawn.
    */
   | 'foreign-pose'
 
@@ -424,8 +458,9 @@ export interface CompareOverlayState {
  *
  * The shared-waterline line belongs to two SOLVED hulls and to nothing else.
  * A `foreign-pose` slot is drawn, so the caption names it as drawn — but its
- * numbers are a different hull's, so it is not counted as solved and the
- * order the line predicts ("the deeper hull floats lower") is not claimed.
+ * numbers are not known to describe the file on screen, so it is not counted as
+ * solved and the order the line predicts ("the deeper hull floats lower") is
+ * not claimed.
  */
 export function compareOverlayCaption(state: CompareOverlayState): string {
   const slots: Array<{ label: 'A' | 'B'; view: CompareOverlaySlot }> = [
@@ -449,10 +484,11 @@ export function compareOverlayCaption(state: CompareOverlayState): string {
     }
     if (slot.view === 'foreign-pose') {
       // Drawn, but posed with a record's numbers: those describe the record's
-      // hull, not the file on screen. Say both halves - the panel's own note
-      // says the same thing about the same slot, and they must agree.
+      // hull, not the file on screen - and where the hash cannot tie the two
+      // together, that is said as unknown rather than assumed either way. The
+      // panel's own note says the same thing about the same slot.
       sentences.push(
-        `Slot ${slot.label}'s STL is drawn, but the pose shown is its record's — solved from a different hull.`,
+        `Slot ${slot.label}'s STL is drawn, but the pose shown is its record's — solved on a hull this file is not known to be.`,
       )
       continue
     }

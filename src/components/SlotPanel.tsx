@@ -2,6 +2,7 @@ import { useCallback, useRef, useState } from 'react'
 import {
   exportRunRecord,
   liveAnswerIsCurrent,
+  poseIsForeign,
   type RunRecord,
   recordFromSolve,
   type SlotInputs,
@@ -298,15 +299,15 @@ export default function SlotPanel({
     : 0
 
   // The record's snapshot is on screen over a DIFFERENT file's geometry: the
-  // numbers describe a hull that is not the one being drawn. The hash match is
-  // the only test - an empty hash means the page could not hash the file, so
-  // nothing is known and no claim is made either way.
-  const foreignGeometry =
-    slot.mesh !== null &&
-    slot.live === null &&
-    record !== null &&
-    slot.mesh.sha256Hex !== '' &&
-    slot.mesh.sha256Hex !== record.modelHash
+  // numbers describe a hull that is not the one being drawn. The shared
+  // predicate - the same one the overlay caption counts its solved hulls with -
+  // so the two cannot drift apart, and so an unhashable page (no crypto.subtle)
+  // is reported as not-known rather than waved through as a match.
+  const foreignGeometry = poseIsForeign(
+    slot.mesh?.sha256Hex ?? null,
+    record?.modelHash ?? null,
+    slot.live !== null,
+  )
 
   return (
     <section className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-4">
@@ -491,14 +492,21 @@ export default function SlotPanel({
         !parsed.kgError && (
           <p className="mt-3 text-xs text-emerald-400">Live — solved at the conditions above.</p>
         )}
+      {/* With a mesh in memory the slot's solve effect re-runs on every edit, so
+          "edit a condition" really does re-solve. With no mesh it returns at the
+          top (`useSlotSolve`), no solve is ever scheduled, and the typed
+          conditions only take effect once an STL is loaded - the old wording
+          promised a re-solve that could not happen. */}
       {!slot.solving && !slot.error && !slot.live && record !== null && (
         <p className="mt-3 text-xs text-zinc-500">
-          Showing the saved run — edit a condition to re-solve.
+          {slot.mesh
+            ? 'Showing the saved run — edit a condition to re-solve.'
+            : 'Showing the saved run — no STL is loaded, so the conditions above are solved when you load one.'}
         </p>
       )}
       {foreignGeometry && (
         <p className="mt-1 text-xs text-amber-400" role="note">
-          The STL in memory is a different hull from the one this record was solved on — the numbers
+          The STL in memory is not known to be the hull this record was solved on — the numbers
           above are that record's, posed on the file below.
         </p>
       )}
@@ -530,7 +538,7 @@ export default function SlotPanel({
                 setExportError(null)
                 onClearMesh()
               }}
-              title="Unload this slot's STL — the record and the typed conditions stay."
+              title="Unload this slot's STL and its live answer — the record and the typed conditions stay."
               className="shrink-0 rounded border border-zinc-700 px-2 py-0.5 text-xs text-zinc-300 hover:bg-zinc-800"
             >
               Clear model

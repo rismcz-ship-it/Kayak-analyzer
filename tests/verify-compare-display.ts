@@ -28,11 +28,19 @@
 //      solved, and the shared-waterline line belongs to two SOLVED hulls
 //      only.
 //
+//   4. That fifth state had a hole in it: the test required a NON-EMPTY mesh
+//      hash, so a file the page could not hash at all (no `crypto.subtle` - a
+//      plain-HTTP origin) fell through to `shown` and the caption claimed two
+//      solved hulls on one waterline over an unidentified file. An empty hash
+//      is not a match; `poseIsForeign` now owns the rule for both call sites,
+//      and section 2d pins it.
+//
 // Run: npm.cmd exec -- tsx tests/verify-compare-display.ts
 
-import { avsCellText, compareOverlayCaption } from '../src/lib/compare.js'
+import { avsCellText, compareOverlayCaption, poseIsForeign } from '../src/lib/compare.js'
 import { gzMarks } from '../src/lib/gz-marks.js'
 import type { GZPoint } from '../src/lib/hydrostatics.js'
+import { SHA256_HEX_PATTERN } from '../src/lib/model-hash.js'
 
 let failures = 0
 function check(ok: boolean, label: string, detail = ''): void {
@@ -270,8 +278,8 @@ console.log('\n=== a drawn hull is not a solved hull ===')
   )
   check(mixed.includes('Slot B'), 'the foreign slot is named', mixed)
   check(
-    mixed.includes('different hull'),
-    'the foreign slot says its numbers describe another hull',
+    mixed.includes('not known to be'),
+    'the foreign slot says its numbers are not known to describe this hull',
     mixed,
   )
   check(
@@ -359,7 +367,8 @@ console.log('\n=== the caption invariant sweep ===')
         console.log(`  FAIL ${a}+${b} — nothing solved, caption says one hull is: ${text}`)
       }
       // A foreign pose IS drawn, so the caption names it; and it says the
-      // numbers are another hull's, which is the whole point of the state.
+      // numbers are not known to be this hull's, which is the whole point of
+      // the state.
       for (const [label, view] of [
         ['A', a],
         ['B', b],
@@ -369,7 +378,7 @@ console.log('\n=== the caption invariant sweep ===')
           console.log(`  FAIL ${a}+${b} — Slot ${label} is foreign but unnamed: ${text}`)
         }
       }
-      if (foreignCount === 0 && text.includes('different hull')) {
+      if (foreignCount === 0 && text.includes('not known to be')) {
         bad++
         console.log(`  FAIL ${a}+${b} — no foreign pose, caption says one: ${text}`)
       }
@@ -381,6 +390,42 @@ console.log('\n=== the caption invariant sweep ===')
   }
   failures += bad
   check(bad === 0, `all ${cases} slot combinations caption what they draw`, `${bad} bad`)
+}
+
+// --- 2d. the foreign-pose predicate: an unhashed mesh is not a match -------
+
+console.log('\n=== the foreign-pose predicate ===')
+
+{
+  // The overlay's slot state and the panel's note both come from this one
+  // predicate, and the EMPTY-hash rule is what keeps the shared-waterline line
+  // honest. A page with no `crypto.subtle` (a plain-HTTP origin) cannot hash an
+  // STL at all - `Upload.tsx` stores '' and raises SECURE_CONTEXT_ERROR - and
+  // "the hashes agree" can never be established for such a file. Treating that
+  // as a MATCH is the regression this section pins: import a run (its record
+  // carries a real hash), load any STL into that slot, and the caption claimed
+  // two solved hulls on one waterline over a file nothing identified.
+  const A = 'a'.repeat(64)
+  const B = 'b'.repeat(64)
+  check(poseIsForeign(null, A, false) === false, 'no mesh in memory is not a foreign pose')
+  check(poseIsForeign(A, A, false) === false, "the record's own hull is not a foreign pose")
+  check(poseIsForeign(B, A, false), 'a different hash is a foreign pose')
+  check(
+    poseIsForeign('', A, false),
+    "an unhashed mesh is NOT the record's hull either - an empty hash is not a match",
+  )
+  check(poseIsForeign('', null, false) === false, 'no record to mismatch means no foreign pose')
+  check(
+    poseIsForeign(B, A, true) === false,
+    'a live answer belongs to the mesh in memory, so it is never foreign',
+  )
+  // The reason "two empty hashes" cannot happen: `recordFromSolve` and the
+  // import both gate modelHash on the SHA-256 pattern, so a stored record
+  // always carries a real one and only the MESH's hash can be empty.
+  check(
+    SHA256_HEX_PATTERN.test(A) && !SHA256_HEX_PATTERN.test(''),
+    "a record's hash is never the empty one, so an empty match cannot arise",
+  )
 }
 
 console.log(

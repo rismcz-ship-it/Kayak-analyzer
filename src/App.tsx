@@ -127,21 +127,35 @@ export default function App() {
    * refused write mean very different things to whoever reads it.
    */
   const [rosterError, setRosterError] = useState<string | null>(null)
+  // The roster length the previous write saw. "Nothing to lose" is narrower
+  // than "the roster is empty": a refusal over an ALREADY empty roster
+  // persists nothing and loses nothing (the banner would otherwise fire on
+  // every startup over "0 runs - this session", noise that teaches the user to
+  // ignore the banner when it matters), but a refusal right after a deletion is
+  // the opposite - `writeRoster` always writes, so the deleted records are
+  // still in storage and come back on reload, and only this banner can say so.
+  const writtenLength = useRef(0)
   useEffect(() => {
+    const before = writtenLength.current
+    const deletedToEmpty = roster.length === 0 && before > 0
     try {
       writeRoster(roster, (key, value) => localStorage.setItem(key, value))
       setRosterError(null)
     } catch (err) {
-      // The write still runs for an EMPTY roster - clearing it on reload is the
-      // point - but a refusal there has nothing to lose: the banner would fire
-      // on every startup over "0 runs · this session", which is noise that
-      // teaches the user to ignore the banner when it matters.
-      setRosterError(
-        roster.length === 0
-          ? null
-          : `This browser refused to save the run roster — the runs are in memory only and will be lost on reload. (${err instanceof Error ? err.message : String(err)})`,
-      )
+      const cause = err instanceof Error ? err.message : String(err)
+      if (roster.length === 0 && !deletedToEmpty) {
+        setRosterError(null)
+      } else if (deletedToEmpty) {
+        setRosterError(
+          `This browser refused to save the run roster — the deletion did not stick, so the runs you removed are still stored and will come back on reload. (${cause})`,
+        )
+      } else {
+        setRosterError(
+          `This browser refused to save the run roster — the runs are in memory only and will be lost on reload. (${cause})`,
+        )
+      }
     }
+    writtenLength.current = roster.length
   }, [roster])
 
   /**
