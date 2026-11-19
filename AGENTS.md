@@ -144,11 +144,10 @@ src/lib/slot-solver.ts        one solve session per Compare slot, each on its ow
 src/components/                GzChart, ResultsPanel, Upload, Viewer3D, CompareView, SlotPanel, CompareTable
 tests/                        assertion suites + diagnostic scripts + the test mesh
 references/                   five target schemas for saved runs; kayak_analyzer_solver.json is produced by the Compare run-record export
-sketches/                     standalone HTML UI mockups — design references, not the app
 .opencode/skills/             vendored third-party agent skill packs (MIT) — not part of the app
 ```
 
-`sketches/` and `.opencode/skills/` are **not** built, **not** shipped and **not** covered by
+`.opencode/skills/` is **not** built, **not** shipped and **not** covered by
 Biome or the typecheck. The skill packs are upstream content: the `threejs-*` ones are by
 OpenAEC-Foundation, `naval-architect` by K-Dense. Do not treat them as application code, and
 do not "fix" their contents to match this repo.

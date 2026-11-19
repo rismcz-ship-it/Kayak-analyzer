@@ -10,6 +10,8 @@
 
 **Spec:** `docs/superpowers/specs/2026-11-14-compare-hulls-design.md` (executors read both; the plan argues from the spec).
 
+> **As-built (2026-11-19):** every task below was implemented on branch `compare-hulls`, **not merged** at the time of writing. The checkboxes stay unticked on purpose — they are the history of what was asked for, and the shipped tree diverges from them in ways a tick can't say (extra assertion suites, the amended `references/kayak_analyzer_solver.json` fields, the doc rows). What was actually built is recorded in `docs/superpowers/plans/2026-11-17-compare-batch-finish.md` and the merge-readiness follow-ups after it — read those for the truth, this for the intent.
+
 ## Global Constraints
 
 - Work on feature branch `compare-hulls` off `main` (first step of Task 1). Never push to `main`. Pushing the branch for a Vercel preview only after Richard's explicit go-ahead. Per-task commits on the branch are covered by his plan approval.

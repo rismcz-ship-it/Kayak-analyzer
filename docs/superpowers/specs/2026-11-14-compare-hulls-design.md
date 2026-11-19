@@ -1,7 +1,7 @@
 # Compare Hulls — Written Design
 
 Date: 2026-11-14
-Status: draft, pending builder check and Richard's approval
+Status: implemented on branch `compare-hulls` as of 2026-11-19, unmerged — the "calls already made" below were settled in the build; divergences are recorded in the as-built notes (`docs/superpowers/plans/2026-11-17-compare-batch-finish.md` and the follow-ups after it)
 
 ## Intent
 
