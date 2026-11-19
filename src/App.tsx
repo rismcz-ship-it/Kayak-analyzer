@@ -130,22 +130,24 @@ export default function App() {
   // The roster length the previous write saw. "Nothing to lose" is narrower
   // than "the roster is empty": a refusal over an ALREADY empty roster
   // persists nothing and loses nothing (the banner would otherwise fire on
-  // every startup over "0 runs - this session", noise that teaches the user to
-  // ignore the banner when it matters), but a refusal right after a deletion is
-  // the opposite - `writeRoster` always writes, so the deleted records are
-  // still in storage and come back on reload, and only this banner can say so.
+  // every startup over "0 runs - saved in this browser", noise that teaches
+  // the user to ignore the banner when it matters), but a refusal right after
+  // a REMOVAL is the opposite - `writeRoster` always writes, so the records
+  // just removed are still in storage and come back on reload, and only this
+  // banner can say so. "Removed" is `before > roster.length`, so a deletion
+  // that leaves records behind refuses here too.
   const writtenLength = useRef(0)
   useEffect(() => {
     const before = writtenLength.current
-    const deletedToEmpty = roster.length === 0 && before > 0
+    const removedRecords = before > roster.length
     try {
       writeRoster(roster, (key, value) => localStorage.setItem(key, value))
       setRosterError(null)
     } catch (err) {
       const cause = err instanceof Error ? err.message : String(err)
-      if (roster.length === 0 && !deletedToEmpty) {
+      if (roster.length === 0 && !removedRecords) {
         setRosterError(null)
-      } else if (deletedToEmpty) {
+      } else if (removedRecords) {
         setRosterError(
           `This browser refused to save the run roster — the deletion did not stick, so the runs you removed are still stored and will come back on reload. (${cause})`,
         )

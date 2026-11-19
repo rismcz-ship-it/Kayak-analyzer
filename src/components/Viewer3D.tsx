@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { BufferAttribute, BufferGeometry, Group, Line, Mesh } from 'three'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
@@ -425,6 +425,11 @@ export default function Viewer3D({
 }: Viewer3DProps) {
   const mountRef = useRef<HTMLDivElement>(null)
   const refsRef = useRef<ViewerRefs | null>(null)
+  // A WebGL-less machine (blocklisted driver, WebGL disabled, no GPU) makes the
+  // mount pass's renderer construction throw, and an unguarded one took the
+  // whole app down with it - so the pass reports it here and the JSX answers
+  // with one line instead of a blank panel.
+  const [glFailed, setGlFailed] = useState(false)
 
   // The latest result view, mirrored for the mount pass. The mount pass owns
   // the GL context and therefore depends on the MESH alone, but its initial
@@ -452,7 +457,13 @@ export default function Viewer3D({
     // camera Y-up and rotate the displayed mesh -90° about X).
     camera.up.set(0, 0, 1)
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true })
+    let renderer: THREE.WebGLRenderer
+    try {
+      renderer = new THREE.WebGLRenderer({ antialias: true })
+    } catch {
+      setGlFailed(true)
+      return
+    }
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)) // cap DPR
     renderer.shadowMap.enabled = false // no shadows by design
     renderer.outputColorSpace = THREE.SRGBColorSpace
@@ -651,6 +662,12 @@ export default function Viewer3D({
 
   return (
     <div ref={mountRef} className="relative h-full min-h-0 w-full overflow-hidden rounded-lg">
+      {glFailed && (
+        <p className="absolute inset-0 grid place-items-center px-3 text-center text-xs text-zinc-500">
+          WebGL is unavailable here, so the hull cannot be drawn — every number in the results is
+          still solved and correct.
+        </p>
+      )}
       <div className="pointer-events-none absolute left-2 top-2 rounded bg-zinc-950/70 px-2 py-1 font-mono text-[10px] uppercase tracking-wide text-zinc-400">
         Z&thinsp;↑ up · X&thinsp;→ forward (LOA) · Y side (BOA)
       </div>

@@ -514,7 +514,7 @@ export default function CompareView({
       <div className="flex min-h-0 shrink-0 flex-col gap-3 lg:w-[26rem]">
         <div className="flex items-center justify-between gap-2">
           <span className="text-xs text-zinc-500">
-            {roster.length} run{roster.length === 1 ? '' : 's'} · this session
+            {roster.length} run{roster.length === 1 ? '' : 's'} · saved in this browser
           </span>
           <div className="flex items-center gap-2">
             <button
@@ -685,6 +685,10 @@ function CompareOverlay({
   resultB: TrimSolveResult | null
 }) {
   const mountRef = useRef<HTMLDivElement>(null)
+  // A WebGL-less machine (blocklisted driver, WebGL disabled, no GPU) makes the
+  // construction below throw, and an unguarded one left this tab entirely blank
+  // - so the mount pass reports it here and the JSX answers in one line.
+  const [glFailed, setGlFailed] = useState(false)
   const sceneRef = useRef<{
     scene: THREE.Scene
     camera: THREE.PerspectiveCamera
@@ -736,7 +740,13 @@ function CompareOverlay({
     const camera = new THREE.PerspectiveCamera(50, 1, 0.01, 1_000_000)
     // Z-up world, exactly as the single viewer: data axes == display axes.
     camera.up.set(0, 0, 1)
-    const renderer = new THREE.WebGLRenderer({ antialias: true })
+    let renderer: THREE.WebGLRenderer
+    try {
+      renderer = new THREE.WebGLRenderer({ antialias: true })
+    } catch {
+      setGlFailed(true)
+      return
+    }
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)) // cap DPR
     renderer.shadowMap.enabled = false // no shadows by design
     renderer.outputColorSpace = THREE.SRGBColorSpace
@@ -896,6 +906,15 @@ function CompareOverlay({
   // role="img" is what makes an aria-label legal on a div, and it is honest:
   // the canvas is one picture of both hulls, and the caption below it is the
   // text description of that picture.
+  if (glFailed) {
+    return (
+      <p className="grid h-full place-items-center px-3 text-center text-xs text-zinc-500">
+        WebGL is unavailable here, so the overlay cannot be drawn — every number in the table below
+        is still solved and correct.
+      </p>
+    )
+  }
+
   return (
     <div
       ref={mountRef}
