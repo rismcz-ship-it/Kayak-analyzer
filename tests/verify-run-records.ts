@@ -1034,6 +1034,18 @@ expectError(
   results_({ planes_evaluated: -1 }),
   'results.planes_evaluated',
 )
+// A COUNT, not merely a number: the schema types it integer, and the field is
+// carried verbatim, so a fractional one would render as a real number of
+// planes a sweep no solver performed.
+expectError(
+  'a fractional results.planes_evaluated',
+  results_({ planes_evaluated: 12.5 }),
+  'results.planes_evaluated',
+)
+check(
+  parseRunRecordImport(JSON.stringify(results_({ planes_evaluated: 19 }))).ok,
+  'an integer results.planes_evaluated still imports',
+)
 
 // The curve's order is part of the format (F5): a shuffled curve is a
 // different curve, whose peak and vanishing-stability angle would both be

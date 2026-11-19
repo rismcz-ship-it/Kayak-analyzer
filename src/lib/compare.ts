@@ -306,7 +306,11 @@ export function recordFromSolve(
   Object.freeze(resultSnapshot.lcb)
   Object.freeze(resultSnapshot.lcg)
   Object.freeze(resultSnapshot.pivot)
+  // The ARRAY beside its points: frozen points in a mutable array still let an
+  // in-place push or index write rewrite the plotted curve, and the array is
+  // what every reader walks.
   for (const point of resultSnapshot.gzCurve) Object.freeze(point)
+  Object.freeze(resultSnapshot.gzCurve)
   return Object.freeze({
     id: `rec_${nextRecordId++}_${savedAt.toString(36)}`,
     name,
@@ -1094,6 +1098,18 @@ export function parseRunRecordImport(
     'must not be negative',
   )
   if (nonNegativeResults) return { ok: false, error: nonNegativeResults }
+  // The count of waterplanes the sweep evaluated is a COUNT: a fractional one
+  // is a document no solver wrote, and the field is carried verbatim, so a
+  // non-integer would flow straight into `planesEvaluated` and render as a
+  // real number of planes. Same helper, same `results.x` message shape.
+  const integerPlanes = magnitudeProblem(
+    results.value,
+    ['planes_evaluated'],
+    'results',
+    Number.isInteger,
+    'must be an integer',
+  )
+  if (integerPlanes) return { ok: false, error: integerPlanes }
   const nonNegativeCoefficients = magnitudeProblem(
     coefficients.value,
     COEFFICIENT_KEYS_NON_NEGATIVE,

@@ -523,6 +523,10 @@ try {
 check(topWriteThrew, 'the snapshot is frozen — an in-place write throws')
 check(vecWriteThrew, 'the nested centre vector is frozen too')
 check(snapshot.result.trimDeg === 3.6, 'the refused write leaves the value intact')
+// The ARRAY beside its points: frozen points in a mutable array still let an
+// in-place push or index write rewrite the plotted curve, and the array is
+// what every reader of it walks.
+check(Object.isFrozen(snapshot.result.gzCurve), 'the gzCurve array is frozen alongside its points')
 
 // Purity: the roster functions hand back new containers, never their input.
 const purityRoster = [built, built2]
