@@ -44,6 +44,13 @@ Calculation**.
 - The bow is whichever end the oriented mesh puts at +X — the app does not guess it from the
   hull's shape, because a wrong guess silently inverts every freeboard and the trim
 
+**Compare** — two hulls side by side in one tab
+
+- Two slots, each with its own solver worker, so editing one never cancels the other
+- One shared waterline: whichever hull is deeper floats lower
+- A roster of saved runs that survives a reload (stored in this browser)
+- Run-record export/import: a saved run leaves the browser as a `.run.json` document
+
 ## Coordinates and units
 
 Internal geometry is **Z-up, X = length (bow = +X), Y = beam**, in **millimetres**. Trim is
@@ -62,7 +69,7 @@ that always holds.
 | `npm run build`      | Typecheck (`tsc -b`) then production build                                       |
 | `npm run preview`    | Serve the production build                                                       |
 | `npm run typecheck`  | Types only, no emit — covers `src`, `vite.config.ts` and `tests`                 |
-| `npm test`           | The sixteen assertion suites — see [tests/README.md](tests/README.md)            |
+| `npm test`           | The twenty-three assertion suites — see [tests/README.md](tests/README.md)       |
 | `npm run test:print` | Diagnostic scripts that only print numbers                                       |
 | `npm run ci`         | The full gate: typecheck → Biome (format + lint) → `npm test` → production build |
 
@@ -93,7 +100,8 @@ LF in the repo and worktree (`.gitattributes`), which keeps the Biome line-endin
   waterplane planes. It is correct, not fast.
 - Hulls must be watertight with a closed deck. Open or partial sections cannot float and the
   solver rejects them.
-- `references/*.json` describes target event formats that the solver does not yet emit.
+- `references/*.json` describes target event formats. The Compare tab's export/import emits and
+  reads `kayak_analyzer_solver.json`; the other four still have no producer.
 
 ## Layout
 
@@ -102,12 +110,10 @@ src/lib/geometry.ts      mesh utilities, orientation, decimation, section measur
 src/lib/hydrostatics.ts  the solver: clipping, coefficients, stability, trim sweep
 src/lib/viewer-conventions.ts  solver -> Three.js sign translation (trim, heel)
 src/lib/inputs.ts          the input layer: parsing, bounds, validation, localStorage restore/persist, scale notices
-src/components/          Upload, Viewer3D
+src/components/          App, Upload, Viewer3D, GzChart, ResultsPanel, CompareView, SlotPanel, CompareTable
 tests/                   assertion suites + diagnostic scripts + the test mesh
-references/              target schemas for saved runs (nothing emits them yet)
-sketches/                standalone HTML UI mockups — design references, not the app
+references/              target schemas for saved runs — the Compare run-record export/import emits and reads kayak_analyzer_solver.json
 .opencode/skills/        vendored third-party agent skill packs — not part of the app
 ```
 
-`sketches/` and `.opencode/skills/` are not built, not shipped, and not covered by Biome or
-the typecheck.
+`.opencode/skills/` is not built, not shipped, and not covered by Biome or the typecheck.
