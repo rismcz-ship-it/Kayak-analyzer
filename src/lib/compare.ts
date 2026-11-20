@@ -32,7 +32,7 @@
  * shims.
  */
 
-import { fmt } from './format'
+import { fmt, signed } from './format'
 import type { Vec3 } from './geometry'
 import type { GzMarks } from './gz-marks'
 import {
@@ -174,6 +174,35 @@ export function poseIsForeign(
   )
 }
 
+/**
+ * The name a column or a slot panel shows for a slot.
+ *
+ * A live answer describes the MESH in the slot, so that file names it even
+ * when a record is still picked: the re-pick path's "Use anyway" keeps
+ * `recordId` set, and preferring the record's name put "test-kayak.stl" over a
+ * different hull's numbers. Export already reads the mesh first for the same
+ * reason (`SlotPanel`'s `name`); this is that rule, in one place, for every
+ * caption.
+ */
+export function displayedName(
+  slot: { live: unknown; mesh: { fileName: string } | null },
+  record: { name: string } | null,
+): string | null {
+  return slot.live !== null
+    ? (slot.mesh?.fileName ?? record?.name ?? null)
+    : (record?.name ?? slot.mesh?.fileName ?? null)
+}
+
+/** The hash that pairs with `displayedName`: the mesh's while its answer is live. */
+export function displayedModelHash(
+  slot: { live: unknown; mesh: { sha256Hex: string } | null },
+  record: { modelHash: string } | null,
+): string | null {
+  return slot.live !== null
+    ? (slot.mesh?.sha256Hex ?? record?.modelHash ?? null)
+    : (record?.modelHash ?? slot.mesh?.sha256Hex ?? null)
+}
+
 /** A saved comparison record: an immutable snapshot of one solved hull. */
 export interface RunRecord {
   /** `rec_` + counter + timestamp — unique within a session and across reloads. */
@@ -202,6 +231,18 @@ export interface RunRecord {
 
 /** Versioned so a future schema change can tell its own entries apart. */
 export const COMPARE_STORAGE_KEY = 'kayak-analyzer.compare.v1'
+
+/**
+ * How many runs the roster keeps.
+ *
+ * Every Analyze solve auto-adds one, and a record carries its 10-sample GZ
+ * curve (~1 KB of JSON), while a localStorage origin gets ~5 MB. An uncapped
+ * roster therefore ends in a failed write - exactly the state the roster
+ * banner exists to report - so the cap is what keeps the banner reserved for
+ * real refusals. Newest first, oldest dropped: that is the order the roster
+ * already uses, and `addRosterRecord` prepends.
+ */
+export const ROSTER_LIMIT = 50
 
 let nextRecordId = 1
 
@@ -237,6 +278,29 @@ function cloneSolveResult(result: TrimSolveResult): TrimSolveResult {
     pivot: { ...result.pivot },
     gzCurve: result.gzCurve.map((point) => ({ ...point })),
   }
+}
+
+/**
+ * Freeze a record and every structure it owns, and return it.
+ *
+ * Both producers share this: `recordFromSolve` freezes the snapshot it built,
+ * and `readRoster` freezes what it restores. "Records are immutable
+ * snapshots" has to hold for the restored ones too - they are the records a
+ * slot shows after a reload, and before this they were the only mutable
+ * copies in the app.
+ */
+function freezeRecord(record: RunRecord): RunRecord {
+  Object.freeze(record.inputs)
+  Object.freeze(record.result)
+  Object.freeze(record.result.lcb)
+  Object.freeze(record.result.lcg)
+  Object.freeze(record.result.pivot)
+  // The ARRAY beside its points: frozen points in a mutable array still let an
+  // in-place push or index write rewrite the plotted curve, and the array is
+  // what every reader walks.
+  for (const point of record.result.gzCurve) Object.freeze(point)
+  Object.freeze(record.result.gzCurve)
+  return Object.freeze(record)
 }
 
 /**
@@ -301,17 +365,7 @@ export function recordFromSolve(
   const savedAt = Date.now()
   const inputsSnapshot: SlotInputs = { ...inputs }
   const resultSnapshot = cloneSolveResult(result)
-  Object.freeze(inputsSnapshot)
-  Object.freeze(resultSnapshot)
-  Object.freeze(resultSnapshot.lcb)
-  Object.freeze(resultSnapshot.lcg)
-  Object.freeze(resultSnapshot.pivot)
-  // The ARRAY beside its points: frozen points in a mutable array still let an
-  // in-place push or index write rewrite the plotted curve, and the array is
-  // what every reader walks.
-  for (const point of resultSnapshot.gzCurve) Object.freeze(point)
-  Object.freeze(resultSnapshot.gzCurve)
-  return Object.freeze({
+  return freezeRecord({
     id: `rec_${nextRecordId++}_${savedAt.toString(36)}`,
     name,
     modelHash,
@@ -346,7 +400,10 @@ export function readRoster(read: StorageReader): RunRecord[] {
     return []
   }
   if (!Array.isArray(parsed)) return []
-  return parsed.filter(isRunRecord)
+  // Frozen on the way in, like a created record, and capped like one: a
+  // hand-edited or older oversized roster must not restore more than the
+  // write path would keep.
+  return parsed.filter(isRunRecord).slice(0, ROSTER_LIMIT).map(freezeRecord)
 }
 
 /**
@@ -364,6 +421,52 @@ export function writeRoster(records: RunRecord[], write: StorageWriter): void {
 /** Remove exactly the target id; anything else is returned unchanged. */
 export function deleteRecord(records: RunRecord[], id: string): RunRecord[] {
   return records.filter((record) => record.id !== id)
+}
+
+/**
+ * What a failed roster write actually put at risk.
+ *
+ * The old banner inferred it from the roster's LENGTH, so the first mount of a
+ * restored roster that could not be re-written warned that runs already in
+ * storage were "in memory only and will be lost on reload" - untrue, they
+ * came out of storage and will come back. Comparing ID SETS answers the real
+ * question: which of the records on screen has storage never accepted?
+ *
+ *   - `deletion` - a stored id is gone from the roster. `writeRoster` always
+ *     writes, so the removed runs are still stored and only the banner can say
+ *     they will return.
+ *   - `volatile` - records the last successful write never saw; those really
+ *     do exist only in memory (`count` of them).
+ *   - `none` - every record on screen is already stored, so nothing was lost.
+ *
+ * A write that both deleted and added reports `deletion`: it is the bigger
+ * lie, because the user asked for that change and did not get it.
+ */
+export type RosterWriteRisk =
+  | { kind: 'none' }
+  | { kind: 'deletion' }
+  | { kind: 'volatile'; count: number }
+
+export function rosterWriteRisk(
+  recordIds: readonly string[],
+  persistedIds: ReadonlySet<string>,
+): RosterWriteRisk {
+  if ([...persistedIds].some((id) => !recordIds.includes(id))) return { kind: 'deletion' }
+  const count = recordIds.filter((id) => !persistedIds.has(id)).length
+  return count === 0 ? { kind: 'none' } : { kind: 'volatile', count }
+}
+
+/**
+ * The one line the roster picker shows under a run's file name.
+ *
+ * Two runs of the SAME hull at different weights used to render identically
+ * (same name, same six hash characters), so a slot's pick could not be told
+ * apart from its sibling and choosing the wrong one silently changed the
+ * comparison. The conditions are what actually differ between them.
+ */
+export function recordConditionLabel(inputs: SlotInputs): string {
+  const heel = inputs.heelDeg === 0 ? '' : ` · heel ${signed(inputs.heelDeg, 0)}°`
+  return `${fmt(inputs.weightKg)} kg · LCG ${fmt(inputs.lcgPctLwl)}% · KG ${fmt(inputs.kgMm)} mm${heel}`
 }
 
 /**
@@ -585,7 +688,9 @@ export function addRosterRecord(roster: RunRecord[], record: RunRecord): RunReco
     next[sameId] = record
     return next
   }
-  return [record, ...roster]
+  // Newest first, so the cap drops the oldest; the duplicate and id branches
+  // above can never grow the roster and never reach this slice.
+  return [record, ...roster].slice(0, ROSTER_LIMIT)
 }
 
 /**

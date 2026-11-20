@@ -26,7 +26,16 @@
 //     copy of the caller's (so a later edit of what was passed in cannot
 //     rewrite a saved record another slot may be showing); and the snapshot
 //     is frozen, so an accidental in-place write throws rather than
-//     rewriting it.
+//     rewriting it. `readRoster` freezes what it restores for the same
+//     reason: a restored record is the one a slot shows after a reload, and
+//     it used to be the only mutable copy in the app.
+//
+//  4. A LONG-LIVED ROSTER MUST STAY BOUNDED, AND A FAILED WRITE MUST NOT LIE.
+//     Every home solve auto-adds a record, so growth is capped at
+//     `ROSTER_LIMIT` (newest kept). When a write is refused, `rosterWriteRisk`
+//     reports what was actually at risk from the ID SETS: a restored roster
+//     that cannot be re-written lost nothing, while a new record or a refused
+//     deletion did.
 //
 // Validation shares ONE gate with the form: a record's inputs are judged by
 // the same `*Usable` predicates `verify-inputs.ts` drives, so a stored value
@@ -52,10 +61,12 @@ import {
   encodeRoster,
   exportRunRecord,
   parseRunRecordImport,
+  ROSTER_LIMIT,
   type RunRecord,
   readRoster,
   recordFingerprint,
   recordFromSolve,
+  rosterWriteRisk,
   type SlotInputs,
   writeRoster,
 } from '../src/lib/compare.js'
@@ -541,8 +552,17 @@ check(purityOut[0] === built2, 'the surviving records are carried over, not re-c
 const freshA = readRoster(storage({ [COMPARE_STORAGE_KEY]: written }))
 const freshB = readRoster(storage({ [COMPARE_STORAGE_KEY]: written }))
 check(freshA[0] !== freshB[0], 'each read parses fresh objects — reads do not share')
-freshA[0].inputs.weightKg = 90
-check(freshB[0].inputs.weightKg === 75, 'mutating one read does not touch another')
+check(
+  freshA[0].inputs !== freshB[0].inputs && freshA[0].result.gzCurve !== freshB[0].result.gzCurve,
+  'two reads share no nested structure either',
+)
+// The independence above is now structural AND enforced: a restored record is
+// frozen like a created one, so neither read can be rewritten through the
+// other's state (the old check proved it by mutating the copy).
+check(
+  Object.isFrozen(freshA[0]) && Object.isFrozen(freshB[0]),
+  'restored records come back frozen, like created ones',
+)
 
 // --- 7. non-finite values -----------------------------------------------------
 
@@ -757,6 +777,92 @@ check(rosterOutput !== rosterInput, 'addRosterRecord returns a new array')
 check(rosterInput.length === 1 && rosterInput[0] === runA, 'addRosterRecord leaves its input alone')
 check(rosterOutput[0] === otherHull, 'the new record is carried over, not re-cloned')
 check(rosterOutput[1] === runA, 'the older entries are carried over in order')
+
+// --- the cap, the failed-write report and frozen restored records -----------
+
+console.log('\n=== the roster cap, write risk and restored snapshots ===')
+
+{
+  // F4: every home solve auto-adds a record and nothing pruned them, so the
+  // roster grew until a write hit the origin quota - the state the banner
+  // reports. The cap keeps the newest runs, which is the order the list and
+  // `addRosterRecord` already use.
+  let grown: RunRecord[] = []
+  for (let i = 0; i < ROSTER_LIMIT + 5; i++) {
+    grown = addRosterRecord(
+      grown,
+      recordFromSolve(
+        `hull-${i}.stl`,
+        'a'.repeat(64),
+        { ...sampleInputs, weightKg: 60 + i },
+        sampleResult,
+      ),
+    )
+  }
+  check(
+    grown.length === ROSTER_LIMIT,
+    `the roster stops at ${ROSTER_LIMIT} runs`,
+    `got ${grown.length}`,
+  )
+  check(grown[0]?.name === `hull-${ROSTER_LIMIT + 4}.stl`, 'the newest run is kept at the front')
+  check(grown[ROSTER_LIMIT - 1]?.name === 'hull-5.stl', 'the oldest runs are the ones dropped')
+
+  // A stored roster larger than the cap (an older app, a hand-edited value)
+  // restores to the same size the write path would keep.
+  const oversized = JSON.stringify([
+    ...grown,
+    recordFromSolve('older.stl', 'a'.repeat(64), { ...sampleInputs, weightKg: 40 }, sampleResult),
+  ])
+  const restored = readRoster((key) => (key === COMPARE_STORAGE_KEY ? oversized : null))
+  check(restored.length === ROSTER_LIMIT, 'readRoster drops the overflow instead of restoring it')
+
+  // F6: restored records were the only mutable copies in the app, so the
+  // "immutable snapshot" claim covered created records only.
+  const first = restored[0]
+  check(Object.isFrozen(first), 'a restored record is frozen like a created one')
+  check(Object.isFrozen(first?.inputs), 'its inputs are frozen')
+  check(Object.isFrozen(first?.result.gzCurve), 'its GZ curve array is frozen')
+  check(Object.isFrozen(first?.result.gzCurve[0]), 'its GZ curve points are frozen')
+  let refused = false
+  try {
+    ;(first as { name: string }).name = 'rewritten'
+  } catch {
+    refused = true
+  }
+  check(refused, 'an in-place write to a restored record throws')
+
+  // F2: what a failed write actually put at risk, judged by id SETS. The old
+  // banner compared lengths, so a restored roster that could not be
+  // re-written claimed to be "in memory only" - although it came from storage.
+  const nothing = new Set<string>()
+  const storedIds = new Set(['a', 'b'])
+  check(
+    rosterWriteRisk(['a', 'b'], storedIds).kind === 'none',
+    'a refusal over records storage already has loses nothing',
+  )
+  check(
+    rosterWriteRisk([], nothing).kind === 'none',
+    'an empty roster over empty storage loses nothing',
+  )
+  check(
+    rosterWriteRisk([], storedIds).kind === 'deletion',
+    'a refused deletion is reported as a deletion',
+  )
+  const oneNew = rosterWriteRisk(['a', 'b', 'c'], storedIds)
+  check(
+    oneNew.kind === 'volatile' && oneNew.count === 1,
+    'a refused new run is reported as one volatile record',
+  )
+  const twoNew = rosterWriteRisk(['c', 'd', 'a', 'b'], storedIds)
+  check(
+    twoNew.kind === 'volatile' && twoNew.count === 2,
+    'two refused new runs are counted, not guessed from the length',
+  )
+  check(
+    rosterWriteRisk(['a', 'c'], storedIds).kind === 'deletion',
+    'a deletion plus a new run reports the deletion',
+  )
+}
 
 console.log(failures === 0 ? '\nALL ROSTER CHECKS PASSED' : `\n${failures} ROSTER CHECK(S) FAILED`)
 process.exit(failures === 0 ? 0 : 1)

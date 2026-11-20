@@ -10,6 +10,7 @@ import {
   type RunRecord,
   readRoster,
   recordFromSolve,
+  rosterWriteRisk,
   writeRoster,
 } from './lib/compare'
 import { fmt } from './lib/format'
@@ -127,37 +128,43 @@ export default function App() {
    * refused write mean very different things to whoever reads it.
    */
   const [rosterError, setRosterError] = useState<string | null>(null)
-  // The roster length the previous write saw. "Nothing to lose" is narrower
-  // than "the roster is empty": a refusal over an ALREADY empty roster
-  // persists nothing and loses nothing (the banner would otherwise fire on
-  // every startup over "0 runs - saved in this browser", noise that teaches
-  // the user to ignore the banner when it matters), but a refusal right after
-  // a REMOVAL is the opposite - `writeRoster` always writes, so the records
-  // just removed are still in storage and come back on reload, and only this
-  // banner can say so. "Removed" is `before > roster.length`, so a deletion
-  // that leaves records behind refuses here too.
-  const writtenLength = useRef(0)
+  // The ids the last SUCCESSFUL write put in storage, seeded from the restored
+  // roster (which came out of storage). "Nothing to lose" is a question about
+  // ids, not lengths: a restored roster that cannot be re-written is NOT lost
+  // on reload, and the old length comparison said it was. A refusal right
+  // after a REMOVAL is the opposite - `writeRoster` always writes, so the
+  // deleted runs are still stored and come back on reload, and only this
+  // banner can say so.
+  const persistedIds = useRef<Set<string> | null>(null)
   useEffect(() => {
-    const before = writtenLength.current
-    const removedRecords = before > roster.length
+    // First run: whatever `readRoster` restored is what storage holds.
+    const known = persistedIds.current ?? new Set(roster.map((record) => record.id))
+    persistedIds.current = known
     try {
       writeRoster(roster, (key, value) => localStorage.setItem(key, value))
+      persistedIds.current = new Set(roster.map((record) => record.id))
       setRosterError(null)
     } catch (err) {
       const cause = err instanceof Error ? err.message : String(err)
-      if (roster.length === 0 && !removedRecords) {
-        setRosterError(null)
-      } else if (removedRecords) {
+      const risk = rosterWriteRisk(
+        roster.map((record) => record.id),
+        known,
+      )
+      if (risk.kind === 'deletion') {
         setRosterError(
           `This browser refused to save the run roster — the deletion did not stick, so the runs you removed are still stored and will come back on reload. (${cause})`,
         )
-      } else {
+      } else if (risk.kind === 'volatile') {
+        const which =
+          risk.count === 1 ? 'the run you just added is' : `${risk.count} runs you just added are`
         setRosterError(
-          `This browser refused to save the run roster — the runs are in memory only and will be lost on reload. (${cause})`,
+          `This browser refused to save the run roster — ${which} in memory only and will be lost on reload. (${cause})`,
         )
+      } else {
+        // Every record on screen is already stored, so a refusal lost nothing.
+        setRosterError(null)
       }
     }
-    writtenLength.current = roster.length
   }, [roster])
 
   /**
@@ -611,21 +618,21 @@ export default function App() {
 
                   <div className="mb-4 space-y-2">
                     <label className="flex items-center gap-2 cursor-pointer group">
-                      <div
-                        className={`w-8 h-4 rounded-full transition-colors border border-zinc-700 ${inputs.showHeelInput ? 'bg-blue-600 border-blue-400' : 'bg-zinc-800'}`}
-                      >
-                        <div
-                          className={`w-3 h-3 m-0.5 rounded-full bg-white transition-transform ${inputs.showHeelInput ? 'translate-x-4' : 'translate-x-0'}`}
-                        />
-                      </div>
                       <input
                         type="checkbox"
-                        className="hidden"
+                        className="peer sr-only"
                         checked={inputs.showHeelInput}
                         onChange={(e) =>
                           setInputs((prev) => ({ ...prev, showHeelInput: e.target.checked }))
                         }
                       />
+                      <div
+                        className={`w-8 h-4 rounded-full transition-colors border border-zinc-700 peer-focus-visible:ring-2 peer-focus-visible:ring-sky-400 peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-zinc-950 ${inputs.showHeelInput ? 'bg-blue-600 border-blue-400' : 'bg-zinc-800'}`}
+                      >
+                        <div
+                          className={`w-3 h-3 m-0.5 rounded-full bg-white transition-transform ${inputs.showHeelInput ? 'translate-x-4' : 'translate-x-0'}`}
+                        />
+                      </div>
                       <span className="text-xs text-zinc-400 group-hover:text-zinc-300">
                         Set fixed heel angle
                       </span>

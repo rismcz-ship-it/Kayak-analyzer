@@ -35,9 +35,22 @@
 //      is not a match; `poseIsForeign` now owns the rule for both call sites,
 //      and section 2d pins it.
 //
+//   5. The name over the numbers had the same shape of lie: after a "Use
+//      anyway" re-pick the record stayed picked, so the table header and the
+//      panel title kept the record's file name over a different hull's live
+//      answer. `displayedName` / `displayedModelHash` own that rule for the
+//      columns, the panel and the export, and section 3 pins it.
+//
 // Run: npm.cmd exec -- tsx tests/verify-compare-display.ts
 
-import { avsCellText, compareOverlayCaption, poseIsForeign } from '../src/lib/compare.js'
+import {
+  avsCellText,
+  compareOverlayCaption,
+  displayedModelHash,
+  displayedName,
+  poseIsForeign,
+  recordConditionLabel,
+} from '../src/lib/compare.js'
 import { gzMarks } from '../src/lib/gz-marks.js'
 import type { GZPoint } from '../src/lib/hydrostatics.js'
 import { SHA256_HEX_PATTERN } from '../src/lib/model-hash.js'
@@ -425,6 +438,55 @@ console.log('\n=== the foreign-pose predicate ===')
   check(
     SHA256_HEX_PATTERN.test(A) && !SHA256_HEX_PATTERN.test(''),
     "a record's hash is never the empty one, so an empty match cannot arise",
+  )
+}
+
+// --- 3. the caption's NAME rule: the live answer's own mesh names it ---------
+
+console.log('\n=== the displayed name is the hull the numbers describe ===')
+
+{
+  // The re-pick path's "Use anyway" keeps the record picked while a DIFFERENT
+  // mesh is in the slot. Once that mesh's live answer lands, the column and
+  // the panel show ITS numbers, so they must carry ITS name and hash - the
+  // record's name over them was a real mislabel (a box hull's draft under
+  // "test-kayak.stl"). Export already read the mesh first; these helpers are
+  // that rule for every caption.
+  const rec = { name: 'test-kayak.stl', modelHash: 'a'.repeat(64) }
+  const own = { fileName: 'box-hull.stl', sha256Hex: 'b'.repeat(64) }
+  const empty = { live: null, mesh: null }
+
+  check(displayedName({ live: {}, mesh: own }, rec) === 'box-hull.stl', 'live: the mesh names it')
+  check(
+    displayedModelHash({ live: {}, mesh: own }, rec) === own.sha256Hex,
+    'live: the mesh hash pairs with it',
+  )
+  check(
+    displayedName({ live: null, mesh: own }, rec) === 'test-kayak.stl',
+    'record-only: the record names it',
+  )
+  check(
+    displayedModelHash({ live: null, mesh: own }, rec) === rec.modelHash,
+    'record-only: the record hash pairs with it',
+  )
+  check(displayedName(empty, null) === null, 'empty slot: no name')
+  check(displayedModelHash(empty, null) === null, 'empty slot: no hash')
+  check(
+    displayedName({ live: null, mesh: own }, null) === 'box-hull.stl',
+    'mesh only: its file name',
+  )
+
+  // F3: the picker's second line. Two runs of one hull used to render
+  // identically, so the conditions are what tells them apart.
+  check(
+    recordConditionLabel({ weightKg: 75, lcgPctLwl: 52, kgMm: 280, heelDeg: 0 }) ===
+      '75 kg · LCG 52% · KG 280 mm',
+    'the roster label carries the conditions',
+  )
+  check(
+    recordConditionLabel({ weightKg: 85, lcgPctLwl: 52, kgMm: 280, heelDeg: 10 }) ===
+      '85 kg · LCG 52% · KG 280 mm · heel +10°',
+    'two runs of one hull differ in their label',
   )
 }
 

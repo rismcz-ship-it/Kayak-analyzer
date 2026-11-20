@@ -1,5 +1,7 @@
 import { useCallback, useRef, useState } from 'react'
 import {
+  displayedModelHash,
+  displayedName,
   exportRunRecord,
   liveAnswerIsCurrent,
   poseIsForeign,
@@ -261,9 +263,10 @@ export default function SlotPanel({
     }
     const conditions =
       liveSolve !== null ? (slot.liveInputs ?? slot.inputs) : (record?.inputs ?? slot.inputs)
-    const name = liveSolve !== null && own ? own.fileName : (record?.name ?? own?.fileName ?? '')
-    const modelHash =
-      liveSolve !== null && own ? own.sha256Hex : (record?.modelHash ?? own?.sha256Hex ?? '')
+    // The same captions the header shows: a live answer names its own mesh, so
+    // an exported document cannot call itself after a record it outlived.
+    const name = displayedName(slot, record) ?? ''
+    const modelHash = displayedModelHash(slot, record) ?? ''
     // A fresh slot exports only its own live solve of its own mesh - there is
     // no saved run to fall back to. The button is disabled before then; this
     // is the same gate in code.
@@ -309,6 +312,11 @@ export default function SlotPanel({
     slot.live !== null,
   )
 
+  // Named by what is on screen, not by what is merely picked: the same rule
+  // the columns and the export use (`displayedName`).
+  const shownName = displayedName(slot, record) ?? 'empty slot'
+  const shownHash = displayedModelHash(slot, record)
+
   return (
     <section className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-4">
       <div className="mb-2 flex items-center gap-2 border-b border-zinc-800 pb-2">
@@ -320,9 +328,9 @@ export default function SlotPanel({
         </span>
         <span
           className="min-w-0 flex-1 truncate text-sm text-zinc-200"
-          title={record ? `${record.name} · ${record.modelHash}` : undefined}
+          title={shownHash !== null ? `${shownName} · ${shownHash}` : undefined}
         >
-          {record?.name ?? slot.mesh?.fileName ?? 'empty slot'}
+          {shownName}
         </span>
         <button
           type="button"
@@ -401,19 +409,19 @@ export default function SlotPanel({
               so off means this slot solves at 0 and the slider stays out of
               the way until it is asked for. */}
           <label className="mb-1 flex cursor-pointer items-center gap-2 group">
+            <input
+              type="checkbox"
+              className="peer sr-only"
+              checked={showHeel}
+              onChange={(e) => toggleHeel(e.target.checked)}
+            />
             <div
-              className={`w-8 h-4 rounded-full border border-zinc-700 transition-colors ${showHeel ? 'border-sky-400 bg-sky-600' : 'bg-zinc-800'}`}
+              className={`w-8 h-4 rounded-full border border-zinc-700 transition-colors peer-focus-visible:ring-2 peer-focus-visible:ring-sky-400 peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-zinc-900 ${showHeel ? 'border-sky-400 bg-sky-600' : 'bg-zinc-800'}`}
             >
               <div
                 className={`h-3 w-3 m-0.5 rounded-full bg-white transition-transform ${showHeel ? 'translate-x-4' : 'translate-x-0'}`}
               />
             </div>
-            <input
-              type="checkbox"
-              className="hidden"
-              checked={showHeel}
-              onChange={(e) => toggleHeel(e.target.checked)}
-            />
             <span className="text-xs text-zinc-400 group-hover:text-zinc-300">
               Set fixed heel angle
             </span>

@@ -13,9 +13,12 @@ import {
   type CompareOverlaySlot,
   columnIsStale,
   compareOverlayCaption,
+  displayedName,
   parseRunRecordImport,
   poseIsForeign,
+  ROSTER_LIMIT,
   type RunRecord,
+  recordConditionLabel,
   type SlotInputs,
 } from '../lib/compare'
 import type { TrimSolveResult } from '../lib/hydrostatics'
@@ -488,8 +491,10 @@ export default function CompareView({
   const shownInputs = (slot: SlotState, record: RunRecord | null): SlotInputs =>
     slot.live !== null ? (slot.liveInputs ?? slot.inputs) : (record?.inputs ?? slot.inputs)
   const columnA: CompareColumn = {
-    // A slot loaded straight from an STL is called by its file name.
-    name: recordA?.name ?? slotA.mesh?.fileName ?? null,
+    // The live answer's own mesh names the column: after a "Use anyway"
+    // re-pick the record is still picked but the numbers are a different
+    // hull's, and the record's name over them would be a mislabel.
+    name: displayedName(slotA, recordA),
     result: resultA,
     // Conditions only when the column has numbers to pair them with: a mesh
     // whose solve has not landed (or failed) has no result, and a "different
@@ -503,7 +508,7 @@ export default function CompareView({
     stale: columnStale(slotA),
   }
   const columnB: CompareColumn = {
-    name: recordB?.name ?? slotB.mesh?.fileName ?? null,
+    name: displayedName(slotB, recordB),
     result: resultB,
     inputs: resultB !== null ? shownInputs(slotB, recordB) : null,
     stale: columnStale(slotB),
@@ -515,6 +520,7 @@ export default function CompareView({
         <div className="flex items-center justify-between gap-2">
           <span className="text-xs text-zinc-500">
             {roster.length} run{roster.length === 1 ? '' : 's'} · saved in this browser
+            {roster.length >= ROSTER_LIMIT ? ` · newest ${ROSTER_LIMIT} kept` : ''}
           </span>
           <div className="flex items-center gap-2">
             <button
@@ -570,22 +576,19 @@ export default function CompareView({
                     : 'border-zinc-800 bg-zinc-900/40'
                 }`}
               >
-                <span
-                  className="min-w-0 flex-1 truncate text-zinc-200"
-                  title={`${entry.name} - ${entry.modelHash}`}
-                >
-                  {entry.name}
-                </span>
-                <span className="font-mono text-[10px] text-zinc-500" title={entry.modelHash}>
-                  {entry.modelHash.slice(0, 6)}
+                <span className="min-w-0 flex-1" title={`${entry.name} - ${entry.modelHash}`}>
+                  <span className="block truncate text-zinc-200">{entry.name}</span>
+                  <span className="block truncate font-mono text-[10px] text-zinc-500">
+                    {recordConditionLabel(entry.inputs)} · {entry.modelHash.slice(0, 6)}
+                  </span>
                 </span>
                 {([0, 1] as const).map((index) => (
                   <button
                     key={index}
                     type="button"
                     onClick={() => pickRecord(index, entry)}
-                    aria-label={`Load ${entry.name} into slot ${index === 0 ? 'A' : 'B'}`}
-                    title={`Load into slot ${index === 0 ? 'A' : 'B'}`}
+                    aria-label={`Load ${entry.name} (${recordConditionLabel(entry.inputs)}) into slot ${index === 0 ? 'A' : 'B'}`}
+                    title={`Load ${entry.name} - ${recordConditionLabel(entry.inputs)} - into slot ${index === 0 ? 'A' : 'B'}`}
                     className="rounded px-1.5 py-0.5 text-[10px] font-bold text-zinc-950 hover:opacity-80"
                     style={{ backgroundColor: slotColorHex(index) }}
                   >
@@ -595,8 +598,8 @@ export default function CompareView({
                 <button
                   type="button"
                   onClick={() => handleDeleteRecord(entry.id)}
-                  aria-label={`Delete ${entry.name}`}
-                  title={`Delete ${entry.name}`}
+                  aria-label={`Delete ${entry.name} (${recordConditionLabel(entry.inputs)})`}
+                  title={`Delete ${entry.name} - ${recordConditionLabel(entry.inputs)}`}
                   className="rounded px-1 text-zinc-500 hover:text-rose-400"
                 >
                   ✕
