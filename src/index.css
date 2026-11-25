@@ -1,11 +1,72 @@
 @import "tailwindcss";
 
-html,
-body,
-#root {
-  height: 100%;
+/*
+  The redesign's token set. Four neutral levels, one stroke family, three text
+  variants that all clear WCAG AA on every surface they sit on, an accent that
+  is a SCALE rather than one colour, and one semantic colour per meaning.
+  Values are the approved mockup's (`docs/mockups/wip/analyze-03-empty.html`),
+  which were measured against the Kole Jain report's contrast and spacing rules.
+*/
+@theme {
+  --font-ui: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "Cascadia Mono", Consolas, ui-monospace, monospace;
+
+  /* neutrals */
+  --color-page: #0a0d10;
+  --color-rail: #0f141a;
+  --color-panel: #151d25;
+  --color-panel-2: #1d272f;
+  --color-line: #1e262e;
+  --color-line-2: #2b353f;
+
+  /* text — all AA on every surface above */
+  --color-ink: #e8edf1;
+  --color-ink-2: #a8b4bf;
+  --color-ink-3: #8b97a3;
+
+  /* accent — a scale */
+  --color-accent-300: #8cc4ef;
+  --color-accent-400: #6fb2e8;
+  --color-accent-500: #4d9fe0;
+  --color-accent-700: #3a86c0;
+  --color-accent-ink: #06121b;
+
+  /* semantic — one meaning each */
+  --color-good: #55b489;
+  --color-warn: #d3a154;
+  --color-bad: #cd6c70;
+
+  --color-grid: rgba(255, 255, 255, 0.028);
 }
 
-body {
-  @apply bg-zinc-950 text-zinc-100 antialiased;
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    @apply bg-page text-ink font-ui antialiased;
+    overflow: hidden;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-accent-400);
+    outline-offset: 2px;
+  }
+
+  button {
+    font-family: inherit;
+  }
+}
+
+/* The stage's drafting grid: visible in the empty state, under the 3D canvas
+   once a hull is loaded. */
+@utility stage-grid {
+  background-image:
+    linear-gradient(var(--color-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--color-grid) 1px, transparent 1px);
+  background-size: 32px 32px;
+  background-position: center;
 }
