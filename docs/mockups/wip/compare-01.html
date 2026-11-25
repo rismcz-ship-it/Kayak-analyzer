@@ -1,0 +1,823 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>kayak-analyzer — Compare mockup</title>
+<style>
+  /*
+    The Compare tab, redesigned in the Analyze tab's language: the same token
+    set (src/index.css), the same 64px rail, the same stage-first layout, the
+    same "the important number up front, the rest one button away" rule.
+
+    The Compare tab's own job is DIFFERENCE. So the 3D stage shows both hulls
+    on one shared water surface, and the right panel leads with the handful of
+    metrics that actually decide a comparison — each drawn as a pair of bars so
+    the reader sees which way it goes, not just which number is bigger.
+    The full 23-row table is one button away, exactly as "All values" is on
+    the Analyze tab.
+  */
+  :root {
+    --font-ui: 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
+    --font-mono: 'Cascadia Mono', Consolas, ui-monospace, monospace;
+
+    /* neutrals */
+    --bg: #0a0d10;
+    --rail: #0f141a;
+    --surface: #151d25;
+    --surface-2: #1d272f;
+    --line: #1e262e;
+    --line-2: #2b353f;
+
+    /* text — all AA on every surface above */
+    --text: #e8edf1;
+    --text-2: #a8b4bf;
+    --text-3: #8b97a3;
+
+    /* accent — a scale */
+    --accent-300: #8cc4ef;
+    --accent-400: #6fb2e8;
+    --accent-500: #4d9fe0;
+    --accent-700: #3a86c0;
+    --accent: var(--accent-500);
+    --accent-soft: rgba(77, 159, 224, 0.16);
+    --accent-ink: #06121b;
+
+    /* semantic */
+    --good: #55b489;
+    --warn: #d3a154;
+    --bad: #cd6c70;
+    --good-soft: rgba(85, 180, 137, 0.14);
+    --warn-soft: rgba(211, 161, 84, 0.14);
+    --bad-soft: rgba(205, 108, 112, 0.14);
+
+    /* the two Compare slots: far apart in hue so overlapping hulls read */
+    --slot-a: #38bdf8;
+    --slot-b: #fb923c;
+    --slot-a-dim: rgba(56, 189, 248, 0.20);
+    --slot-b-dim: rgba(251, 146, 60, 0.18);
+
+    --water: rgba(77, 159, 224, 0.55);
+    --grid: rgba(255, 255, 255, 0.028);
+  }
+
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    font-family: var(--font-ui);
+    font-size: 13px;
+    line-height: 1.4;
+    color: var(--text);
+    background: var(--bg);
+    -webkit-font-smoothing: antialiased;
+    overflow: hidden;
+  }
+  button { font-family: inherit; }
+  :focus-visible { outline: 2px solid var(--accent-400); outline-offset: 2px; }
+  .num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+
+  /* ---------------- shell ---------------- */
+  .app {
+    height: 100%;
+    display: grid;
+    grid-template-columns: 64px minmax(0, 1fr) 420px;
+    position: relative;
+  }
+
+  /* ---------------- left rail (identical to the app's) ---------------- */
+  .rail {
+    background: var(--rail);
+    border-right: 1px solid var(--line);
+    display: flex; flex-direction: column; align-items: center;
+    padding: 16px 0;
+  }
+  .mark { width: 34px; height: 21px; margin-bottom: 18px; }
+  .nav {
+    width: 56px; height: 52px; border: 0; border-radius: 8px;
+    background: transparent; color: var(--text-3);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 4px; cursor: pointer;
+  }
+  .nav:hover { color: var(--text-2); background: var(--surface); }
+  .nav[aria-current='page'] { background: var(--surface); color: var(--text); }
+  .nav[aria-current='page'] .nav-ico { color: var(--accent-500); }
+  .nav span { font-size: 11px; }
+  .rail-foot { margin-top: auto; width: 40px; border-top: 1px solid var(--line); padding-top: 8px; }
+
+  /* ---------------- stage ---------------- */
+  .main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+  .stage-wrap { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  .stage {
+    flex: 1; min-height: 0; position: relative;
+    background-image:
+      linear-gradient(var(--grid) 1px, transparent 1px),
+      linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+    background-size: 32px 32px;
+    background-position: center;
+  }
+  .stage-center { position: absolute; inset: 0; display: grid; place-items: center; }
+
+  /* the hull legend — the one thing that must stay on the canvas */
+  .legend { position: absolute; top: 16px; left: 16px; display: flex; gap: 8px; }
+  .legend-item {
+    display: flex; align-items: center; gap: 7px;
+    padding: 6px 10px; border-radius: 6px;
+    background: var(--surface); border: 1px solid var(--line);
+    font-size: 11px; color: var(--text-2);
+  }
+  .legend-item b { color: var(--text); font-weight: 500; }
+  .legend-item .sw { width: 8px; height: 8px; border-radius: 2px; flex: none; }
+  .legend-item .lg-sub { color: var(--text-3); font-family: var(--font-mono); font-size: 10px; margin-left: 2px; }
+  .legend-item .lg-sub::before { content: '· '; }
+  .sw-a { background: var(--slot-a); }
+  .sw-b { background: var(--slot-b); }
+
+  /* the shared water surface, labelled once */
+  .water-note {
+    position: absolute; right: 16px; top: 16px;
+    font-size: 11px; color: var(--text-3);
+    padding: 6px 10px; border-radius: 6px;
+    background: var(--surface); border: 1px solid var(--line);
+  }
+
+  /* the stage's empty state */
+  .stage-empty {
+    position: absolute; inset: 0; display: grid; place-items: center; text-align: center;
+  }
+  .stage-empty .card {
+    border: 1px dashed var(--line-2); border-radius: 12px; padding: 28px 40px; background: var(--surface);
+  }
+  .stage-empty h3 { margin: 0 0 6px; font-size: 14px; font-weight: 500; }
+  .stage-empty p { margin: 0; font-size: 12px; color: var(--text-3); }
+
+  /* ---------------- stage foot ---------------- */
+  .foot {
+    flex: none; display: flex; align-items: center; gap: 16px;
+    height: 40px; padding: 0 16px;
+    border-top: 1px solid var(--line); background: var(--bg);
+    font-size: 11px; color: var(--text-3);
+  }
+  .foot .slot { display: flex; align-items: center; gap: 7px; min-width: 0; }
+  .foot .slot b { font-family: var(--font-mono); color: var(--text-2); font-weight: 400; }
+  .foot .spacer { flex: 1; }
+  .ghost {
+    font: inherit; font-size: 11px; color: var(--text-2);
+    padding: 4px 9px; border: 1px solid var(--line-2); border-radius: 5px;
+    background: transparent; cursor: pointer;
+  }
+  .ghost:hover { color: var(--text); border-color: var(--text-3); }
+
+  /* ---------------- right panel ---------------- */
+  .panel {
+    border-left: 1px solid var(--line);
+    display: flex; flex-direction: column; min-height: 0;
+    background: var(--bg);
+  }
+  .panel-scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 14px 20px 16px; }
+  .panel-foot { flex: none; border-top: 1px solid var(--line); padding: 12px 20px; background: var(--bg); }
+
+  .label {
+    font-size: 11px; font-weight: 500; color: var(--text-3);
+    letter-spacing: 0.02em; margin: 0 0 8px;
+  }
+
+  /* ---- conditions: the two slots, side by side ---- */
+  .slots { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .slot-card { border: 1px solid var(--line); border-radius: 8px; padding: 9px 10px; background: var(--surface); }
+  .slot-head { display: flex; align-items: center; gap: 7px; margin-bottom: 9px; }
+  .slot-head .badge {
+    width: 18px; height: 18px; border-radius: 4px; flex: none;
+    display: grid; place-items: center;
+    font-size: 10px; font-weight: 700; color: #06121b;
+  }
+  .badge-a { background: var(--slot-a); }
+  .badge-b { background: var(--slot-b); }
+  .slot-head b { font-size: 12px; font-weight: 500; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .slot-head .spacer { flex: 1; }
+  .slot-head .x { border: 0; background: transparent; color: var(--text-3); cursor: pointer; padding: 0 2px; font-size: 12px; }
+  .slot-head .x:hover { color: var(--text); }
+
+  .field { margin-bottom: 7px; }
+  .field label { display: block; font-size: 11px; color: var(--text-3); margin-bottom: 3px; }
+  .input-wrap { position: relative; }
+  .input-wrap input {
+    font-family: var(--font-mono); font-variant-numeric: tabular-nums;
+    font-size: 12px; color: var(--text); width: 100%;
+    padding: 4px 24px 4px 8px;
+    background: var(--surface-2); border: 1px solid var(--line); border-radius: 5px;
+    outline: none;
+  }
+  .input-wrap input:focus { border-color: var(--accent-500); box-shadow: 0 0 0 3px var(--accent-soft); }
+  .input-wrap .unit { position: absolute; right: 8px; top: 5px; font-size: 10px; color: var(--text-3); pointer-events: none; }
+
+  .heel-toggle { display: flex; align-items: center; gap: 6px; margin-top: 8px; font-size: 11px; color: var(--text-3); cursor: pointer; }
+  .switch { width: 26px; height: 15px; border-radius: 999px; background: var(--line-2); position: relative; flex: none; }
+  .switch::after { content: ''; position: absolute; top: 2px; left: 2px; width: 11px; height: 11px; border-radius: 50%; background: #f2f6f9; }
+  .heel-toggle.on .switch { background: var(--accent-500); }
+  .heel-toggle.on .switch::after { transform: translateX(11px); }
+
+  /* an empty slot: a drop target, not a broken form */
+  .slot-empty {
+    border: 1px dashed var(--line-2); border-radius: 6px; padding: 14px 10px; text-align: center;
+    font-size: 11px; color: var(--text-3); background: var(--surface-2);
+  }
+  .slot-empty b { display: block; color: var(--text-2); font-weight: 500; margin-bottom: 2px; }
+
+  /* ---- saved runs, collapsed by default ---- */
+  .runs { border: 1px solid var(--line); border-radius: 8px; margin-top: 12px; background: var(--surface); }
+  .runs-head {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 12px; cursor: pointer; font-size: 12px; color: var(--text-2);
+  }
+  .runs-head:hover { color: var(--text); }
+  .runs-head .count { margin-left: auto; font-size: 11px; color: var(--text-3); }
+  .runs-head .caret { color: var(--text-3); font-size: 10px; transition: transform .15s; }
+  .runs.open .runs-head .caret { transform: rotate(90deg); }
+  .runs-list { border-top: 1px solid var(--line); padding: 6px; }
+  .run { display: flex; align-items: center; gap: 8px; padding: 5px 6px; border-radius: 5px; }
+  .run:hover { background: var(--surface-2); }
+  .run .name { flex: 1; min-width: 0; }
+  .run .name b { display: block; font-size: 12px; font-weight: 500; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .run .name span { display: block; font-size: 10px; color: var(--text-3); font-family: var(--font-mono); }
+  .run .load { width: 20px; height: 20px; border-radius: 4px; border: 0; cursor: pointer; font-size: 10px; font-weight: 700; color: #06121b; flex: none; }
+  .run .del { border: 0; background: transparent; color: var(--text-3); cursor: pointer; padding: 0 2px; font-size: 12px; }
+  .run .del:hover { color: var(--bad); }
+
+  /* ---- the differences: the point of the tab ---- */
+  .diffs { margin-top: 16px; }
+  .diffs-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 2px; }
+  .diffs-head h2 { margin: 0; font-size: 11px; font-weight: 500; color: var(--text-3); letter-spacing: 0.02em; }
+  .diffs-head .spacer { flex: 1; }
+  .diffs-head .hint { font-size: 11px; color: var(--text-3); }
+
+  .drow {
+    display: grid; grid-template-columns: 104px 1fr 58px;
+    gap: 10px; align-items: center;
+    padding: 7px 0; border-bottom: 1px solid var(--line);
+  }
+  .drow:last-of-type { border-bottom: 0; }
+  .dname { font-size: 12px; color: var(--text-2); line-height: 1.25; }
+  .dname em { display: block; font-style: normal; font-size: 10px; color: var(--text-3); }
+  .dbars { display: grid; gap: 3px; min-width: 0; }
+  .dbar { display: flex; align-items: center; gap: 6px; }
+  .dbar .track { flex: 1; height: 5px; border-radius: 3px; background: var(--surface-2); overflow: hidden; }
+  .dbar .fill { display: block; height: 100%; border-radius: 3px; }
+  .fill-a { background: var(--slot-a); }
+  .fill-b { background: var(--slot-b); }
+  .dbar .v { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 11px; color: var(--text-2); width: 44px; text-align: right; }
+  .ddelta { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 13px; text-align: right; color: var(--text); }
+  .ddelta.good { color: var(--good); }
+  .ddelta.bad { color: var(--bad); }
+  .ddelta small { display: block; font-size: 10px; color: var(--text-3); }
+  .drow.dim .dname, .drow.dim .dbars, .drow.dim .ddelta { opacity: .4; }
+
+  /* the verdict: one sentence, above the numbers */
+  .verdict {
+    margin-top: 12px; padding: 10px 12px;
+    border: 1px solid var(--line); border-radius: 8px; background: var(--surface);
+    font-size: 12px; color: var(--text-2); line-height: 1.45;
+  }
+  .verdict b { color: var(--text); font-weight: 600; }
+
+  .note {
+    margin-top: 10px; padding: 8px 10px;
+    border-radius: 6px; border: 1px solid color-mix(in srgb, var(--warn) 30%, transparent);
+    background: var(--warn-soft); color: var(--warn);
+    font-size: 11px; line-height: 1.45;
+  }
+  .note.info { border-color: var(--line-2); background: var(--surface); color: var(--text-3); }
+
+  /* ---- the full table, behind the footer button ---- */
+  .table { width: 100%; border-collapse: collapse; margin-top: 6px; }
+  .table th, .table td { padding: 4px 0; font-size: 11px; }
+  .table thead th { color: var(--text-3); font-weight: 500; text-align: right; padding-bottom: 6px; }
+  .table thead th:first-child { text-align: left; }
+  .table tbody th { text-align: left; font-weight: 400; color: var(--text-2); }
+  .table td { text-align: right; font-family: var(--font-mono); font-variant-numeric: tabular-nums; color: var(--text); }
+  .table td.delta { color: var(--accent-300); }
+  .table .sect th {
+    text-align: left; font-size: 10px; font-weight: 600; letter-spacing: 0.08em;
+    text-transform: uppercase; color: var(--text-3); padding-top: 12px; padding-bottom: 3px;
+  }
+  .table tbody tr:not(.sect) th, .table tbody tr:not(.sect) td { border-top: 1px solid var(--line); }
+
+  /* ---- footer button: the Analyze tab's "All values", same shape ---- */
+  .foot-btn {
+    width: 100%; display: flex; align-items: center; gap: 8px;
+    background: transparent; border: 0; cursor: pointer;
+    font-size: 13px; color: var(--text-2); text-align: left;
+  }
+  .foot-btn:hover { color: var(--text); }
+  .foot-btn b { color: var(--text); font-weight: 500; }
+  .foot-btn .caret { margin-left: auto; font-size: 11px; color: var(--text-3); }
+  .foot-btn .caret.up { transform: rotate(180deg); }
+
+  /* ---------------- mockup chrome (not part of the app) ---------------- */
+  .switcher {
+    position: absolute; bottom: 52px; left: 76px; z-index: 100;
+    display: flex; align-items: center; gap: 4px;
+    background: var(--surface-2); border: 1px solid var(--line-2);
+    border-radius: 20px; padding: 4px;
+  }
+  .switcher-tag { font-size: 11px; color: var(--text-3); padding: 0 8px 0 6px; text-transform: uppercase; letter-spacing: 0.02em; }
+  .state-btn {
+    padding: 4px 12px; border-radius: 16px; border: 0; background: transparent;
+    color: var(--text-2); font-size: 11px; font-weight: 500; cursor: pointer;
+  }
+  .state-btn.active { background: var(--accent-500); color: var(--accent-ink); font-weight: 600; }
+
+  /* ---------------- states ---------------- */
+  /* `s-two` / `s-one` / `s-empty` mark an element that belongs to ONE state.
+     `s-loaded` marks the blocks that show whenever anything is loaded (both
+     the two-run and the one-run state) — they carry no state marker of their
+     own, so the rules below never hide them. */
+  [data-state='one'] .s-two, [data-state='one'] .s-empty { display: none !important; }
+  [data-state='two'] .s-one, [data-state='two'] .s-empty { display: none !important; }
+  [data-state='empty'] .s-two, [data-state='empty'] .s-one, [data-state='empty'] .s-loaded { display: none !important; }
+</style>
+</head>
+<body data-state="two">
+
+<div class="app">
+
+  <!-- ============ left rail ============ -->
+  <nav class="rail" aria-label="Main">
+    <svg class="mark" viewBox="0 0 34 21" fill="none" aria-hidden="true">
+      <path d="M2 14C6 18 12 19 17 19C24 19 30 17 32 14C30 8 24 3 17 3C10 3 5 8 2 14Z"
+            stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" />
+      <path d="M2 14C7 12 12 10 17 10C23 10 28 12 32 14" stroke="currentColor" stroke-width="1" opacity="0.55" />
+    </svg>
+    <button class="nav" type="button" title="Analyze hydrostatics">
+      <svg class="nav-ico" viewBox="0 0 24 24" width="16" height="16" fill="none" aria-hidden="true">
+        <path d="M3 18h18M5 18c1.6-7 5.1-11 7-11s5.4 4 7 11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+      </svg>
+      <span>Analyze</span>
+    </button>
+    <button class="nav" type="button" aria-current="page" title="Compare two runs">
+      <svg class="nav-ico" viewBox="0 0 24 24" width="16" height="16" fill="none" aria-hidden="true">
+        <rect x="4" y="8" width="7" height="11" rx="1.2" stroke="currentColor" stroke-width="1.5" />
+        <rect x="13" y="5" width="7" height="11" rx="1.2" stroke="currentColor" stroke-width="1.5" />
+      </svg>
+      <span>Compare</span>
+    </button>
+    <div class="rail-foot">
+      <button class="nav" type="button" disabled style="opacity:.4;cursor:not-allowed" title="Settings — not available yet">
+        <svg class="nav-ico" viewBox="0 0 24 24" width="16" height="16" fill="none" aria-hidden="true">
+          <path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+          <circle cx="9" cy="7" r="2" fill="var(--rail)" stroke="currentColor" stroke-width="1.5" />
+          <circle cx="15" cy="12" r="2" fill="var(--rail)" stroke="currentColor" stroke-width="1.5" />
+          <circle cx="9" cy="17" r="2" fill="var(--rail)" stroke="currentColor" stroke-width="1.5" />
+        </svg>
+        <span>Settings</span>
+      </button>
+    </div>
+  </nav>
+
+  <!-- ============ stage ============ -->
+  <main class="main">
+    <div class="stage-wrap">
+      <div class="stage">
+
+        <!-- the two hulls on one shared water surface -->
+        <div class="stage-center s-two">
+          <svg viewBox="0 0 1000 520" width="100%" style="max-width:1000px" role="img"
+               aria-label="Two kayak hulls in side view, floating on one shared water surface; hull B sits lower than hull A">
+            <defs>
+              <!-- a kayak's side profile: deck on top, keel below, pointed at both ends -->
+              <path id="hull" d="M-310 0
+                                 C-250 -12 -170 -30 -40 -34
+                                 C110 -38 240 -26 310 0
+                                 C240 14 120 26 10 27
+                                 C-110 28 -240 16 -310 0 Z" />
+              <linearGradient id="waterFade" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stop-color="#4d9fe0" stop-opacity="0.30" />
+                <stop offset="100%" stop-color="#4d9fe0" stop-opacity="0.05" />
+              </linearGradient>
+              <clipPath id="belowWater"><rect x="0" y="262" width="1000" height="258" /></clipPath>
+            </defs>
+
+            <!-- the shared water surface, seen from the side -->
+            <rect x="0" y="262" width="1000" height="258" fill="url(#waterFade)" />
+            <line x1="0" y1="262" x2="1000" y2="262" stroke="var(--water)" stroke-width="1.5" />
+
+            <!-- hull A: blue, lighter, so it floats higher -->
+            <g transform="translate(370,250)">
+              <use href="#hull" fill="var(--slot-a)" fill-opacity="0.26" stroke="var(--slot-a)" stroke-width="1.8" stroke-linejoin="round" />
+              <path d="M-310 0 C-250 -12 -170 -30 -40 -34 C110 -38 240 -26 310 0"
+                    fill="none" stroke="var(--slot-a)" stroke-width="1.1" opacity="0.65" />
+              <ellipse cx="-6" cy="-24" rx="54" ry="7" fill="#06121b" opacity="0.5" />
+            </g>
+
+            <!-- hull B: orange, heavier, so it floats lower and overlaps A -->
+            <g transform="translate(560,282)">
+              <use href="#hull" fill="var(--slot-b)" fill-opacity="0.24" stroke="var(--slot-b)" stroke-width="1.8" stroke-linejoin="round" />
+              <path d="M-310 0 C-250 -12 -170 -30 -40 -34 C110 -38 240 -26 310 0"
+                    fill="none" stroke="var(--slot-b)" stroke-width="1.1" opacity="0.6" />
+              <ellipse cx="6" cy="-24" rx="54" ry="7" fill="#06121b" opacity="0.5" />
+            </g>
+
+            <!-- the submerged part of each hull, tinted by the water in front of it -->
+            <g clip-path="url(#belowWater)">
+              <g transform="translate(370,250)">
+                <use href="#hull" fill="#4d9fe0" fill-opacity="0.30" stroke="var(--slot-a)" stroke-width="1.8" stroke-linejoin="round" />
+              </g>
+              <g transform="translate(560,282)">
+                <use href="#hull" fill="#4d9fe0" fill-opacity="0.26" stroke="var(--slot-b)" stroke-width="1.8" stroke-linejoin="round" />
+              </g>
+            </g>
+
+            <!-- slot badges, at each hull's bow -->
+            <g font-family="ui-sans-serif, system-ui" font-size="11" font-weight="700">
+              <rect x="688" y="214" width="22" height="22" rx="5" fill="var(--slot-a)" />
+              <text x="699" y="229" fill="#06121b" text-anchor="middle">A</text>
+              <rect x="878" y="246" width="22" height="22" rx="5" fill="var(--slot-b)" />
+              <text x="889" y="261" fill="#06121b" text-anchor="middle">B</text>
+            </g>
+          </svg>
+        </div>
+
+        <!-- one hull only -->
+        <div class="stage-center s-one">
+          <svg viewBox="0 0 1000 520" width="100%" style="max-width:900px" role="img"
+               aria-label="One kayak hull floating; the second slot is empty">
+            <defs>
+              <path id="hull1" d="M-310 0
+                                 C-250 -12 -170 -30 -40 -34
+                                 C110 -38 240 -26 310 0
+                                 C240 14 120 26 10 27
+                                 C-110 28 -240 16 -310 0 Z" />
+              <linearGradient id="waterFade1" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stop-color="#4d9fe0" stop-opacity="0.30" />
+                <stop offset="100%" stop-color="#4d9fe0" stop-opacity="0.05" />
+              </linearGradient>
+              <clipPath id="belowWater1"><rect x="0" y="262" width="1000" height="258" /></clipPath>
+            </defs>
+            <rect x="0" y="262" width="1000" height="258" fill="url(#waterFade1)" />
+            <line x1="0" y1="262" x2="1000" y2="262" stroke="var(--water)" stroke-width="1.5" stroke-dasharray="8 6" />
+            <g transform="translate(480,250)">
+              <use href="#hull1" fill="var(--slot-a)" fill-opacity="0.26" stroke="var(--slot-a)" stroke-width="1.8" stroke-linejoin="round" />
+              <ellipse cx="-6" cy="-24" rx="54" ry="7" fill="#06121b" opacity="0.5" />
+            </g>
+            <g clip-path="url(#belowWater1)">
+              <g transform="translate(480,250)">
+                <use href="#hull1" fill="#4d9fe0" fill-opacity="0.30" stroke="var(--slot-a)" stroke-width="1.8" stroke-linejoin="round" />
+              </g>
+            </g>
+            <g font-family="ui-sans-serif, system-ui" font-size="11" font-weight="700">
+              <rect x="798" y="214" width="22" height="22" rx="5" fill="var(--slot-a)" />
+              <text x="809" y="229" fill="#06121b" text-anchor="middle">A</text>
+            </g>
+          </svg>
+        </div>
+
+        <!-- nothing loaded -->
+        <div class="stage-empty s-empty">
+          <div class="card">
+            <h3>Two runs, one question</h3>
+            <p>Drop a hull into slot A and another into slot B — or load two saved runs.</p>
+          </div>
+        </div>
+
+        <div class="legend s-two">
+          <div class="legend-item"><i class="sw sw-a"></i><b>A</b> kayak-a.stl<span class="lg-sub">draft 134.3 mm</span></div>
+          <div class="legend-item"><i class="sw sw-b"></i><b>B</b> kayak-b.stl<span class="lg-sub">draft 149.6 mm</span></div>
+        </div>
+        <div class="legend s-one">
+          <div class="legend-item"><i class="sw sw-a"></i><b>A</b> kayak-a.stl<span class="lg-sub">draft 134.3 mm</span></div>
+        </div>
+        <div class="water-note s-two">one shared water surface</div>
+      </div>
+
+      <div class="foot">
+        <div class="slot s-two"><i class="sw sw-a"></i><b>A</b><span>kayak-a.stl</span><span>2714 × 613 × 325 mm</span></div>
+        <div class="slot s-two"><i class="sw sw-b"></i><b>B</b><span>kayak-b.stl</span><span>2860 × 604 × 338 mm</span></div>
+        <div class="slot s-one"><i class="sw sw-a"></i><b>A</b><span>kayak-a.stl</span><span>2714 × 613 × 325 mm</span></div>
+        <span class="slot s-empty">Nothing loaded</span>
+        <span class="spacer"></span>
+        <button class="ghost s-two" type="button">Swap A / B</button>
+        <button class="ghost s-loaded" type="button">Fit view</button>
+      </div>
+    </div>
+  </main>
+
+  <!-- ============ right panel ============ -->
+  <aside class="panel">
+    <div class="panel-scroll">
+
+      <!-- conditions: the two slots -->
+      <p class="label s-loaded">Conditions</p>
+      <div class="slots s-two">
+        <div class="slot-card">
+          <div class="slot-head">
+            <span class="badge badge-a">A</span><b>kayak-a.stl</b><span class="spacer"></span>
+            <button class="x" type="button" title="Clear slot A">✕</button>
+          </div>
+          <div class="field">
+            <label for="aw">Weight</label>
+            <div class="input-wrap"><input id="aw" value="75" /><span class="unit">kg</span></div>
+          </div>
+          <div class="field">
+            <label for="al">LCG from bow</label>
+            <div class="input-wrap"><input id="al" value="52" /><span class="unit">%</span></div>
+          </div>
+          <div class="field">
+            <label for="ak">KG above keel</label>
+            <div class="input-wrap"><input id="ak" value="280" /><span class="unit">mm</span></div>
+          </div>
+          <div class="heel-toggle"><span class="switch"></span><span>Fixed heel</span></div>
+        </div>
+
+        <div class="slot-card">
+          <div class="slot-head">
+            <span class="badge badge-b">B</span><b>kayak-b.stl</b><span class="spacer"></span>
+            <button class="x" type="button" title="Clear slot B">✕</button>
+          </div>
+          <div class="field">
+            <label for="bw">Weight</label>
+            <div class="input-wrap"><input id="bw" value="95" /><span class="unit">kg</span></div>
+          </div>
+          <div class="field">
+            <label for="bl">LCG from bow</label>
+            <div class="input-wrap"><input id="bl" value="55" /><span class="unit">%</span></div>
+          </div>
+          <div class="field">
+            <label for="bk">KG above keel</label>
+            <div class="input-wrap"><input id="bk" value="300" /><span class="unit">mm</span></div>
+          </div>
+          <div class="heel-toggle"><span class="switch"></span><span>Fixed heel</span></div>
+        </div>
+      </div>
+
+      <!-- one slot: B is a drop target -->
+      <div class="slots s-one">
+        <div class="slot-card">
+          <div class="slot-head">
+            <span class="badge badge-a">A</span><b>kayak-a.stl</b><span class="spacer"></span>
+            <button class="x" type="button" title="Clear slot A">✕</button>
+          </div>
+          <div class="field">
+            <label for="aw1">Weight</label>
+            <div class="input-wrap"><input id="aw1" value="75" /><span class="unit">kg</span></div>
+          </div>
+          <div class="field">
+            <label for="al1">LCG from bow</label>
+            <div class="input-wrap"><input id="al1" value="52" /><span class="unit">%</span></div>
+          </div>
+          <div class="field">
+            <label for="ak1">KG above keel</label>
+            <div class="input-wrap"><input id="ak1" value="280" /><span class="unit">mm</span></div>
+          </div>
+        </div>
+        <div class="slot-card">
+          <div class="slot-head">
+            <span class="badge badge-b">B</span><b>empty</b>
+          </div>
+          <div class="slot-empty"><b>Drop a hull here</b>or load a saved run</div>
+        </div>
+      </div>
+
+      <!-- nothing loaded -->
+      <div class="s-empty">
+        <p class="label">Conditions</p>
+        <div class="slots">
+          <div class="slot-card">
+            <div class="slot-head"><span class="badge badge-a">A</span><b>empty</b></div>
+            <div class="slot-empty"><b>Drop a hull here</b>STL in mm, closed deck</div>
+          </div>
+          <div class="slot-card">
+            <div class="slot-head"><span class="badge badge-b">B</span><b>empty</b></div>
+            <div class="slot-empty"><b>Drop a hull here</b>STL in mm, closed deck</div>
+          </div>
+        </div>
+        <p class="note info">Nothing to compare yet. Every solve on the Analyze tab is saved here as a run — pick two of them, or drop two hulls in.</p>
+      </div>
+
+      <!-- saved runs, collapsed by default -->
+      <div class="runs s-loaded">
+        <div class="runs-head" id="runsHead">
+          <span class="caret">▸</span>
+          <span>Saved runs</span>
+          <span class="count">4 in this browser</span>
+        </div>
+        <div class="runs-list" id="runsList" hidden>
+          <div class="run">
+            <div class="name"><b>75 kg · LCG 52 %</b><span>kayak-a · a3f19c</span></div>
+            <button class="load" style="background:var(--slot-a)" type="button">A</button>
+            <button class="load" style="background:var(--slot-b)" type="button">B</button>
+            <button class="del" type="button">✕</button>
+          </div>
+          <div class="run">
+            <div class="name"><b>95 kg · LCG 55 %</b><span>kayak-b · 71c04d</span></div>
+            <button class="load" style="background:var(--slot-a)" type="button">A</button>
+            <button class="load" style="background:var(--slot-b)" type="button">B</button>
+            <button class="del" type="button">✕</button>
+          </div>
+          <div class="run">
+            <div class="name"><b>60 kg · KG 250</b><span>kayak-a · 5b8e02</span></div>
+            <button class="load" style="background:var(--slot-a)" type="button">A</button>
+            <button class="load" style="background:var(--slot-b)" type="button">B</button>
+            <button class="del" type="button">✕</button>
+          </div>
+          <div class="run">
+            <div class="name"><b>75 kg · heel 12°</b><span>kayak-a · e29b71</span></div>
+            <button class="load" style="background:var(--slot-a)" type="button">A</button>
+            <button class="load" style="background:var(--slot-b)" type="button">B</button>
+            <button class="del" type="button">✕</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- the differences: the point of the tab -->
+      <div class="diffs s-loaded">
+        <div class="diffs-head">
+          <h2>Difference</h2>
+          <span class="spacer"></span>
+          <span class="hint">A − B</span>
+        </div>
+
+        <div class="drow s-two">
+          <span class="dname">Draft<em>deeper = lower</em></span>
+          <div class="dbars">
+            <div class="dbar"><span class="track"><i class="fill fill-a" style="width:89.8%"></i></span><span class="v">134.3</span></div>
+            <div class="dbar"><span class="track"><i class="fill fill-b" style="width:100%"></i></span><span class="v">149.6</span></div>
+          </div>
+          <span class="ddelta">−15.3<small>mm</small></span>
+        </div>
+
+        <div class="drow s-two">
+          <span class="dname">Trim<em>bow up / down</em></span>
+          <div class="dbars">
+            <div class="dbar"><span class="track"><i class="fill fill-a" style="width:57%"></i></span><span class="v">+2.4°</span></div>
+            <div class="dbar"><span class="track"><i class="fill fill-b" style="width:43%"></i></span><span class="v">−1.8°</span></div>
+          </div>
+          <span class="ddelta">+4.2<small>deg</small></span>
+        </div>
+
+        <div class="drow s-two">
+          <span class="dname">Initial stability<em>higher = stiffer</em></span>
+          <div class="dbars">
+            <div class="dbar"><span class="track"><i class="fill fill-a" style="width:100%"></i></span><span class="v">97.8</span></div>
+            <div class="dbar"><span class="track"><i class="fill fill-b" style="width:62.6%"></i></span><span class="v">61.2</span></div>
+          </div>
+          <span class="ddelta good">+36.6<small>mm</small></span>
+        </div>
+
+        <div class="drow s-two">
+          <span class="dname">GZ peak<em>righting arm</em></span>
+          <div class="dbars">
+            <div class="dbar"><span class="track"><i class="fill fill-a" style="width:100%"></i></span><span class="v">21.1</span></div>
+            <div class="dbar"><span class="track"><i class="fill fill-b" style="width:87.2%"></i></span><span class="v">18.4</span></div>
+          </div>
+          <span class="ddelta good">+2.7<small>mm</small></span>
+        </div>
+
+        <div class="drow s-two">
+          <span class="dname">Vanishing angle<em>higher = safer</em></span>
+          <div class="dbars">
+            <div class="dbar"><span class="track"><i class="fill fill-a" style="width:100%"></i></span><span class="v">39.3°</span></div>
+            <div class="dbar"><span class="track"><i class="fill fill-b" style="width:89.3%"></i></span><span class="v">35.1°</span></div>
+          </div>
+          <span class="ddelta good">+4.2<small>deg</small></span>
+        </div>
+
+        <div class="drow s-two">
+          <span class="dname">Waterline length<em>glide</em></span>
+          <div class="dbars">
+            <div class="dbar"><span class="track"><i class="fill fill-a" style="width:97.8%"></i></span><span class="v">2161.7</span></div>
+            <div class="dbar"><span class="track"><i class="fill fill-b" style="width:100%"></i></span><span class="v">2210.4</span></div>
+          </div>
+          <span class="ddelta">−48.7<small>mm</small></span>
+        </div>
+
+        <!-- one run: A's numbers, B waits -->
+        <div class="s-one">
+          <div class="drow dim">
+            <span class="dname">Draft<em>deeper = lower</em></span>
+            <div class="dbars">
+              <div class="dbar"><span class="track"><i class="fill fill-a" style="width:100%"></i></span><span class="v">134.3</span></div>
+              <div class="dbar"><span class="track"></span><span class="v">—</span></div>
+            </div>
+            <span class="ddelta">—</span>
+          </div>
+          <div class="drow dim">
+            <span class="dname">Initial stability<em>higher = stiffer</em></span>
+            <div class="dbars">
+              <div class="dbar"><span class="track"><i class="fill fill-a" style="width:100%"></i></span><span class="v">97.8</span></div>
+              <div class="dbar"><span class="track"></span><span class="v">—</span></div>
+            </div>
+            <span class="ddelta">—</span>
+          </div>
+          <p class="note info">A is solved. Load a second run into slot B and the difference, the bars and the verdict all fill in.</p>
+        </div>
+
+        <div class="verdict s-two">
+          <b>A floats stiffer.</b> Initial stability is 36.6 mm higher and the righting arm peaks
+          2.7 mm stronger, but A sits 15.3 mm shallower. B carries 20 kg more, so it is the
+          heavier boat — the two are not the same hull under two loads.
+        </div>
+
+        <div class="note s-two">
+          Different conditions: weight (75 kg vs 95 kg), LCG (52 % vs 55 %), KG (280 mm vs 300 mm).
+          The runs are not directly comparable.
+        </div>
+      </div>
+
+      <!-- the full table, behind the footer button -->
+      <div id="allTable" hidden>
+        <table class="table">
+          <thead>
+            <tr>
+              <th scope="col">Metric</th>
+              <th scope="col" style="color:var(--slot-a)">A</th>
+              <th scope="col" style="color:var(--slot-b)">B</th>
+              <th scope="col">Δ</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr class="sect"><th colspan="4">Equilibrium</th></tr>
+            <tr><th scope="row">Draft (center)</th><td>134.3 mm</td><td>149.6 mm</td><td class="delta">−15.3 mm</td></tr>
+            <tr><th scope="row">Trim</th><td>+2.40°</td><td>−1.80°</td><td class="delta">+4.20°</td></tr>
+            <tr><th scope="row">Displacement</th><td>75.0 kg</td><td>95.0 kg</td><td class="delta">−20.0 kg</td></tr>
+            <tr><th scope="row">Waterline length</th><td>2161.7 mm</td><td>2210.4 mm</td><td class="delta">−48.7 mm</td></tr>
+            <tr><th scope="row">Waterline beam</th><td>612.7 mm</td><td>618.9 mm</td><td class="delta">−6.2 mm</td></tr>
+            <tr><th scope="row">LCG X</th><td>+27.2 mm</td><td>−4.6 mm</td><td class="delta">+31.8 mm</td></tr>
+            <tr><th scope="row">LCB X</th><td>+16.4 mm</td><td>−18.2 mm</td><td class="delta">+34.6 mm</td></tr>
+            <tr><th scope="row">LCB − LCG offset</th><td>2.7 mm</td><td>1.4 mm</td><td class="delta">+1.3 mm</td></tr>
+            <tr><th scope="row">Bow freeboard</th><td>187.4 mm</td><td>172.1 mm</td><td class="delta">+15.3 mm</td></tr>
+            <tr><th scope="row">Stern freeboard</th><td>44.5 mm</td><td>36.8 mm</td><td class="delta">+7.7 mm</td></tr>
+            <tr class="sect"><th colspan="4">Form coefficients</th></tr>
+            <tr><th scope="row">Block (Cb)</th><td>0.4801</td><td>0.4936</td><td class="delta">−0.0135</td></tr>
+            <tr><th scope="row">Prismatic (Cp)</th><td>0.5658</td><td>0.5812</td><td class="delta">−0.0154</td></tr>
+            <tr><th scope="row"> Midship (Cm)</th><td>0.8521</td><td>0.8702</td><td class="delta">−0.0181</td></tr>
+            <tr><th scope="row">Waterplane (Cwp)</th><td>0.7837</td><td>0.7991</td><td class="delta">−0.0154</td></tr>
+            <tr><th scope="row">Tonnes per cm immersion</th><td>0.0104</td><td>0.0107</td><td class="delta">−0.0003</td></tr>
+            <tr class="sect"><th colspan="4">Stability</th></tr>
+            <tr><th scope="row">KB (keel→buoyancy)</th><td>78.8 mm</td><td>86.4 mm</td><td class="delta">−7.6 mm</td></tr>
+            <tr><th scope="row">BM (metacentric radius)</th><td>299.0 mm</td><td>291.0 mm</td><td class="delta">+8.0 mm</td></tr>
+            <tr><th scope="row">KM (keel→metacenter)</th><td>377.8 mm</td><td>377.4 mm</td><td class="delta">+0.4 mm</td></tr>
+            <tr><th scope="row">KG (keel→gravity)</th><td>280.0 mm</td><td>300.0 mm</td><td class="delta">−20.0 mm</td></tr>
+            <tr><th scope="row">Initial stability (GM)</th><td>97.8 mm</td><td>61.2 mm</td><td class="delta">+36.6 mm</td></tr>
+            <tr><th scope="row">GZ peak</th><td>21.1 mm @ 20°</td><td>18.4 mm @ 22°</td><td class="delta">+2.7 mm</td></tr>
+            <tr><th scope="row">Vanishing angle</th><td>39.3°</td><td>35.1°</td><td class="delta">+4.2°</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="panel-foot s-loaded">
+      <button class="foot-btn" type="button" id="footBtn" aria-expanded="false">
+        <b id="footLabel">All metrics</b>
+        <span>the full 23-row table</span>
+        <span class="caret">▾</span>
+      </button>
+    </div>
+  </aside>
+
+  <!-- mockup chrome -->
+  <div class="switcher">
+    <span class="switcher-tag">state</span>
+    <button class="state-btn active" type="button" data-state="two">Two runs</button>
+    <button class="state-btn" type="button" data-state="one">One run</button>
+    <button class="state-btn" type="button" data-state="empty">Empty</button>
+  </div>
+
+</div>
+
+<script>
+  // the footer button: the Analyze tab's "All values", same shape
+  const footBtn = document.getElementById('footBtn')
+  const footLabel = document.getElementById('footLabel')
+  const caret = footBtn.querySelector('.caret')
+  const table = document.getElementById('allTable')
+  footBtn.addEventListener('click', () => {
+    const open = table.hasAttribute('hidden')
+    if (open) table.removeAttribute('hidden')
+    else table.setAttribute('hidden', '')
+    footBtn.setAttribute('aria-expanded', String(open))
+    footLabel.textContent = open ? 'Hide metrics' : 'All metrics'
+    caret.classList.toggle('up', open)
+  })
+
+  // saved runs: a disclosure, collapsed so it never pushes the difference down
+  const runs = document.querySelector('.runs')
+  const runsHead = document.getElementById('runsHead')
+  const runsList = document.getElementById('runsList')
+  runsHead.addEventListener('click', () => {
+    const open = runsList.hasAttribute('hidden')
+    if (open) runsList.removeAttribute('hidden')
+    else runsList.setAttribute('hidden', '')
+    runs.classList.toggle('open', open)
+  })
+
+  // mockup chrome: switch the tab's state
+  document.querySelectorAll('.state-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.state-btn').forEach((b) => b.classList.remove('active'))
+      btn.classList.add('active')
+      document.body.dataset.state = btn.dataset.state
+    })
+  })
+</script>
+
+</body>
+</html>
