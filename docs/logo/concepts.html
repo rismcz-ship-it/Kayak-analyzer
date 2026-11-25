@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>kayak-analyzer — 8 mark directions</title>
+<style>
+  :root { --ink:#12181F; --paper:#EEF2F5; --accent:#0FA3B5; --accent-dark:#2EC4D6; }
+  * { box-sizing:border-box; margin:0; }
+  body { font-family:"Segoe UI","Helvetica Neue",Arial,sans-serif; background:#E9EBEE; color:var(--ink); padding:40px; max-width:1060px; }
+  h1 { font-size:20px; font-weight:600; letter-spacing:-0.4px; margin-bottom:4px; }
+  .sub { font-size:13px; opacity:.65; margin-bottom:26px; }
+  h2 { font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:1.2px; opacity:.55; margin:30px 0 12px; }
+  .strip { display:flex; flex-wrap:wrap; gap:10px; align-items:flex-end; background:#fff; border-radius:14px; padding:16px; }
+  .tile { display:flex; flex-direction:column; align-items:center; gap:6px; }
+  .tile .box { background:#fff; border:1px solid #e3e6ea; border-radius:8px; display:flex; align-items:center; justify-content:center; }
+  .cap { font-size:10px; opacity:.55; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(470px,1fr)); gap:14px; }
+  .card { background:#fff; border-radius:14px; padding:18px; display:flex; gap:18px; }
+  .renders { display:flex; flex-direction:column; gap:8px; align-items:center; }
+  .panel { border-radius:10px; display:flex; align-items:center; justify-content:center; }
+  .light { background:#F4F6F8; }
+  .dark  { background:var(--ink); }
+  .mid   { background:#2A3138; }
+  .meta { flex:1; }
+  .meta h3 { font-size:14px; font-weight:600; margin-bottom:4px; }
+  .meta .why { font-size:12px; line-height:1.45; opacity:.8; margin-bottom:8px; }
+  .meta .risk { font-size:11px; line-height:1.4; opacity:.55; }
+  .meta b { font-weight:600; opacity:.8; }
+  .note { font-size:12px; opacity:.65; margin-top:18px; line-height:1.5; }
+</style>
+</head>
+<body>
+<h1>kayak-analyzer — 8 mark directions</h1>
+<p class="sub">The v1 hull silhouette is set aside. Same approved style (ink / paper / teal, geometric, grid-built); only the <b>shape idea</b> changes. All drawn on a 120×120 grid, all stroke-safe for small sizes.</p>
+
+<h2>The 16-pixel survival strip (favicon first — this is the test that kills marks)</h2>
+<div class="strip" id="strip"></div>
+
+<h2>Directions</h2>
+<div class="grid" id="grid"></div>
+
+<p class="note">Next: you shortlist 2–3, we stress them (busy ground, print, mono, embroidery-ish scenarios) and refine the winners on the grid — the way the report's protocol does it.</p>
+
+<script>
+const INK="#12181F", PAPER="#EEF2F5", TEAL="#0FA3B5", TEALD="#2EC4D6";
+const hull = "M26 24 L46 24 Q60 34 74 24 L94 24 L94 78 Q94 100 74 100 L46 100 Q26 100 26 78 Z";
+
+const marks = {
+  A: { name:"A — Metacentric arm (G / M / B)", why:"The stability triad itself: G above the waterline, B in the displaced volume, M above G on the stem line. It is the number this app exists to report (GM), and no other category uses it.", risk:"Small circles and thin stems — weakest of the eight at favicon size.", draw:(c)=>`
+    <line x1="60" y1="88" x2="60" y2="64" stroke="${c.TEAL}" stroke-width="8" stroke-linecap="round"/>
+    <line x1="22" y1="66" x2="98" y2="66" stroke="${c.INK}" stroke-width="8" stroke-linecap="round"/>
+    <line x1="60" y1="88" x2="60" y2="30" stroke="${c.INK}" stroke-width="6" stroke-linecap="round"/>
+    <circle cx="60" cy="84" r="9" fill="none" stroke="${c.INK}" stroke-width="6"/>
+    <circle cx="60" cy="46" r="9" fill="${c.INK}"/>
+    <circle cx="60" cy="30" r="5" fill="${c.INK}"/>` },
+  B: { name:"B — The GZ curve", why:"The exact righting-arm curve the app charts, drawn as one bold arc off a baseline: rise, peak, recovery. Instantly meaningful to anyone who has opened the GZ tab; meaningless to a random sibling — pure category signal.", risk:"Peak position varies per hull, so the curve is symbolic, not data-accurate — fine for a mark.", draw:(c)=>`
+    <line x1="18" y1="98" x2="102" y2="98" stroke="${c.INK}" stroke-width="6" stroke-linecap="round"/>
+    <path d="M22 98 C 38 98 46 56 62 34 C 78 46 86 86 98 98" fill="none" stroke="${c.TEAL}" stroke-width="11" stroke-linecap="round"/>
+    <circle cx="62" cy="34" r="7" fill="${c.INK}"/>` },
+  C: { name:"C — Heeled section", why:"The solver's two inputs in one picture: a heeled waterline cutting a symmetric section, starboard side down — exactly what the heel slider does. Asymmetry makes it impossible to mistake for a generic boat icon.", risk:"Handedness (heel to the right) is arbitrary — and the app itself says port/starboard flips with the mesh.", draw:(c)=>`
+    <clipPath id="cpC"><path d="${hull}"/></clipPath>
+    <path d="${hull}" fill="${c.INK}"/>
+    <polygon points="0,38 120,92 120,120 0,120" fill="${c.TEAL}" clip-path="url(#cpC)"/>
+    <line x1="6" y1="42" x2="114" y2="90" stroke="${c.INK}" stroke-width="7" stroke-linecap="round"/>` },
+  D: { name:"D — Planform (hull from above)", why:"The kayak silhouette everyone recognises — plan view, pointed ends, the cockpit slot cut out of the deck — with the waterplane through the middle. The most literal, most legible option.", risk:"Closest in family to the rejected v1 shape; a lens is safer than a bowl but still 'a boat'.", draw:(c)=>`
+    <clipPath id="cpD"><path d="M22 60 C 30 34 90 34 98 60 C 90 86 30 86 22 60 Z"/></clipPath>
+    <path d="M22 60 C 30 34 90 34 98 60 C 90 86 30 86 22 60 Z M54 44 H66 V58 H54 Z" fill-rule="evenodd" fill="${c.INK}"/>
+    <rect x="0" y="60" width="120" height="60" fill="${c.TEAL}" clip-path="url(#cpD)"/>
+    <line x1="10" y1="60" x2="110" y2="60" stroke="${c.INK}" stroke-width="6" stroke-linecap="round"/>` },
+  E: { name:"E — Monogram 'ka'", why:"Letterforms with the waterplane struck through them: the typographic route. The most versatile member of any logo system (survives 16 px trivially, scales to signage, works in one color by definition).", risk:"Least physics; a wordmark grants no category exclusivity — but it never breaks.", draw:(c)=>`
+    <line x1="36" y1="30" x2="36" y2="90" stroke="${c.INK}" stroke-width="10" stroke-linecap="round"/>
+    <line x1="36" y1="54" x2="62" y2="30" stroke="${c.INK}" stroke-width="9" stroke-linecap="round"/>
+    <line x1="36" y1="62" x2="62" y2="90" stroke="${c.INK}" stroke-width="9" stroke-linecap="round"/>
+    <circle cx="82" cy="62" r="15" fill="none" stroke="${c.INK}" stroke-width="9"/>
+    <line x1="97" y1="48" x2="97" y2="90" stroke="${c.INK}" stroke-width="9" stroke-linecap="round"/>
+    <line x1="24" y1="62" x2="100" y2="62" stroke="${c.TEAL}" stroke-width="7" stroke-linecap="round"/>` },
+  F: { name:"F — LCB / LCG dimension pair", why:"A drafting dimension with two centres on it: the LCG (solid) and the LCB (ring), the accent span between them being the residual this app reports to the tenth of a millimetre. Engineering-document language, straight from the results panel.", risk:"Reads as 'measurement' generically unless paired with the wordmark.", draw:(c)=>`
+    <line x1="24" y1="60" x2="96" y2="60" stroke="${c.INK}" stroke-width="6" stroke-linecap="round"/>
+    <line x1="24" y1="52" x2="24" y2="68" stroke="${c.INK}" stroke-width="6" stroke-linecap="round"/>
+    <line x1="96" y1="52" x2="96" y2="68" stroke="${c.INK}" stroke-width="6" stroke-linecap="round"/>
+    <line x1="54" y1="60" x2="66" y2="60" stroke="${c.TEAL}" stroke-width="10" stroke-linecap="round"/>
+    <circle cx="54" cy="60" r="9" fill="${c.INK}"/>
+    <circle cx="66" cy="60" r="9" fill="none" stroke="${c.TEAL}" stroke-width="6"/>` },
+  G: { name:"G — Section at the waterplane", why:"The refined take on v1's idea: the true sectional shape (max beam at the waterline, spindle below) with the deck slot cut out — a section, not a traced outline. Simple, physics-true, elegant.", risk:"Shares v1's 'floating object' grammar — if the shape family itself was the problem, this is out.", draw:(c)=>`
+    <path d="M28 60 C 28 36 46 24 60 24 C 74 24 92 36 92 60 C 92 84 74 96 60 96 C 46 96 28 84 28 60 Z M50 30 H70 V40 H50 Z" fill-rule="evenodd" fill="${c.INK}"/>
+    <clipPath id="cpG"><path d="M28 60 C 28 36 46 24 60 24 C 74 24 92 36 92 60 C 92 84 74 96 60 96 C 46 96 28 84 28 60 Z"/></clipPath>
+    <rect x="0" y="54" width="120" height="66" fill="${c.TEAL}" clip-path="url(#cpG)"/>
+    <line x1="16" y1="54" x2="104" y2="54" stroke="${c.INK}" stroke-width="6" stroke-linecap="round"/>` },
+  H: { name:"H — The solver's frame (X / Y / Z)", why:"A bare coordinate triad — bow, beam, up — the frame every number in the app is reported in. Says '3D solver, real axes' without drawing a hull at all.", risk:"Reads 'engineering tool' more than 'kayak'; the least nautical option.", draw:(c)=>`
+    <line x1="38" y1="84" x2="94" y2="84" stroke="${c.INK}" stroke-width="7" stroke-linecap="round"/>
+    <path d="M84 78 L94 84 L84 90" fill="none" stroke="${c.INK}" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+    <line x1="38" y1="84" x2="38" y2="28" stroke="${c.TEAL}" stroke-width="7" stroke-linecap="round"/>
+    <path d="M32 38 L38 28 L44 38" fill="none" stroke="${c.TEAL}" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+    <line x1="38" y1="84" x2="14" y2="110" stroke="${c.INK}" stroke-width="5" stroke-linecap="round"/>
+    <path d="M8 104 L14 110 L18 101" fill="none" stroke="${c.INK}" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+    <rect x="33" y="79" width="10" height="10" fill="${c.INK}"/>` }
+};
+
+const v1 = `<line x1="2" y1="48" x2="118" y2="48" stroke="${INK}" stroke-width="4" stroke-linecap="round"/>
+  <path d="M10 22 L44 22 Q60 33 76 22 L110 22 C108 44 86 66 60 66 C34 66 12 44 10 22 Z" fill="${INK}" stroke="${INK}" stroke-width="3" stroke-linejoin="round"/>
+  <clipPath id="cpV1"><path d="M10 22 L44 22 Q60 33 76 22 L110 22 C108 44 86 66 60 66 C34 66 12 44 10 22 Z"/></clipPath>
+  <rect x="0" y="48" width="120" height="40" fill="${TEAL}" clip-path="url(#cpV1)"/>`;
+
+function svg(inner, vb, colors, size) {
+  const [vx, vy, vw, vh] = vb.split(" ").map(Number);
+  return `<svg width="${size}" height="${Math.round(size * vh / vw)}" viewBox="${vb}" fill="none" xmlns="http://www.w3.org/2000/svg">${inner(colors)}</svg>`;
+}
+
+const strip = document.getElementById("strip");
+const grid = document.getElementById("grid");
+
+// v1 reference
+strip.insertAdjacentHTML("beforeend", `<div class="tile"><div class="box">${svg(()=>v1,"0 0 120 84",{},16)}</div><span class="cap">v1 @16px (set aside)</span></div>`);
+
+for (const [k, m] of Object.entries(marks)) {
+  const lightC = {INK, PAPER, TEAL}, darkC = {INK:PAPER, PAPER:INK, TEAL:TEALD};
+  strip.insertAdjacentHTML("beforeend", `<div class="tile"><div class="box">${svg(m.draw,"0 0 120 120",lightC,16)}</div><span class="cap">${k} @16px</span></div>`);
+  grid.insertAdjacentHTML("beforeend", `
+    <div class="card">
+      <div class="renders">
+        <div class="panel light">${svg(m.draw,"0 0 120 120",lightC,120)}</div>
+        <div class="panel dark">${svg(m.draw,"0 0 120 120",darkC,120)}</div>
+        <div class="panel light">${svg(m.draw,"0 0 120 120",{INK:INK,PAPER:PAPER,TEAL:INK},120)}</div>
+      </div>
+      <div class="meta">
+        <h3>${m.name}</h3>
+        <p class="why">${m.why}</p>
+        <p class="risk"><b>Watch out:</b> ${m.risk}</p>
+        <p class="cap" style="margin-top:8px">light · dark · one-colour</p>
+      </div>
+    </div>`);
+}
+</script>
+</body>
+</html>

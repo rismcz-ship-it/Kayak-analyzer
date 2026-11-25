@@ -1,0 +1,728 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Analyze — Control</title>
+<style>
+  :root {
+    --bg: #f6f7f9;
+    --card: #ffffff;
+    --ink: #111827;
+    --ink-2: #4b5563;
+    --ink-3: #9ca3af;
+    --line: #e5e7eb;
+    --line-2: #d1d5db;
+    --accent: #2563eb;
+    --accent-soft: #eff6ff;
+    --mono: ui-monospace, "Cascadia Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+    --sans: ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body { height: 100%; margin: 0; }
+
+  body {
+    overflow: hidden;
+    background: var(--bg);
+    color: var(--ink);
+    font: 13px/1.45 var(--sans);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .app { height: 100%; display: flex; }
+
+  /* ---------- sidebar ---------- */
+
+  .side {
+    flex: none;
+    width: 224px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 18px 14px;
+    background: var(--card);
+    border-right: 1px solid var(--line);
+  }
+
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 0 8px 18px;
+    font-size: 13px;
+    font-weight: 600;
+  }
+
+  .brand .mark {
+    width: 22px;
+    height: 22px;
+    border-radius: 7px;
+    background: linear-gradient(135deg, #2563eb, #60a5fa);
+  }
+
+  .brand small {
+    display: block;
+    font-size: 9px;
+    font-weight: 400;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+
+  nav.nav { display: flex; flex-direction: column; gap: 2px; }
+
+  nav.nav a {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    height: 34px;
+    padding: 0 10px;
+    border-radius: 9px;
+    text-decoration: none;
+    color: var(--ink-2);
+    font-size: 12.5px;
+  }
+
+  nav.nav a[aria-current="page"] { background: var(--accent-soft); color: var(--accent); font-weight: 500; }
+  nav.nav a:hover { background: #f3f4f6; }
+
+  .nav-k {
+    width: 16px;
+    height: 16px;
+    border: 1.5px solid currentColor;
+    border-radius: 4px;
+    opacity: 0.75;
+  }
+
+  .side .section {
+    margin-top: 20px;
+    padding: 0 10px 6px;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+
+  .me {
+    margin-top: auto;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+  }
+
+  .me .av {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: #dbeafe;
+    color: #1d4ed8;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: 600;
+  }
+
+  .me .n { font-size: 12px; font-weight: 500; }
+  .me .r { font-size: 10.5px; color: var(--ink-3); }
+
+  /* ---------- main ---------- */
+
+  .main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+
+  .top {
+    flex: none;
+    height: 62px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 0 24px;
+    background: var(--card);
+    border-bottom: 1px solid var(--line);
+  }
+
+  .crumbs { display: flex; align-items: baseline; gap: 8px; font-size: 12.5px; color: var(--ink-3); }
+  .crumbs b { font-weight: 600; color: var(--ink); }
+  .crumbs i { font-style: normal; }
+
+  .search {
+    margin-left: 12px;
+    flex: 1;
+    max-width: 300px;
+    height: 34px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 12px;
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    background: var(--bg);
+    color: var(--ink-3);
+    font-size: 12px;
+  }
+
+  .top .spacer { margin-left: auto; }
+
+  .pill {
+    height: 26px;
+    padding: 0 10px;
+    display: inline-flex;
+    align-items: center;
+    border-radius: 999px;
+    background: var(--accent-soft);
+    color: var(--accent);
+    font-size: 10.5px;
+    font-weight: 500;
+  }
+
+  .btn {
+    height: 34px;
+    padding: 0 16px;
+    border: 1px solid var(--line-2);
+    border-radius: 9px;
+    background: var(--card);
+    color: var(--ink-2);
+    font: 500 12px var(--sans);
+    cursor: pointer;
+  }
+
+  .btn:hover { background: #f9fafb; }
+
+  .btn.primary {
+    border-color: var(--accent);
+    background: var(--accent);
+    color: #fff;
+  }
+
+  .btn.primary:hover { background: #1d4ed8; }
+
+  /* ---------- content ---------- */
+
+  .content { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 18px; padding: 20px 24px; }
+
+  .col-main { min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 16px; }
+
+  .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+
+  .kpi {
+    padding: 14px 16px;
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
+  }
+
+  .kpi .k { display: flex; align-items: center; justify-content: space-between; font-size: 11.5px; color: var(--ink-2); }
+
+  .kpi .delta {
+    font-size: 10px;
+    font-weight: 500;
+    color: #047857;
+    background: #ecfdf5;
+    border-radius: 999px;
+    padding: 1px 7px;
+  }
+
+  .kpi .v {
+    margin-top: 8px;
+    font-family: var(--mono);
+    font-variant-numeric: tabular-nums;
+    font-size: 26px;
+    line-height: 1;
+    letter-spacing: -0.03em;
+  }
+
+  .kpi .v small { font-size: 11px; color: var(--ink-3); margin-left: 4px; letter-spacing: 0; }
+
+  /* render card */
+
+  .card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
+  }
+
+  .render { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+
+  .render-head {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 13px 16px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .render-head h2 { margin: 0; font-size: 13px; font-weight: 600; }
+  .render-head .sub { font-size: 11.5px; color: var(--ink-3); }
+  .render-head .spacer { margin-left: auto; }
+
+  .ghost {
+    height: 28px;
+    padding: 0 10px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--card);
+    color: var(--ink-2);
+    font: 11.5px var(--sans);
+    cursor: pointer;
+  }
+
+  .ghost:hover { background: #f9fafb; }
+
+  .stage { position: relative; flex: 1; min-height: 0; background: linear-gradient(180deg, #fbfcfe 0%, #f2f5fa 100%); }
+
+  .stage svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+
+  .stage .tag {
+    position: absolute;
+    left: 16px;
+    bottom: 14px;
+    display: flex;
+    gap: 8px;
+  }
+
+  .chip {
+    height: 24px;
+    padding: 0 10px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.9);
+    border: 1px solid var(--line);
+    font-size: 10.5px;
+    color: var(--ink-2);
+  }
+
+  .chip b { font-weight: 600; color: var(--ink); font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+  /* right rail */
+
+  .rail { min-height: 0; display: flex; flex-direction: column; gap: 16px; }
+
+  .rail .card { padding: 15px 16px; }
+
+  .rail h3 {
+    margin: 0 0 12px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+
+  .fields { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+  .f { display: flex; flex-direction: column; gap: 5px; }
+
+  .f label { font-size: 11px; color: var(--ink-2); }
+
+  .f input {
+    height: 32px;
+    padding: 0 9px;
+    border: 1px solid var(--line-2);
+    border-radius: 8px;
+    background: var(--card);
+    color: var(--ink);
+    font: 12.5px var(--mono);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .f input:focus { outline: 2px solid #bfdbfe; border-color: var(--accent); }
+
+  .u { font-size: 10px; color: var(--ink-3); }
+
+  .run { margin-top: 14px; display: flex; flex-direction: column; gap: 8px; }
+
+  .run .btn { width: 100%; }
+
+  .runs { display: flex; flex-direction: column; }
+
+  .run-item {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--line);
+    font-size: 12px;
+  }
+
+  .run-item:last-child { border-bottom: 0; }
+  .run-item .k { color: var(--ink-2); }
+  .run-item .v { font-family: var(--mono); font-variant-numeric: tabular-nums; font-size: 12px; }
+  .run-item .v.hi { color: var(--accent); font-weight: 500; }
+
+  /* ---------- report ---------- */
+
+  .report {
+    position: fixed;
+    inset: 0;
+    z-index: 5;
+    background: var(--bg);
+    display: flex;
+    flex-direction: column;
+  }
+
+  .report[hidden] { display: none; }
+
+  .report .top { border-bottom: 1px solid var(--line); }
+
+  .report-body {
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr 1.15fr;
+    gap: 18px;
+    padding: 20px 24px;
+  }
+
+  .report-body .card { padding: 16px 18px; }
+
+  .report-body h3 {
+    margin: 0 0 10px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+
+  .report-body dl { margin: 0 0 16px; display: grid; grid-template-columns: 1fr auto; column-gap: 14px; }
+
+  .report-body dt { padding: 6px 0; border-bottom: 1px solid var(--line); font-size: 12px; color: var(--ink-2); }
+  .report-body dd {
+    margin: 0;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--line);
+    text-align: right;
+    font-family: var(--mono);
+    font-variant-numeric: tabular-nums;
+    font-size: 12px;
+  }
+
+  .report-body dd.hi { color: var(--accent); font-weight: 500; }
+  .curve svg { display: block; width: 100%; height: auto; margin-top: 4px; }
+</style>
+</head>
+<body>
+
+<div class="app">
+
+  <aside class="side">
+    <div class="brand">
+      <span class="mark"></span>
+      <span>Kayak Analyzer<small>Workspace</small></span>
+    </div>
+
+    <nav class="nav" aria-label="Workspace">
+      <a href="#analyze" aria-current="page"><span class="nav-k"></span>Analyze</a>
+      <a href="#compare"><span class="nav-k"></span>Compare</a>
+      <a href="#runs"><span class="nav-k"></span>Runs</a>
+      <a href="#library"><span class="nav-k"></span>Library</a>
+    </nav>
+
+    <div class="section">Workspace</div>
+    <nav class="nav" aria-label="Workspace files">
+      <a href="#hulls"><span class="nav-k"></span>Hulls</a>
+      <a href="#reports"><span class="nav-k"></span>Reports</a>
+      <a href="#settings"><span class="nav-k"></span>Settings</a>
+    </nav>
+
+    <div class="me">
+      <div class="av">RM</div>
+      <div>
+        <div class="n">Richard M.</div>
+        <div class="r">Local workspace</div>
+      </div>
+    </div>
+  </aside>
+
+  <div class="main">
+
+    <div class="top">
+      <div class="crumbs">
+        <b>Hulls</b><i>/</i>kayak.stl<i>/</i>Analyze
+      </div>
+      <div class="search">Search runs, hulls, reports</div>
+      <div class="spacer"></div>
+      <span class="pill">Watertight mesh</span>
+      <button class="btn" type="button" id="report">View full report</button>
+      <button class="btn primary" type="button">Solve</button>
+    </div>
+
+    <div class="content">
+
+      <div class="col-main">
+
+        <div class="kpis">
+          <div class="kpi">
+            <div class="k"><span>Draft</span><span class="delta">−2.1</span></div>
+            <div class="v">94.0<small>mm</small></div>
+          </div>
+          <div class="kpi">
+            <div class="k"><span>Trim</span></div>
+            <div class="v">+3.60<small>°</small></div>
+          </div>
+          <div class="kpi">
+            <div class="k"><span>GM</span><span class="delta">+12</span></div>
+            <div class="v">+122<small>mm</small></div>
+          </div>
+          <div class="kpi">
+            <div class="k"><span>LCB–LCG</span></div>
+            <div class="v">1.68<small>mm</small></div>
+          </div>
+        </div>
+
+        <div class="card render">
+          <div class="render-head">
+            <h2>Hull orientation</h2>
+            <span class="sub">kayak.stl · 2 714.4 × 613.1 × 325.1 mm</span>
+            <div class="spacer"></div>
+            <button class="ghost" type="button">Waterline</button>
+            <button class="ghost" type="button">Fit view</button>
+          </div>
+
+          <div class="stage">
+            <svg viewBox="0 0 760 330" preserveAspectRatio="none" role="img"
+                 aria-label="Hull rendered above the waterline, bow up">
+              <defs>
+                <linearGradient id="deck" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0" stop-color="#e8eef8"/>
+                  <stop offset="1" stop-color="#c8d5e9"/>
+                </linearGradient>
+                <linearGradient id="side" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0" stop-color="#b9c8de"/>
+                  <stop offset="1" stop-color="#8fa2bf"/>
+                </linearGradient>
+                <clipPath id="hullClip">
+                  <path d="M 800 190 C 620 194 440 206 260 224 C 200 230 140 237 100 244 L 100 250
+                           C 160 268 320 276 450 276 C 580 276 700 262 762 244
+                           C 788 236 799 212 800 190 Z"/>
+                </clipPath>
+              </defs>
+
+              <!-- grid -->
+              <g stroke="#e3e8ef" stroke-width="1">
+                <line x1="0" y1="80" x2="760" y2="80"/>
+                <line x1="0" y1="150" x2="760" y2="150"/>
+                <line x1="0" y1="220" x2="760" y2="220"/>
+                <line x1="0" y1="290" x2="760" y2="290"/>
+              </g>
+
+              <g transform="translate(-40,4) scale(0.86)">
+                <path d="M 800 190 C 620 194 440 206 260 224 C 200 230 140 237 100 244 L 100 250
+                         C 160 268 320 276 450 276 C 580 276 700 262 762 244
+                         C 788 236 799 212 800 190 Z"
+                      fill="url(#side)" stroke="#7f93b0" stroke-width="1.1"/>
+                <g clip-path="url(#hullClip)">
+                  <rect x="90" y="250" width="720" height="40" fill="#7c90ad" opacity="0.35"/>
+                </g>
+                <path d="M 800 190
+                         C 620 194 440 206 260 224
+                         C 200 230 140 237 100 244
+                         C 140 232 200 208 260 200
+                         C 440 138 620 130 800 190 Z"
+                      fill="url(#deck)" stroke="#6f84a1" stroke-width="1"/>
+                <ellipse cx="432" cy="181" rx="90" ry="16" transform="rotate(-4.2 432 181)"
+                         fill="#eef3fa" stroke="#8fa2bf" stroke-width="1"/>
+                <ellipse cx="268" cy="212" rx="34" ry="7" transform="rotate(-4.2 268 212)"
+                         fill="none" stroke="#9aabc5" stroke-width="1"/>
+              </g>
+
+              <!-- waterline -->
+              <line x1="0" y1="228" x2="760" y2="228" stroke="#2563eb" stroke-width="1" opacity="0.5"/>
+              <line x1="0" y1="234" x2="760" y2="234" stroke="#2563eb" stroke-width="0.8" opacity="0.15"/>
+            </svg>
+
+            <div class="tag">
+              <span class="chip"><b>75.0 kg</b> displacement</span>
+              <span class="chip"><b>30</b> planes evaluated</span>
+              <span class="chip"><b>converged</b></span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="rail">
+        <div class="card">
+          <h3>Loading condition</h3>
+          <div class="fields">
+            <div class="f">
+              <label for="k-mass">Weight</label>
+              <input id="k-mass" type="text" value="75.0" inputmode="decimal">
+            </div>
+            <div class="f">
+              <label for="k-lcg">LCG from bow</label>
+              <input id="k-lcg" type="text" value="52.0" inputmode="decimal">
+            </div>
+            <div class="f">
+              <label for="k-kg">KG above keel</label>
+              <input id="k-kg" type="text" value="280" inputmode="decimal">
+            </div>
+            <div class="f">
+              <label for="k-heel">Heel</label>
+              <input id="k-heel" type="text" value="0.0" inputmode="decimal">
+            </div>
+          </div>
+          <div class="run">
+            <button class="btn primary" type="button">Recalculate</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <h3>Run summary</h3>
+          <div class="runs">
+            <div class="run-item"><span class="k">Bow freeboard</span><span class="v">222.2 mm</span></div>
+            <div class="run-item"><span class="k">Stern freeboard</span><span class="v">22.3 mm</span></div>
+            <div class="run-item"><span class="k">GZ max</span><span class="v">61 mm @ 38°</span></div>
+            <div class="run-item"><span class="k">AVS</span><span class="v">62.0°</span></div>
+            <div class="run-item"><span class="k">KM / KG</span><span class="v">402 / 280</span></div>
+            <div class="run-item"><span class="k">GM</span><span class="v hi">+122 mm</span></div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<section class="report" id="reportPanel" hidden aria-label="Full report">
+  <div class="top">
+    <div class="crumbs"><b>Hulls</b><i>/</i>kayak.stl<i>/</i>Report</div>
+    <div class="spacer"></div>
+    <button class="btn" type="button" id="close">Close</button>
+  </div>
+
+  <div class="report-body">
+    <div class="card">
+      <h3>Flotation</h3>
+      <dl>
+        <dt>Draft</dt><dd>94.0 mm</dd>
+        <dt>LWL</dt><dd>2 384 mm</dd>
+        <dt>BWL</dt><dd>489 mm</dd>
+        <dt>Waterplane area</dt><dd>0.412 m²</dd>
+        <dt>TPC</dt><dd>0.0042</dd>
+        <dt>Wetted surface</dt><dd>1.842e6 mm²</dd>
+        <dt>Displacement</dt><dd>75.0 kg</dd>
+      </dl>
+    </div>
+
+    <div class="card">
+      <h3>Attitude</h3>
+      <dl>
+        <dt>Trim</dt><dd>+3.60°</dd>
+        <dt>Heel</dt><dd>0.0°</dd>
+        <dt>Bow freeboard</dt><dd>222.2 mm</dd>
+        <dt>Stern freeboard</dt><dd>22.3 mm</dd>
+        <dt>LCB–LCG</dt><dd>1.68 mm</dd>
+      </dl>
+      <h3>Form coefficients</h3>
+      <dl>
+        <dt>Cb</dt><dd>0.4721</dd>
+        <dt>Cp</dt><dd>0.5813</dd>
+        <dt>Cm</dt><dd>0.8120</dd>
+        <dt>Cwp</dt><dd>0.6394</dd>
+      </dl>
+    </div>
+
+    <div class="card">
+      <h3>Stability</h3>
+      <dl>
+        <dt>KB</dt><dd>58 mm</dd>
+        <dt>BM</dt><dd>344 mm</dd>
+        <dt>KM</dt><dd>402 mm</dd>
+        <dt>KG</dt><dd>280 mm</dd>
+        <dt>GM</dt><dd class="hi">+122 mm</dd>
+      </dl>
+      <h3>Vessel</h3>
+      <dl>
+        <dt>LOA</dt><dd>2 714.4 mm</dd>
+        <dt>Beam</dt><dd>613.1 mm</dd>
+        <dt>Depth</dt><dd>325.1 mm</dd>
+        <dt>Shell</dt><dd>watertight</dd>
+      </dl>
+    </div>
+
+    <div class="card curve">
+      <h3>Righting arm</h3>
+      <svg viewBox="0 0 420 200" role="img"
+           aria-label="GZ curve rising to 61 millimetres at 38 degrees, zero at 62 degrees">
+        <g stroke="#eef1f5" stroke-width="1">
+          <line x1="38" y1="34" x2="404" y2="34"/>
+          <line x1="38" y1="64" x2="404" y2="64"/>
+          <line x1="38" y1="94" x2="404" y2="94"/>
+        </g>
+        <line x1="38" y1="124" x2="404" y2="124" stroke="#d1d5db" stroke-width="1"/>
+
+        <g font-family="ui-monospace, monospace" font-size="9" fill="#9ca3af" text-anchor="end">
+          <text x="32" y="127">0</text>
+          <text x="32" y="97">20</text>
+          <text x="32" y="67">40</text>
+          <text x="32" y="37">60</text>
+        </g>
+
+        <path d="M38 124 L76 96 L114 68 L152 46 L186 37 L212 42 L238 62 L262 86 L278 124 L278 124 Z"
+              fill="#2563eb" opacity="0.07"/>
+        <path d="M38 124 L76 96 L114 68 L152 46 L186 37 L212 42 L238 62 L262 86 L278 124 L310 144 L352 162"
+              fill="none" stroke="#2563eb" stroke-width="1.8" stroke-linejoin="round"/>
+
+        <circle cx="186" cy="37" r="2.8" fill="#2563eb"/>
+        <text x="195" y="32" font-family="ui-monospace, monospace" font-size="9" fill="#2563eb">61 @ 38°</text>
+        <circle cx="278" cy="124" r="2.8" fill="#fff" stroke="#2563eb" stroke-width="1.3"/>
+        <text x="278" y="117" font-family="ui-monospace, monospace" font-size="9" fill="#2563eb"
+              text-anchor="middle">62°</text>
+
+        <g font-family="ui-monospace, monospace" font-size="9" fill="#9ca3af" text-anchor="middle">
+          <text x="38" y="184">0°</text>
+          <text x="160" y="184">30°</text>
+          <text x="282" y="184">60°</text>
+          <text x="404" y="184">90°</text>
+        </g>
+      </svg>
+
+      <dl style="margin-top:10px">
+        <dt>GZ max</dt><dd>61 mm</dd>
+        <dt>at heel</dt><dd>38.0°</dd>
+        <dt>AVS</dt><dd>62.0°</dd>
+        <dt>End-tip immersion</dt><dd>41.0°</dd>
+      </dl>
+    </div>
+  </div>
+</section>
+
+<script>
+  (function () {
+    var panel = document.getElementById('reportPanel')
+    var open = document.getElementById('report')
+    var close = document.getElementById('close')
+
+    open.addEventListener('click', function () {
+      panel.hidden = false
+      close.focus()
+    })
+
+    close.addEventListener('click', function () {
+      panel.hidden = true
+      open.focus()
+    })
+
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && !panel.hidden) {
+        panel.hidden = true
+        open.focus()
+      }
+    })
+  })()
+</script>
+
+</body>
+</html>

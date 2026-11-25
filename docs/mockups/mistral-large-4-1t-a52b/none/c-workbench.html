@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>c · Workbench — kayak-analyzer</title>
+<style>
+:root{
+  --bg:#0d1117; --panel:#111722; --panel2:#0a0e14; --rule:#1f2937; --rule2:#2b3a4d;
+  --ink:#d5e0ec; --dim:#6b7f94; --faint:#31404f;
+  --acc:#58c4dc; --amber:#ffb454; --green:#7ef0b2;
+  --mono:ui-monospace,"Cascadia Mono","SFMono-Regular",Menlo,Consolas,monospace;
+  --sans:ui-sans-serif,system-ui,"Segoe UI",Roboto,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{width:1280px;height:800px;overflow:hidden}
+body{background:var(--bg);color:var(--ink);font:12px/1.5 var(--sans);-webkit-font-smoothing:antialiased}
+.screen{width:1280px;height:800px;display:flex;flex-direction:column}
+.num{font-variant-numeric:tabular-nums}
+.lbl{font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:var(--dim)}
+.topbar{height:42px;flex:none;display:flex;align-items:center;gap:18px;padding:0 14px;background:var(--panel);border-bottom:1px solid var(--rule)}
+.dots{display:flex;gap:6px}
+.dots i{width:10px;height:10px;border-radius:50%;background:#3a4756}
+.menu{display:flex;gap:14px;color:var(--dim);font-size:11px}
+.title{margin:0 auto;font-family:var(--mono);font-size:11px;color:var(--dim)}
+.run{font-family:var(--mono);font-size:11px;color:#06131a;background:var(--acc);padding:4px 12px;border-radius:4px}
+.stats{height:40px;flex:none;display:flex;align-items:center;background:var(--panel2);border-bottom:1px solid var(--rule)}
+.stat{flex:1;display:flex;align-items:baseline;gap:8px;padding:0 18px;border-left:1px solid var(--rule)}
+.stat:first-child{border-left:0}
+.stat .v{font-family:var(--mono);font-size:17px;color:var(--acc)}
+main{flex:1;min-height:0;display:flex}
+.viewport{flex:1;min-width:0;position:relative;padding:14px 18px;display:flex;flex-direction:column;
+  background:repeating-linear-gradient(0deg,transparent 0 39px,rgba(88,196,220,.05) 39px 40px),
+             repeating-linear-gradient(90deg,transparent 0 39px,rgba(88,196,220,.05) 39px 40px),var(--panel2)}
+.vp-head{display:flex;justify-content:space-between;margin-bottom:6px}
+.viewport svg{flex:1;min-height:0;width:100%}
+.gutter{width:8px;flex:none;background:var(--panel);border-left:1px solid var(--rule);display:flex;align-items:center;justify-content:center;color:var(--faint);letter-spacing:2px;font-size:10px}
+.dock{width:470px;flex:none;background:var(--panel);display:flex;flex-direction:column;border-left:1px solid var(--rule)}
+.tabs{height:36px;flex:none;display:flex;border-bottom:1px solid var(--rule)}
+.tab{flex:1;display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--dim);border-left:1px solid var(--rule)}
+.tab:first-child{border-left:0}
+.tab.on{color:var(--acc);background:var(--panel2);box-shadow:inset 0 -2px 0 var(--acc)}
+.panel{display:none;flex:1;min-height:0;overflow:hidden;padding:12px 16px}
+.panel.on{display:flex;flex-direction:column}
+.panel .legend{display:flex;gap:18px;margin-top:8px}
+.panel svg{flex:1;min-height:0;width:100%}
+.rows{flex:1;overflow:hidden}
+.row{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--rule);font-family:var(--mono);font-size:12px}
+.row .k{color:var(--dim)}
+.status{height:30px;flex:none;display:flex;align-items:center;gap:24px;padding:0 14px;background:var(--panel);border-top:1px solid var(--rule);font-family:var(--mono);font-size:11px;color:var(--dim)}
+.status b{color:var(--ink);font-weight:400}
+.status .r{margin-left:auto}
+</style>
+</head>
+<body>
+<div class="screen">
+  <div class="topbar">
+    <span class="dots"><i></i><i></i><i></i></span>
+    <span class="menu"><span>File</span><span>Edit</span><span>View</span><span>Solve</span><span>Help</span></span>
+    <span class="title num">kayak.stl — kayak-analyzer · analyze</span>
+    <span class="run">▶ RUN</span>
+  </div>
+  <div class="stats num">
+    <div class="stat"><span class="lbl">Draft</span><span class="v">94.0 mm</span></div>
+    <div class="stat"><span class="lbl">Trim</span><span class="v">+3.60°</span></div>
+    <div class="stat"><span class="lbl">GM</span><span class="v">+122 mm</span></div>
+    <div class="stat"><span class="lbl">LCB–LCG</span><span class="v">1.68 mm</span></div>
+  </div>
+  <main>
+    <section class="viewport">
+      <div class="vp-head">
+        <span class="lbl">viewport · profile · heel 0°</span>
+        <span class="lbl num">kayak.stl · watertight · 2 714.4 × 613.1 × 325.1 mm</span>
+      </div>
+      <svg viewBox="0 0 900 430" preserveAspectRatio="xMidYMid meet">
+        <g font-family="ui-monospace,Menlo,Consolas,monospace" font-size="13" fill="#6b7f94">
+          <path d="M 60 170 Q 300 116 450 114 Q 700 112 840 156 L 840 158 Q 680 248 450 246 Q 250 240 60 170 Z"
+                fill="#132433" stroke="#3d5a6b" stroke-width="2"/>
+          <ellipse cx="450" cy="122" rx="62" ry="9" fill="none" stroke="#3d5a6b" stroke-width="2"/>
+          <line x1="30" y1="206" x2="870" y2="206" stroke="#58c4dc" stroke-width="1.5" stroke-dasharray="8 6"/>
+          <text x="36" y="200" fill="#58c4dc">WL · draft 94.0 mm</text>
+          <line x1="450" y1="246" x2="450" y2="206" stroke="#ffb454" stroke-width="1.5"/>
+          <line x1="444" y1="246" x2="456" y2="246" stroke="#ffb454" stroke-width="1.5"/>
+          <line x1="444" y1="206" x2="456" y2="206" stroke="#ffb454" stroke-width="1.5"/>
+          <text x="462" y="230" fill="#ffb454">94.0</text>
+          <line x1="60" y1="316" x2="840" y2="316" stroke="#6b7f94" stroke-width="1"/>
+          <line x1="60" y1="308" x2="60" y2="324" stroke="#6b7f94"/><line x1="840" y1="308" x2="840" y2="324" stroke="#6b7f94"/>
+          <text x="450" y="340" text-anchor="middle" fill="#d5e0ec">LOA 2 714.4 mm</text>
+          <text x="846" y="140">bow +X · trim +3.60° bow-up</text>
+          <text x="846" y="158">bow freeboard 222.2 mm</text>
+          <text x="20" y="160">stern −X · stern freeboard 22.3 mm</text>
+          <text x="40" y="412" fill="#31404f">Z ↑ · X → bow · Y beam</text>
+        </g>
+      </svg>
+    </section>
+    <div class="gutter">⋮</div>
+    <aside class="dock">
+      <div class="tabs">
+        <span class="tab">Flotation</span><span class="tab">Coeffs</span><span class="tab">Stability</span><span class="tab on">Curve</span>
+      </div>
+      <div class="panel rows">
+        <div class="row"><span class="k">LWL</span><span>2 384 mm</span></div>
+        <div class="row"><span class="k">BWL</span><span>489 mm</span></div>
+        <div class="row"><span class="k">waterplane area</span><span>0.412 m²</span></div>
+        <div class="row"><span class="k">TPC</span><span>0.0042</span></div>
+        <div class="row"><span class="k">wetted surface</span><span>1.842e6 mm²</span></div>
+        <div class="row"><span class="k">displacement</span><span>75.0 kg</span></div>
+        <div class="row"><span class="k">bow freeboard</span><span>222.2 mm</span></div>
+        <div class="row"><span class="k">stern freeboard</span><span>22.3 mm</span></div>
+      </div>
+      <div class="panel rows">
+        <div class="row"><span class="k">Cb</span><span>0.4721</span></div>
+        <div class="row"><span class="k">Cp</span><span>0.5813</span></div>
+        <div class="row"><span class="k">Cm</span><span>0.8120</span></div>
+        <div class="row"><span class="k">Cwp</span><span>0.6394</span></div>
+      </div>
+      <div class="panel rows">
+        <div class="row"><span class="k">KB</span><span>58 mm</span></div>
+        <div class="row"><span class="k">BM</span><span>344 mm</span></div>
+        <div class="row"><span class="k">KM</span><span>402 mm</span></div>
+        <div class="row"><span class="k">KG</span><span>280 mm</span></div>
+        <div class="row"><span class="k">GM</span><span>+122 mm</span></div>
+        <div class="row"><span class="k">GZ max</span><span>61 mm @ 38°</span></div>
+        <div class="row"><span class="k">AVS</span><span>62°</span></div>
+        <div class="row"><span class="k">end-tip immersion</span><span>41°</span></div>
+      </div>
+      <div class="panel on">
+        <svg viewBox="0 0 610 312" preserveAspectRatio="xMidYMid meet">
+          <g stroke="#1f2937" stroke-width="1">
+            <line x1="40" y1="20" x2="40" y2="280"/><line x1="110" y1="20" x2="110" y2="280"/>
+            <line x1="180" y1="20" x2="180" y2="280"/><line x1="250" y1="20" x2="250" y2="280"/>
+            <line x1="320" y1="20" x2="320" y2="280"/><line x1="390" y1="20" x2="390" y2="280"/>
+            <line x1="460" y1="20" x2="460" y2="280"/><line x1="530" y1="20" x2="530" y2="280"/>
+            <line x1="600" y1="20" x2="600" y2="280"/>
+            <line x1="40" y1="40" x2="600" y2="40"/><line x1="40" y1="80" x2="600" y2="80"/>
+            <line x1="40" y1="120" x2="600" y2="120"/><line x1="40" y1="200" x2="600" y2="200"/>
+            <line x1="40" y1="240" x2="600" y2="240"/><line x1="40" y1="280" x2="600" y2="280"/>
+          </g>
+          <line x1="40" y1="160" x2="600" y2="160" stroke="#31404f" stroke-width="1.5"/>
+          <polyline fill="none" stroke="#58c4dc" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"
+            points="40,160 75,136 110,112 145,90 180,72 215,58 250,48 285,40 306,38 320,38 355,44 390,60 404,72 425,90 446,110 460,132 474,160 495,184 516,204 530,220 565,240 600,256"/>
+          <g fill="#ffb454">
+            <circle cx="306" cy="38" r="4"/><circle cx="474" cy="160" r="4"/><circle cx="327" cy="42" r="3.5"/>
+          </g>
+          <g font-size="12" fill="#6b7f94" font-family="ui-monospace,Menlo,Consolas,monospace">
+            <text x="40" y="300" text-anchor="middle">0</text><text x="110" y="300" text-anchor="middle">10</text>
+            <text x="180" y="300" text-anchor="middle">20</text><text x="250" y="300" text-anchor="middle">30</text>
+            <text x="320" y="300" text-anchor="middle">40</text><text x="390" y="300" text-anchor="middle">50</text>
+            <text x="460" y="300" text-anchor="middle">60</text><text x="530" y="300" text-anchor="middle">70</text>
+            <text x="600" y="300" text-anchor="end">80</text>
+            <text x="34" y="44" text-anchor="end">60</text><text x="34" y="84" text-anchor="end">40</text>
+            <text x="34" y="124" text-anchor="end">20</text><text x="34" y="164" text-anchor="end">0</text>
+            <text x="34" y="204" text-anchor="end">-20</text><text x="34" y="244" text-anchor="end">-40</text>
+            <text x="34" y="284" text-anchor="end">-60</text>
+            <text x="40" y="12">GZ (mm)</text><text x="600" y="12" text-anchor="end">heel (deg)</text>
+            <text x="316" y="30" fill="#ffb454">GZ max 61 mm @ 38°</text>
+            <text x="482" y="150" fill="#ffb454">AVS 62°</text>
+            <text x="338" y="60" fill="#ffb454">end-tip 41°</text>
+          </g>
+        </svg>
+        <div class="legend num">
+          <span class="lbl">peak 61 mm @ 38°</span><span class="lbl">AVS 62°</span><span class="lbl">end-tip 41°</span>
+        </div>
+      </div>
+    </aside>
+  </main>
+  <div class="status num">
+    <span>LOAD <b>75.0 kg · LCG 52.0 % from bow · KG 280 mm · heel 0°</b></span>
+    <span>SWEEP <b>±4.5° · fine 0.1°</b></span>
+    <span class="r">watertight · solved</span>
+  </div>
+</div>
+</body>
+</html>

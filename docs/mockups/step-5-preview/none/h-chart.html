@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>h · Chart — kayak-analyzer</title>
+<style>
+  :root {
+    --mono: ui-monospace, "Cascadia Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+    --sans: ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif;
+    --paper: #eef0e2;
+    --paper-2: #f6f7ec;
+    --water: #d8e4d2;
+    --contour: #9db48f;
+    --contour-2: #b9c8ab;
+    --ink: #2e3430;
+    --ink-2: #5a6258;
+    --ink-3: #878f80;
+    --sound: #3d4a3a;
+    --mag: #a23c2e;
+    --line: #c3cbb6;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; overflow: hidden; }
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-variant-numeric: tabular-nums;
+    font-size: 12px;
+    line-height: 1.45;
+  }
+  .shell { width: 1280px; height: 800px; display: flex; flex-direction: column; }
+  /* chart header */
+  .chead { flex: none; display: flex; align-items: flex-end; justify-content: space-between; padding: 12px 36px 10px; border-bottom: 2px solid var(--ink-2); }
+  .chead .l h1 { margin: 0; font-size: 19px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; }
+  .chead .l .sub { font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--ink-3); margin-top: 3px; }
+  .chead .r { font-family: var(--mono); font-size: 10px; color: var(--ink-2); text-align: right; line-height: 1.7; }
+  .chead .r b { color: var(--ink); font-weight: 500; }
+  /* main */
+  .main { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr 372px; }
+  .chart { position: relative; border-right: 1px solid var(--ink-3); }
+  .chart svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .cartouche { position: absolute; left: 24px; bottom: 18px; background: var(--paper-2); border: 1px solid var(--ink-2); padding: 10px 14px; font-size: 10px; color: var(--ink-2); }
+  .cartouche b { display: block; color: var(--ink); font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; margin-bottom: 4px; }
+  .cartouche span { font-family: var(--mono); display: block; }
+  /* right panel */
+  .panel { display: flex; flex-direction: column; min-height: 0; }
+  .pblock { padding: 10px 24px 8px; border-bottom: 1px solid var(--line); }
+  .pblock h2 { margin: 0 0 6px; font-size: 10px; font-weight: 600; letter-spacing: 0.24em; text-transform: uppercase; color: var(--mag); }
+  table.kv { width: 100%; border-collapse: collapse; font-size: 11.5px; }
+  table.kv td { padding: 2.5px 0; }
+  table.kv td.k { color: var(--ink-2); }
+  table.kv td.d { color: var(--line); padding: 0 6px; width: 100%; }
+  table.kv td.v { font-family: var(--mono); text-align: right; white-space: nowrap; color: var(--ink); }
+  table.kv tr.key td { border-top: 1px solid var(--line); padding-top: 5px; }
+  table.kv tr.key td.v { color: var(--mag); font-size: 13px; }
+  .answers { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; padding: 12px 24px 10px; border-bottom: 1px solid var(--line); }
+  .answers > div .v { font-family: var(--mono); font-size: 19px; font-weight: 600; display: block; }
+  .answers > div .v small { font-size: 10px; color: var(--ink-3); }
+  .answers > div .k { font-size: 8px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--ink-3); display: block; margin-bottom: 1px; }
+  .gzblock { flex: 1; min-height: 0; padding: 10px 24px 8px; display: flex; flex-direction: column; }
+  .gzblock h2 { margin: 0 0 4px; font-size: 10px; font-weight: 600; letter-spacing: 0.24em; text-transform: uppercase; color: var(--mag); }
+  .gzblock .note { font-family: var(--mono); font-size: 9px; color: var(--ink-3); padding-top: 6px; }
+  .cfoot { flex: none; display: flex; justify-content: space-between; padding: 8px 36px; border-top: 2px solid var(--ink-2); font-size: 9px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--ink-3); }
+</style>
+</head>
+<body>
+<div class="shell">
+<header class="chead">
+    <div class="l">
+      <h1>Waterplane chart — kayak.stl</h1>
+      <div class="sub">static equilibrium · 75.0 kg · LCG 52.0 % · KG 280 mm · heel 0°</div>
+    </div>
+    <div class="r">
+      <b>kayak.stl · watertight</b><br>
+      2 714.4 × 613.1 × 325.1 mm<br>
+      soundings in metres below waterline
+    </div>
+  </header>
+
+  <div class="main">
+    <section class="chart">
+      <svg viewBox="0 0 880 690" preserveAspectRatio="xMidYMid slice" role="img" aria-label="Waterplane chart with depth contours">
+        <!-- land masses (top corners) -->
+        <path d="M0 0 L880 0 L880 60 C700 90 560 70 430 40 C300 12 160 30 0 20 Z" fill="#e7e3cd"/>
+        <path d="M0 690 L0 600 C120 620 240 640 380 660 C520 680 700 668 880 640 L880 690 Z" fill="#e7e3cd"/>
+        <!-- contour rings around waterplane -->
+        <g fill="none" stroke="var(--contour-2)" stroke-width="1">
+          <path d="M 190 345 C 320 255 560 245 690 345 C 560 445 320 455 190 345 Z"/>
+          <path d="M 160 345 C 310 230 570 220 720 345 C 570 470 310 480 160 345 Z"/>
+          <path d="M 130 345 C 300 205 580 195 750 345 C 580 495 300 505 130 345 Z"/>
+        </g>
+        <g fill="none" stroke="var(--contour)" stroke-width="1.2">
+          <path d="M 220 345 C 335 280 545 270 660 345 C 545 420 335 430 220 345 Z"/>
+          <path d="M 250 345 C 350 305 530 295 630 345 C 530 395 350 405 250 345 Z"/>
+          <path d="M 280 345 C 365 330 515 320 600 345 C 515 370 365 380 280 345 Z"/>
+        </g>
+        <!-- waterplane itself (thick) -->
+        <path d="M 308 345 C 380 312 500 304 572 345 C 500 386 380 394 308 345 Z"
+              fill="var(--water)" stroke="var(--ink)" stroke-width="2"/>
+        <!-- sounding-style labels -->
+        <g font-family="ui-monospace,monospace" font-style="italic" font-size="13" fill="var(--sound)">
+          <text x="440" y="349" text-anchor="middle">0.412 m²</text>
+          <text x="200" y="300" font-size="11" fill="var(--contour)">6</text>
+          <text x="640" y="410" font-size="11" fill="var(--contour)">11</text>
+          <text x="180" y="430" font-size="11" fill="var(--contour-2)">17</text>
+          <text x="700" y="270" font-size="11" fill="var(--contour-2)">23</text>
+        </g>
+        <!-- waterline callout -->
+        <line x1="308" y1="345" x2="180" y2="250" stroke="var(--mag)" stroke-width="1"/>
+        <circle cx="308" cy="345" r="3" fill="var(--mag)"/>
+        <text x="176" y="244" font-family="ui-monospace,monospace" font-size="12" fill="var(--mag)">WL · draft 94.0 mm</text>
+        <line x1="572" y1="345" x2="720" y2="460" stroke="var(--ink-2)" stroke-width="1"/>
+        <text x="724" y="464" font-family="ui-monospace,monospace" font-size="11" fill="var(--ink-2)">LWL 2 384 mm</text>
+        <!-- trim note -->
+        <text x="440" y="540" font-family="ui-monospace,monospace" font-size="12" fill="var(--ink)" text-anchor="middle">TRIM +3.60° BOW UP</text>
+        <text x="440" y="558" font-family="ui-monospace,monospace" font-size="10" fill="var(--ink-3)" text-anchor="middle">bow freeboard 222.2 mm · stern freeboard 22.3 mm</text>
+        <!-- compass rose -->
+        <g transform="translate(800,110)">
+          <circle r="42" fill="none" stroke="var(--ink-2)" stroke-width="1"/>
+          <circle r="30" fill="none" stroke="var(--ink-3)" stroke-width="0.5"/>
+          <polygon points="0,-38 7,0 0,38 -7,0" fill="var(--mag)"/>
+          <polygon points="0,-38 7,0 -7,0" fill="var(--ink)"/>
+          <text x="0" y="-48" font-family="var(--sans)" font-size="10" font-weight="700" fill="var(--ink)" text-anchor="middle">N</text>
+          <text x="48" y="4" font-family="var(--sans)" font-size="9" fill="var(--ink-2)" text-anchor="middle">E</text>
+          <text x="0" y="56" font-family="var(--sans)" font-size="9" fill="var(--ink-2)" text-anchor="middle">S</text>
+          <text x="-48" y="4" font-family="var(--sans)" font-size="9" fill="var(--ink-2)" text-anchor="middle">W</text>
+        </g>
+        <!-- scale bar -->
+        <g transform="translate(24,640)">
+          <rect x="0" y="0" width="60" height="6" fill="var(--ink)"/>
+          <rect x="60" y="0" width="60" height="6" fill="var(--paper-2)" stroke="var(--ink)"/>
+          <rect x="120" y="0" width="60" height="6" fill="var(--ink)"/>
+          <g font-family="ui-monospace,monospace" font-size="9" fill="var(--ink-2)">
+            <text x="0" y="20">0</text><text x="60" y="20">500</text><text x="120" y="20">1 000</text><text x="180" y="20">1 500 mm</text>
+          </g>
+        </g>
+      </svg>
+      <div class="cartouche">
+        <b>Waterplane</b>
+        <span>area 0.412 m²</span>
+        <span>LWL 2 384 mm · BWL 489 mm</span>
+        <span>Cwp 0.6394</span>
+      </div>
+    </section>
+<aside class="panel">
+      <div class="answers">
+        <div><span class="k">Draft</span><span class="v num">94.0<small>mm</small></span></div>
+        <div><span class="k">Trim</span><span class="v num">+3.60<small>°</small></span></div>
+        <div><span class="k">GM</span><span class="v num">+122<small>mm</small></span></div>
+        <div><span class="k">LCB–LCG</span><span class="v num">1.68<small>mm</small></span></div>
+      </div>
+
+      <div class="pblock">
+        <h2>Conditions</h2>
+        <table class="kv">
+          <tr><td class="k">Weight</td><td class="d"></td><td class="v">75.0 kg</td></tr>
+          <tr><td class="k">LCG from bow</td><td class="d"></td><td class="v">52.0 %</td></tr>
+          <tr><td class="k">KG above keel</td><td class="d"></td><td class="v">280 mm</td></tr>
+          <tr><td class="k">Heel</td><td class="d"></td><td class="v">0 deg</td></tr>
+          <tr><td class="k">Trim sweep</td><td class="d"></td><td class="v">±4.5° · 0.1°</td></tr>
+        </table>
+      </div>
+
+      <div class="pblock">
+        <h2>Flotation</h2>
+        <table class="kv">
+          <tr><td class="k">Displacement</td><td class="d"></td><td class="v">75.0 kg</td></tr>
+          <tr><td class="k">Draft</td><td class="d"></td><td class="v">94.0 mm</td></tr>
+          <tr><td class="k">LWL</td><td class="d"></td><td class="v">2 384 mm</td></tr>
+          <tr><td class="k">BWL</td><td class="d"></td><td class="v">489 mm</td></tr>
+          <tr><td class="k">Waterplane area</td><td class="d"></td><td class="v">0.412 m²</td></tr>
+          <tr><td class="k">TPC</td><td class="d"></td><td class="v">0.0042</td></tr>
+          <tr><td class="k">Wetted surface</td><td class="d"></td><td class="v">1.842e6 mm²</td></tr>
+          <tr class="key"><td class="k">Bow / stern freeboard</td><td class="d"></td><td class="v">222.2 / 22.3 mm</td></tr>
+        </table>
+      </div>
+
+      <div class="pblock">
+        <h2>Form coefficients</h2>
+        <table class="kv">
+          <tr><td class="k">Cb</td><td class="d"></td><td class="v">0.4721</td></tr>
+          <tr><td class="k">Cp</td><td class="d"></td><td class="v">0.5813</td></tr>
+          <tr><td class="k">Cm</td><td class="d"></td><td class="v">0.8120</td></tr>
+          <tr><td class="k">Cwp</td><td class="d"></td><td class="v">0.6394</td></tr>
+        </table>
+      </div>
+
+      <div class="pblock">
+        <h2>Stability</h2>
+        <table class="kv">
+          <tr><td class="k">KB</td><td class="d"></td><td class="v">58 mm</td></tr>
+          <tr><td class="k">BM</td><td class="d"></td><td class="v">344 mm</td></tr>
+          <tr><td class="k">KM</td><td class="d"></td><td class="v">402 mm</td></tr>
+          <tr><td class="k">KG</td><td class="d"></td><td class="v">280 mm</td></tr>
+          <tr class="key"><td class="k">GM</td><td class="d"></td><td class="v">+122 mm</td></tr>
+          <tr><td class="k">GZ max</td><td class="d"></td><td class="v">61 mm @ 38°</td></tr>
+          <tr><td class="k">AVS</td><td class="d"></td><td class="v">62°</td></tr>
+          <tr><td class="k">End-tip immersion</td><td class="d"></td><td class="v">41°</td></tr>
+        </table>
+      </div>
+
+      <div class="gzblock">
+        <h2>Righting-arm curve</h2>
+        <svg viewBox="0 0 340 150" width="100%" height="100%" preserveAspectRatio="xMidYMid meet" role="img" aria-label="GZ righting arm curve">
+          <line x1="26" y1="88" x2="326" y2="88" stroke="var(--ink-3)" stroke-width="1"/>
+          <line x1="256.6" y1="14" x2="256.6" y2="136" stroke="var(--mag)" stroke-width="1" stroke-dasharray="3 3"/>
+          <text x="260" y="24" font-family="ui-monospace,monospace" font-size="9" fill="var(--mag)">AVS 62°</text>
+          <path d="M26 88 L69 78 L112 69 L156 61 L186 56 L212 53 L246 57 L276 63 L294 71 L302 88 L334 110"
+                fill="none" stroke="var(--ink)" stroke-width="1.75" stroke-linejoin="round"/>
+          <path d="M302 88 L334 110" fill="none" stroke="var(--ink)" stroke-width="1.75" stroke-dasharray="5 4"/>
+          <circle cx="212" cy="53" r="3.5" fill="var(--ink)"/>
+          <text x="212" y="44" font-family="ui-monospace,monospace" font-size="9.5" fill="var(--ink)" text-anchor="middle">61 mm @ 38°</text>
+          <g font-family="ui-monospace,monospace" font-size="8.5" fill="var(--ink-3)" text-anchor="middle">
+            <text x="26" y="148">0</text><text x="105" y="148">20</text><text x="184" y="148">40</text><text x="263" y="148">60</text><text x="334" y="148">80</text>
+          </g>
+        </svg>
+        <div class="note">end-tip immersion 41° · the stern immerses first · heel 0° base</div>
+      </div>
+    </aside>
+  </div>
+
+  <footer class="cfoot">
+    <span>kayak-analyzer · analyze</span>
+    <span>trim sweep ±4.5° · fine step 0.1° · converged · 30 planes</span>
+    <span>h · chart</span>
+  </footer>
+</div>
+</body>
+</html>

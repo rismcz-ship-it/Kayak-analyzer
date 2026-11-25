@@ -1,0 +1,549 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Analyze — Drawing sheet</title>
+<style>
+  :root {
+    --sheet: #efede5;
+    --sheet-2: #f5f3ec;
+    --ink: #1f231e;
+    --ink-2: #555b50;
+    --ink-3: #8b8f83;
+    --rule: #c8c7ba;
+    --rule-2: #a9a99a;
+    --accent: #b8431b;
+    --mono: ui-monospace, "Cascadia Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+    --sans: "Arial Narrow", "Helvetica Neue", Arial, sans-serif;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body { height: 100%; margin: 0; }
+
+  body {
+    padding: 16px;
+    background: #d9d7cc;
+    color: var(--ink);
+    font: 11px/1.4 var(--sans);
+    overflow: hidden;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .sheet {
+    position: relative;
+    height: 100%;
+    display: grid;
+    grid-template-rows: 34px minmax(0, 1fr) 54px;
+    border: 1.5px solid var(--ink);
+    outline: 1px solid var(--rule-2);
+    outline-offset: 4px;
+    background: var(--sheet);
+    background-image:
+      linear-gradient(var(--sheet-2) 1px, transparent 1px),
+      linear-gradient(90deg, var(--sheet-2) 1px, transparent 1px);
+    background-size: 10px 10px;
+  }
+
+  .mark { position: absolute; width: 9px; height: 9px; border: 0 solid var(--ink); }
+  .mark.tl { top: -9px; left: -9px; border-top-width: 1px; border-left-width: 1px; }
+  .mark.tr { top: -9px; right: -9px; border-top-width: 1px; border-right-width: 1px; }
+  .mark.bl { bottom: -9px; left: -9px; border-bottom-width: 1px; border-left-width: 1px; }
+  .mark.br { bottom: -9px; right: -9px; border-bottom-width: 1px; border-right-width: 1px; }
+
+  /* ---------- title strip ---------- */
+
+  .titlebar {
+    display: flex;
+    align-items: center;
+    gap: 26px;
+    padding: 0 14px;
+    border-bottom: 1px solid var(--ink);
+  }
+
+  .wordmark {
+    display: flex;
+    align-items: baseline;
+    gap: 7px;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+  }
+
+  .wordmark i {
+    font-style: normal;
+    font-weight: 400;
+    font-size: 8.5px;
+    letter-spacing: 0.2em;
+    color: var(--ink-3);
+  }
+
+  nav.tabs { display: flex; gap: 18px; height: 100%; }
+
+  nav.tabs a {
+    display: flex;
+    align-items: center;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    text-decoration: none;
+    color: var(--ink-3);
+    border-bottom: 2px solid transparent;
+  }
+
+  nav.tabs a[aria-current="page"] { color: var(--accent); border-bottom-color: var(--accent); }
+  nav.tabs a:hover { color: var(--ink-2); }
+
+  .titlebar .meta {
+    margin-left: auto;
+    display: flex;
+    gap: 20px;
+    font-size: 9px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+
+  .titlebar .meta b { color: var(--ink-2); font-weight: 400; font-family: var(--mono); letter-spacing: 0; }
+
+  /* ---------- body ---------- */
+
+  .body {
+    min-height: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 316px;
+  }
+
+  .drawing {
+    min-height: 0;
+    padding: 6px 4px 4px 10px;
+    border-right: 1px solid var(--ink);
+  }
+
+  .drawing svg { display: block; width: 100%; height: 100%; }
+
+  .side {
+    min-height: 0;
+    padding: 10px 12px 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    overflow: hidden;
+  }
+
+  .block-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+    padding-bottom: 3px;
+    border-bottom: 1px solid var(--ink);
+    font-size: 8.5px;
+    font-weight: 700;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+  }
+
+  .block-head span { font-weight: 400; color: var(--ink-3); letter-spacing: 0.1em; }
+
+  /* loading grid */
+
+  .load {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 7px 12px;
+    margin-top: 7px;
+  }
+
+  .load .f {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .load label {
+    font-size: 8px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+
+  .load .v {
+    display: flex;
+    align-items: baseline;
+    gap: 4px;
+    border-bottom: 1px solid var(--rule-2);
+    padding-bottom: 1px;
+  }
+
+  .load input {
+    width: 100%;
+    border: 0;
+    background: transparent;
+    color: var(--ink);
+    font: 12px var(--mono);
+    font-variant-numeric: tabular-nums;
+    padding: 0;
+  }
+
+  .load input:focus { outline: none; border-bottom: 1px solid var(--accent); }
+
+  .load .u { font-size: 8px; color: var(--ink-3); letter-spacing: 0.08em; }
+
+  /* graph */
+
+  .graph svg { display: block; width: 100%; height: auto; margin-top: 5px; }
+
+  /* notes */
+
+  .notes {
+    margin-top: auto;
+    font-size: 9px;
+    line-height: 1.55;
+    color: var(--ink-2);
+    letter-spacing: 0.02em;
+  }
+
+  .notes ol { margin: 6px 0 0; padding-left: 14px; }
+  .notes li { margin-bottom: 2px; }
+
+  /* ---------- title block ---------- */
+
+  .titleblock {
+    display: grid;
+    grid-template-columns: 1.6fr 1fr 1fr 1fr 1.1fr;
+    border-top: 1px solid var(--ink);
+    font-size: 8.5px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+  }
+
+  .titleblock > div {
+    padding: 6px 12px;
+    border-right: 1px solid var(--rule-2);
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+  }
+
+  .titleblock > div:last-child { border-right: 0; }
+
+  .titleblock .k { color: var(--ink-3); font-size: 7.5px; }
+  .titleblock .v { font-size: 10px; font-weight: 700; letter-spacing: 0.1em; }
+  .titleblock .v.mono { font-family: var(--mono); font-weight: 400; letter-spacing: 0; text-transform: none; }
+
+  .titleblock .stamp {
+    color: var(--accent);
+    border: 1px solid var(--accent);
+    align-self: flex-start;
+    padding: 1px 5px;
+    font-size: 8px;
+    letter-spacing: 0.18em;
+  }
+</style>
+</head>
+<body>
+
+<div class="sheet">
+  <span class="mark tl"></span><span class="mark tr"></span>
+  <span class="mark bl"></span><span class="mark br"></span>
+
+  <header class="titlebar">
+    <div class="wordmark">Kayak Analyzer <i>hydrostatics</i></div>
+    <nav class="tabs" aria-label="Workspace">
+      <a href="#analyze" aria-current="page">Analyze</a>
+      <a href="#compare">Compare</a>
+    </nav>
+    <div class="meta">
+      <span>dwg <b>KA-114</b></span>
+      <span>kayak.stl</span>
+      <span>watertight</span>
+      <span><b>2 714.4 × 613.1 × 325.1</b></span>
+    </div>
+  </header>
+
+  <div class="body">
+
+    <div class="drawing">
+      <svg viewBox="0 0 900 620" role="img" aria-label="Drawing sheet: side elevation with dimensions, and midship section A-A">
+        <defs>
+          <pattern id="bp-minor" width="10" height="10" patternUnits="userSpaceOnUse">
+            <path d="M10 0H0V10" fill="none" stroke="#e3e1d6" stroke-width="0.7"/>
+          </pattern>
+          <pattern id="bp-major" width="50" height="50" patternUnits="userSpaceOnUse">
+            <path d="M50 0H0V50" fill="none" stroke="#d6d3c4" stroke-width="0.8"/>
+          </pattern>
+          <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0 1 L10 5 L0 9 z" fill="#b8431b"/>
+          </marker>
+          <marker id="ar-ink" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M0 1 L10 5 L0 9 z" fill="#1f231e"/>
+          </marker>
+        </defs>
+
+        <rect width="900" height="620" fill="url(#bp-minor)"/>
+        <rect width="900" height="620" fill="url(#bp-major)"/>
+
+        <!-- ============ side elevation ============ -->
+        <g transform="translate(0,-40)">
+          <!-- centre line -->
+          <line x1="30" y1="212" x2="870" y2="212" stroke="#8b8f83" stroke-width="0.7" stroke-dasharray="16 3 2 3"/>
+
+          <!-- hull -->
+          <path d="M 800 190
+                   C 620 194 440 206 260 224
+                   C 200 230 140 237 100 244
+                   L 100 250
+                   C 160 268 320 276 450 276
+                   C 580 276 700 262 762 244
+                   C 788 236 799 212 800 190 Z"
+                fill="#e8e5d9" stroke="#1f231e" stroke-width="1.5" stroke-linejoin="round"/>
+
+          <path d="M 800 190 C 620 194 440 206 260 224 C 200 230 140 237 100 244"
+                fill="none" stroke="#555b50" stroke-width="0.9"/>
+
+          <!-- waterline -->
+          <line x1="20" y1="250" x2="880" y2="250" stroke="#b8431b" stroke-width="0.9" stroke-dasharray="9 4"/>
+          <text x="876" y="243" font-family="ui-monospace, monospace" font-size="8" fill="#b8431b" text-anchor="end">WL</text>
+
+          <!-- stations -->
+          <g stroke="#a9a99a" stroke-width="0.6" stroke-dasharray="10 3 2 3">
+            <line x1="100" y1="176" x2="100" y2="296"/>
+            <line x1="450" y1="150" x2="450" y2="300"/>
+            <line x1="800" y1="130" x2="800" y2="286"/>
+          </g>
+          <text x="100" y="306" font-family="ui-monospace, monospace" font-size="7.5" fill="#8b8f83" text-anchor="middle">ST 0</text>
+          <text x="450" y="310" font-family="ui-monospace, monospace" font-size="7.5" fill="#8b8f83" text-anchor="middle">ST 5</text>
+          <text x="800" y="296" font-family="ui-monospace, monospace" font-size="7.5" fill="#8b8f83" text-anchor="middle">ST 10</text>
+
+          <!-- LOA -->
+          <g stroke="#b8431b" stroke-width="0.8">
+            <line x1="100" y1="252" x2="100" y2="336"/>
+            <line x1="800" y1="198" x2="800" y2="336"/>
+            <line x1="100" y1="330" x2="800" y2="330" marker-start="url(#ar)" marker-end="url(#ar)"/>
+          </g>
+          <text x="450" y="324" font-family="ui-monospace, monospace" font-size="9" fill="#b8431b" text-anchor="middle">2 714.4</text>
+          <text x="450" y="345" font-family="ui-monospace, monospace" font-size="7" fill="#b8431b" text-anchor="middle">LOA</text>
+
+          <!-- bow freeboard -->
+          <g stroke="#b8431b" stroke-width="0.8">
+            <line x1="800" y1="190" x2="836" y2="190"/>
+            <line x1="800" y1="250" x2="836" y2="250"/>
+            <line x1="830" y1="190" x2="830" y2="250" marker-start="url(#ar)" marker-end="url(#ar)"/>
+          </g>
+          <text x="842" y="216" font-family="ui-monospace, monospace" font-size="8" fill="#b8431b">222.2</text>
+          <text x="842" y="226" font-family="ui-monospace, monospace" font-size="6.5" fill="#b8431b">BOW FB</text>
+
+          <!-- stern freeboard leader -->
+          <path d="M 132 207 L 172 168 L 232 168" fill="none" stroke="#b8431b" stroke-width="0.7"/>
+          <circle cx="132" cy="207" r="1.6" fill="#b8431b"/>
+          <text x="236" y="171" font-family="ui-monospace, monospace" font-size="8" fill="#b8431b">22.3 STERN FB</text>
+
+          <!-- draft leader -->
+          <path d="M 470 264 L 512 300 L 590 300" fill="none" stroke="#b8431b" stroke-width="0.7"/>
+          <circle cx="470" cy="264" r="1.6" fill="#b8431b"/>
+          <text x="594" y="303" font-family="ui-monospace, monospace" font-size="8" fill="#b8431b">94.0 DRAFT</text>
+
+          <!-- trim angle -->
+          <path d="M 800 250 A 96 96 0 0 0 796 214" fill="none" stroke="#b8431b" stroke-width="0.8"/>
+          <text x="742" y="240" font-family="ui-monospace, monospace" font-size="8" fill="#b8431b" text-anchor="end">+3.60°</text>
+          <text x="742" y="249" font-family="ui-monospace, monospace" font-size="6.5" fill="#b8431b" text-anchor="end">BOW UP</text>
+
+          <!-- LCF mark -->
+          <g stroke="#1f231e" stroke-width="1">
+            <line x1="450" y1="250" x2="450" y2="258"/>
+          </g>
+          <text x="450" y="268" font-family="ui-monospace, monospace" font-size="7" fill="#555b50" text-anchor="middle">LCF</text>
+
+          <text x="28" y="176" font-family="ui-monospace, monospace" font-size="8" fill="#555b50">STERN</text>
+          <text x="872" y="176" font-family="ui-monospace, monospace" font-size="8" fill="#555b50" text-anchor="end">BOW</text>
+
+          <text x="20" y="112" font-family="Arial Narrow, Arial, sans-serif" font-size="9" font-weight="700" letter-spacing="1.6" fill="#1f231e">SIDE ELEVATION</text>
+          <text x="20" y="124" font-family="ui-monospace, monospace" font-size="7" fill="#8b8f83">SCALE 1:20 · HULL FRAME · Z UP</text>
+        </g>
+
+        <!-- ============ section ============ -->
+        <line x1="0" y1="352" x2="900" y2="352" stroke="#c8c7ba" stroke-width="0.8" stroke-dasharray="14 4 2 4"/>
+
+        <g transform="translate(0,0)">
+          <text x="20" y="376" font-family="Arial Narrow, Arial, sans-serif" font-size="9" font-weight="700" letter-spacing="1.6" fill="#1f231e">SECTION A–A · MIDSHIP</text>
+          <text x="20" y="388" font-family="ui-monospace, monospace" font-size="7" fill="#8b8f83">SCALE 1:10 · LOOKING FORWARD</text>
+
+          <!-- centre line -->
+          <line x1="450" y1="400" x2="450" y2="600" stroke="#8b8f83" stroke-width="0.7" stroke-dasharray="16 3 2 3"/>
+
+          <!-- deck -->
+          <line x1="315" y1="420" x2="585" y2="420" stroke="#1f231e" stroke-width="1.2"/>
+
+          <!-- sheer sides -->
+          <path d="M 315 420 L 342 522" stroke="#1f231e" stroke-width="1"/>
+          <path d="M 585 420 L 558 522" stroke="#1f231e" stroke-width="1"/>
+
+          <!-- section outline -->
+          <path d="M 342 522
+                   C 348 545 386 561 450 563
+                   C 514 561 552 545 558 522"
+                fill="#e8e5d9" stroke="#1f231e" stroke-width="1.5" stroke-linejoin="round"/>
+          <line x1="342" y1="522" x2="558" y2="522" stroke="#1f231e" stroke-width="1"/>
+
+          <!-- waterline -->
+          <line x1="292" y1="522" x2="606" y2="522" stroke="#b8431b" stroke-width="0.9" stroke-dasharray="9 4"/>
+          <text x="612" y="525" font-family="ui-monospace, monospace" font-size="7" fill="#b8431b">WL</text>
+
+          <!-- BWL dim -->
+          <g stroke="#b8431b" stroke-width="0.8">
+            <line x1="342" y1="526" x2="342" y2="596"/>
+            <line x1="558" y1="526" x2="558" y2="596"/>
+            <line x1="342" y1="590" x2="558" y2="590" marker-start="url(#ar)" marker-end="url(#ar)"/>
+          </g>
+          <text x="450" y="584" font-family="ui-monospace, monospace" font-size="8" fill="#b8431b" text-anchor="middle">489.0 BWL</text>
+
+          <!-- deck beam dim -->
+          <g stroke="#b8431b" stroke-width="0.8">
+            <line x1="315" y1="406" x2="315" y2="420"/>
+            <line x1="585" y1="406" x2="585" y2="420"/>
+            <line x1="315" y1="410" x2="585" y2="410" marker-start="url(#ar)" marker-end="url(#ar)"/>
+          </g>
+          <text x="450" y="404" font-family="ui-monospace, monospace" font-size="8" fill="#b8431b" text-anchor="middle">613.1 DECK</text>
+
+          <!-- draft dim -->
+          <g stroke="#b8431b" stroke-width="0.8">
+            <line x1="558" y1="522" x2="636" y2="522"/>
+            <line x1="558" y1="563" x2="636" y2="563"/>
+            <line x1="630" y1="522" x2="630" y2="563" marker-start="url(#ar)" marker-end="url(#ar)"/>
+          </g>
+          <text x="642" y="547" font-family="ui-monospace, monospace" font-size="8" fill="#b8431b">94.0</text>
+
+          <!-- depth dim -->
+          <g stroke="#b8431b" stroke-width="0.8">
+            <line x1="585" y1="420" x2="676" y2="420"/>
+            <line x1="450" y1="563" x2="676" y2="563"/>
+            <line x1="670" y1="420" x2="670" y2="563" marker-start="url(#ar)" marker-end="url(#ar)"/>
+          </g>
+          <text x="682" y="494" font-family="ui-monospace, monospace" font-size="8" fill="#b8431b">325.1</text>
+        </g>
+      </svg>
+    </div>
+
+    <aside class="side">
+
+      <section>
+        <div class="block-head">Loading condition <span>75 kg</span></div>
+        <div class="load">
+          <div class="f">
+            <label for="bp-mass">Weight</label>
+            <div class="v"><input id="bp-mass" type="text" value="75.0" inputmode="decimal"><span class="u">kg</span></div>
+          </div>
+          <div class="f">
+            <label for="bp-lcg">LCG from bow</label>
+            <div class="v"><input id="bp-lcg" type="text" value="52.0" inputmode="decimal"><span class="u">%</span></div>
+          </div>
+          <div class="f">
+            <label for="bp-kg">KG above keel</label>
+            <div class="v"><input id="bp-kg" type="text" value="280" inputmode="decimal"><span class="u">mm</span></div>
+          </div>
+          <div class="f">
+            <label for="bp-heel">Heel</label>
+            <div class="v"><input id="bp-heel" type="text" value="0.0" inputmode="decimal"><span class="u">deg</span></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="graph">
+        <div class="block-head">Graph 2 — righting arm <span>GZ mm</span></div>
+        <svg viewBox="0 0 320 160" role="img" aria-label="GZ curve, peak 61 millimetres at 38 degrees, zero at 62 degrees">
+          <g stroke="#d6d3c4" stroke-width="0.7">
+            <line x1="34" y1="24" x2="312" y2="24"/>
+            <line x1="34" y1="53" x2="312" y2="53"/>
+            <line x1="34" y1="81" x2="312" y2="81"/>
+            <line x1="34" y1="110" x2="312" y2="110"/>
+          </g>
+          <line x1="34" y1="110" x2="312" y2="110" stroke="#1f231e" stroke-width="0.8"/>
+
+          <g font-family="ui-monospace, monospace" font-size="7" fill="#8b8f83" text-anchor="end">
+            <text x="28" y="113">0</text>
+            <text x="28" y="84">30</text>
+            <text x="28" y="56">45</text>
+            <text x="28" y="27">60</text>
+          </g>
+
+          <path d="M34 110 L65 85 L96 57 L127 34 L152 25 L174 29 L195 48 L214 74 L226 110 L251 130 L282 146 L282 110 Z"
+                fill="#b8431b" opacity="0.07"/>
+          <path d="M34 110 L65 85 L96 57 L127 34 L152 25 L174 29 L195 48 L214 74 L226 110 L251 130 L282 146"
+                fill="none" stroke="#b8431b" stroke-width="1.3" stroke-linejoin="round"/>
+
+          <circle cx="152" cy="25" r="2" fill="#b8431b"/>
+          <text x="158" y="21" font-family="ui-monospace, monospace" font-size="7" fill="#b8431b">61</text>
+          <circle cx="226" cy="110" r="2" fill="none" stroke="#b8431b" stroke-width="1"/>
+          <text x="226" y="104" font-family="ui-monospace, monospace" font-size="7" fill="#b8431b" text-anchor="middle">62°</text>
+
+          <g font-family="ui-monospace, monospace" font-size="7" fill="#8b8f83" text-anchor="middle">
+            <text x="34" y="128">0</text>
+            <text x="127" y="128">30</text>
+            <text x="220" y="128">60</text>
+            <text x="306" y="128">90</text>
+          </g>
+        </svg>
+      </section>
+
+      <section>
+        <div class="block-head">Results <span>mm · kg</span></div>
+        <div style="display:grid;grid-template-columns:1fr auto;gap:0 8px;margin-top:5px;font-family:var(--mono);font-size:10px">
+          <span style="color:var(--ink-3)">DRAFT</span><span style="text-align:right">94.0</span>
+          <span style="color:var(--ink-3)">LWL</span><span style="text-align:right">2 384</span>
+          <span style="color:var(--ink-3)">BWL</span><span style="text-align:right">489</span>
+          <span style="color:var(--ink-3)">AWP</span><span style="text-align:right">0.412 m²</span>
+          <span style="color:var(--ink-3)">CB / CP</span><span style="text-align:right">0.4721 / 0.5813</span>
+          <span style="color:var(--ink-3)">CM / CWP</span><span style="text-align:right">0.8120 / 0.6394</span>
+          <span style="color:var(--ink-3)">WETTED</span><span style="text-align:right">1.842e6 mm²</span>
+          <span style="color:var(--ink-3)">TPC</span><span style="text-align:right">0.0042</span>
+          <span style="color:var(--ink-3)">KB / BM / KM</span><span style="text-align:right">58 / 344 / 402</span>
+          <span style="color:var(--ink-3)">KG / GM</span><span style="text-align:right;color:var(--accent)">280 / +122</span>
+          <span style="color:var(--ink-3)">LCB–LCG</span><span style="text-align:right">1.68</span>
+          <span style="color:var(--ink-3)">GZ MAX</span><span style="text-align:right">61 @ 38°</span>
+          <span style="color:var(--ink-3)">AVS / TIP</span><span style="text-align:right">62.0° / 41°</span>
+        </div>
+      </section>
+
+      <div class="notes">
+        <div class="block-head">Notes</div>
+        <ol>
+          <li>All dimensions in millimetres. Mass in kilograms.</li>
+          <li>Mesh closed; no geometry altered before solving.</li>
+          <li>Trim positive bow up; heel positive −Y side down.</li>
+          <li>Trim sweep ±4.5° coarse, 0.1° fine about the winner.</li>
+        </ol>
+      </div>
+
+    </aside>
+  </div>
+
+  <div class="titleblock">
+    <div>
+      <span class="k">Title</span>
+      <span class="v">Kayak hydrostatics — analyze</span>
+    </div>
+    <div>
+      <span class="k">Drawn</span>
+      <span class="v mono">2026-11-23</span>
+    </div>
+    <div>
+      <span class="k">Scale</span>
+      <span class="v mono">1 : 20</span>
+    </div>
+    <div>
+      <span class="k">Sheet</span>
+      <span class="v mono">1 / 1</span>
+    </div>
+    <div>
+      <span class="k">Status</span>
+      <span class="stamp">Converged</span>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

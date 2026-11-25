@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>d · Editorial — kayak-analyzer</title>
+<style>
+  :root {
+    --mono: ui-monospace, "Cascadia Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+    --sans: ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif;
+    --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, "Times New Roman", serif;
+    --paper: #fbf8f2;
+    --ink: #201d18;
+    --ink-2: #4c463c;
+    --ink-3: #8a8175;
+    --rule: #d8d0c2;
+    --red: #b03a24;
+    --blue: #274b73;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; overflow: hidden; }
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--serif);
+    font-variant-numeric: tabular-nums;
+    font-size: 15px;
+    line-height: 1.62;
+  }
+  .page { width: 1280px; height: 800px; display: flex; flex-direction: column; padding: 46px 0 0; }
+  .col { width: 768px; margin: 0 auto; padding: 0 24px; }
+  .kick { font-family: var(--sans); font-size: 10px; letter-spacing: 0.3em; text-transform: uppercase; color: var(--ink-3); }
+  h1 { margin: 14px 0 6px; font-size: 56px; font-weight: 400; line-height: 1.05; letter-spacing: -0.02em; }
+  h1 em { font-style: italic; color: var(--red); }
+  .standfirst { font-size: 19px; line-height: 1.5; color: var(--ink-2); margin: 10px 0 0; }
+  .byline { font-family: var(--sans); font-size: 10px; letter-spacing: 0.22em; text-transform: uppercase; color: var(--ink-3); margin-top: 18px; border-top: 2px solid var(--ink); padding-top: 8px; display: flex; justify-content: space-between; }
+  article { flex: 1; min-height: 0; overflow: hidden; margin-top: 20px; }
+  p { margin: 0 0 14px; }
+  p.lede::first-letter { font-size: 52px; line-height: 0.85; float: left; padding: 4px 8px 0 0; color: var(--red); }
+  .big { font-family: var(--mono); font-size: 17px; }
+  .big.xl { font-size: 24px; }
+  .num { font-family: var(--mono); }
+  .midrule { border: 0; border-top: 1px solid var(--rule); margin: 18px 0; }
+  .figwrap { float: right; width: 300px; margin: 4px 0 12px 26px; }
+  .figcap { font-family: var(--sans); font-size: 10px; line-height: 1.5; letter-spacing: 0.04em; color: var(--ink-3); margin-top: 6px; }
+  .figcap b { color: var(--ink-2); font-weight: 600; }
+  .pull { border-top: 1px solid var(--rule); border-bottom: 1px solid var(--rule); padding: 12px 0; margin: 16px 0; display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+  .pull > div .v { font-family: var(--mono); font-size: 26px; letter-spacing: -0.02em; display: block; }
+  .pull > div .v small { font-size: 12px; color: var(--ink-3); }
+  .pull > div .k { font-family: var(--sans); font-size: 9px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--ink-3); display: block; margin-bottom: 2px; }
+  .foot { flex: none; border-top: 1px solid var(--rule); margin: 0 24px; padding: 10px 0 14px; display: flex; justify-content: space-between; font-family: var(--sans); font-size: 9px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--ink-3); }
+</style>
+</head>
+<body>
+<div class="page">
+<div class="col">
+<span class="kick">kayak-analyzer · hydrostatics · a solved run</span>
+  <h1>She floats <em>bow-up</em>, by three point six degrees.</h1>
+  <p class="standfirst">One hull, one weight, one answer. Upload <span class="num">kayak.stl</span> — watertight,
+  <span class="num">2 714.4 × 613.1 × 325.1 mm</span> — load it to <span class="num">75.0 kg</span>, and the water
+  settles where the numbers below say it does.</p>
+  <div class="byline"><span>Loading condition · 75.0 kg · LCG 52.0 % · KG 280 mm · heel 0°</span><span>2026-11-23</span></div>
+
+  <article>
+    <div class="pull">
+      <div><span class="k">Draft</span><span class="v num">94.0<small> mm</small></span></div>
+      <div><span class="k">Trim</span><span class="v num">+3.60<small>°</small></span></div>
+      <div><span class="k">GM</span><span class="v num">+122<small> mm</small></span></div>
+      <div><span class="k">LCB–LCG</span><span class="v num">1.68<small> mm</small></span></div>
+    </div>
+
+    <div class="figwrap">
+      <svg viewBox="0 0 340 210" width="300" height="186" role="img" aria-label="GZ righting arm curve">
+        <line x1="34" y1="126" x2="326" y2="126" stroke="#d8d0c2" stroke-width="1"/>
+        <line x1="34" y1="126" x2="326" y2="126" stroke="#8a8175" stroke-width="1" opacity="0"/>
+        <g stroke="#e6ded0" stroke-width="1">
+          <line x1="34" y1="88" x2="326" y2="88"/><line x1="34" y1="50" x2="326" y2="50"/><line x1="34" y1="164" x2="326" y2="164"/>
+        </g>
+        <line x1="34" y1="126" x2="326" y2="126" stroke="#8a8175" stroke-width="1"/>
+        <line x1="256.6" y1="26" x2="256.6" y2="190" stroke="#274b73" stroke-width="1" stroke-dasharray="3 3"/>
+        <text x="260" y="36" font-family="ui-monospace,monospace" font-size="9" fill="#274b73">AVS 62°</text>
+        <path d="M34 126 L69 110 L104 95 L140 82 L166 73 L186 68 L216 73 L246 83 L268 96 L279 126 L303 152 L326 172"
+              fill="none" stroke="#b03a24" stroke-width="2" stroke-linejoin="round"/>
+        <path d="M279 126 L303 152 L326 172" fill="none" stroke="#b03a24" stroke-width="2" stroke-dasharray="5 4"/>
+        <circle cx="186" cy="68" r="3.5" fill="#b03a24"/>
+        <text x="186" y="58" font-family="ui-monospace,monospace" font-size="9.5" fill="#201d18" text-anchor="middle">61 mm @ 38°</text>
+        <g font-family="ui-monospace,monospace" font-size="8.5" fill="#8a8175" text-anchor="middle">
+          <text x="34" y="202">0</text><text x="107" y="202">20</text><text x="180" y="202">40</text><text x="253" y="202">60</text><text x="326" y="202">80</text>
+        </g>
+        <text x="170" y="16" font-family="ui-monospace,monospace" font-size="8.5" fill="#8a8175" text-anchor="middle">GZ · mm / heel · deg</text>
+      </svg>
+      <p class="figcap"><b>Fig. 1 — The righting arm.</b> Zero at rest, a peak of 61 mm at 38°, then a fall to nothing
+      at the angle of vanishing stability, 62°. Past that the arm is negative: the kayak keeps going over.</p>
+    </div>
+
+    <p class="lede">Load a kayak with a paddler and the hull answers with a waterline. Put 75.0 kg aboard this
+    <span class="num">2 714.4 mm</span> hull and the keel sinks <span class="big">94.0 mm</span> below the surface —
+    no more. The waterline it finds is 2 384 mm long and 489 mm wide, enclosing 0.412 m² of waterplane, and the
+    wetted surface below it totals 1.842e6 mm². Every tonne per centimetre of immersion costs 0.0042.</p>
+<p>It does not sit level. The centre of gravity is set at <span class="num">52.0 %</span> of the waterline from the
+    bow, and the hull answers by trimming <span class="big">+3.60°</span> — bow up, by the marine convention. The bow
+    lifts clear by 222.2 mm; the stern is left with 22.3 mm, and that low stern is the number to watch. The centre of
+    buoyancy settles 1.68 mm abaft the centre of gravity — the residual of a 0.1° fine sweep across a ±4.5° trim
+    search, and close enough to even for the hull to rest.</p>
+
+    <p>Stability is a stack of three heights above the keel: the centre of buoyancy at KB 58 mm, the metacenter at
+    KM 402 mm, and the paddler's centre of gravity at KG 280 mm. What is left between the top of the stack and the
+    load is GM <span class="big">+122 mm</span> — positive, so the kayak comes back. The block coefficient is
+    <span class="num">0.4721</span>, the prismatic <span class="num">0.5813</span>, the midship section
+    <span class="num">0.8120</span> and the waterplane <span class="num">0.6394</span>: fine ends, full middle, the
+    shape a sea kayak should have.</p>
+
+    <p>The curve in Fig. 1 is the whole stability story. It rises to a maximum righting arm of 61 mm at 38°, holds,
+    then falls; one stem enters the water at 41° — the stern, at 22.3 mm freeboard — and the arm vanishes entirely at
+    62°. Up to there, she rights herself. Beyond there, she does not.</p>
+
+    <hr class="midrule">
+    <p style="font-family:var(--mono);font-size:11px;line-height:1.9;color:var(--ink-2)">
+    FLOTATION · draft 94.0 mm · displacement 75.0 kg · LWL 2 384 mm · BWL 489 mm · waterplane area 0.412 m² ·
+    TPC 0.0042 · wetted surface 1.842e6 mm² · bow freeboard 222.2 mm · stern freeboard 22.3 mm · LCB–LCG 1.68 mm<br>
+    FORM · Cb 0.4721 · Cp 0.5813 · Cm 0.8120 · Cwp 0.6394<br>
+    STABILITY · KB 58 mm · BM 344 mm · KM 402 mm · KG 280 mm · GM +122 mm · GZ max 61 mm at 38° · AVS 62° ·
+    end-tip immersion 41° · trim sweep ±4.5°, fine step 0.1° · heel 0°</p>
+  </article>
+</div>
+<div class="foot"><span>kayak-analyzer · analyze</span><span>kayak.stl · watertight · 75.0 kg</span><span>d · editorial</span></div>
+</div>
+</body>
+</html>

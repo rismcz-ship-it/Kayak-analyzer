@@ -1,0 +1,961 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>kayak-analyzer — Analyze (mockup)</title>
+<style>
+  /*
+    Tokens. Four neutral levels ~3-4% apart in OKLCH lightness (dark mode needs
+    more distance than light mode, not less), one stroke family, three text
+    variants that all clear WCAG AA on every surface they sit on, an accent that
+    is a SCALE rather than one colour, and one semantic colour per meaning.
+
+    Every number on this screen came out of solveTrim() on tests/test-kayak.stl
+    at 75 kg / LCG 52% from bow / KG 280 mm / heel 0, on the app's own sweep
+    (+-4.5 deg at 0.1 deg). None of it is illustrative.
+  */
+  :root {
+    --font-ui: 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
+    --font-mono: 'Cascadia Mono', Consolas, ui-monospace, monospace;
+
+    /* neutrals */
+    --bg: #0a0d10;
+    --rail: #0f141a;
+    --surface: #151d25;
+    --surface-2: #1d272f;
+    --line: #1e262e;
+    --line-2: #2b353f;
+
+    /* text — all AA on every surface above */
+    --text: #e8edf1;
+    --text-2: #a8b4bf;
+    --text-3: #8b97a3;
+
+    /* accent — a scale */
+    --accent-300: #8cc4ef;
+    --accent-400: #6fb2e8;
+    --accent-500: #4d9fe0;
+    --accent-700: #3a86c0;
+    --accent: var(--accent-500);
+    --accent-soft: rgba(77, 159, 224, 0.16);
+    --accent-ink: #06121b;
+
+    /* semantic */
+    --good: #55b489;
+    --warn: #d3a154;
+    --bad: #cd6c70;
+
+    --water: rgba(77, 159, 224, 0.65);
+    --grid: rgba(255, 255, 255, 0.028);
+    --hull-top: #2c3a46;
+    --hull-bottom: #18212a;
+    --hull-line: #46545f;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    font-family: var(--font-ui);
+    font-size: 13px;
+    line-height: 1.4;
+    color: var(--text);
+    background: var(--bg);
+    -webkit-font-smoothing: antialiased;
+    overflow: hidden;
+  }
+
+  .num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+
+  button { font-family: inherit; }
+  :focus-visible { outline: 2px solid var(--accent-400); outline-offset: 2px; }
+
+  .app {
+    height: 100%;
+    display: grid;
+    grid-template-columns: 64px minmax(0, 1fr) 420px;
+    position: relative;
+  }
+
+  /* ---------------- mockup chrome (not part of the app) ---------------- */
+  .switcher {
+    position: absolute;
+    top: 12px;
+    left: 76px;
+    z-index: 100;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    background: var(--surface-2);
+    border: 1px solid var(--line-2);
+    border-radius: 20px;
+    padding: 4px;
+  }
+  .switcher-tag {
+    font-size: 11px;
+    color: var(--text-3);
+    padding: 0 8px 0 6px;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+  }
+  .state-btn {
+    padding: 4px 12px;
+    border-radius: 16px;
+    border: 0;
+    background: transparent;
+    color: var(--text-2);
+    font-size: 11px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background-color 0.12s, color 0.12s;
+  }
+  .state-btn:hover { color: var(--text); background: var(--surface); }
+  .state-btn.active { background: var(--accent-500); color: var(--accent-ink); font-weight: 600; }
+
+  /* ---------------- left rail ---------------- */
+  .rail {
+    background: var(--rail);
+    border-right: 1px solid var(--line);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 16px 0;
+  }
+  .mark { width: 34px; height: 21px; margin-bottom: 18px; }
+
+  .nav {
+    width: 56px;
+    height: 52px;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--text-3);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    cursor: pointer;
+    transition: color 0.12s, background-color 0.12s;
+  }
+  .nav + .nav { margin-top: 4px; }
+  .nav span { font-size: 11px; }
+  .nav svg { width: 16px; height: 16px; }
+  .nav:hover { color: var(--text-2); background: var(--surface); }
+  .nav[aria-current='page'] { color: var(--text); background: var(--surface); }
+  .nav[aria-current='page'] svg { color: var(--accent-500); }
+
+  /* the rail's foot: separated from the destinations above it */
+  .rail-end { margin-top: auto; padding-top: 8px; border-top: 1px solid var(--line); width: 40px; }
+
+  /* ---------------- stage ---------------- */
+  .stage-col {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    position: relative;
+  }
+  .stage {
+    flex: 1;
+    min-height: 0;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    background-image:
+      linear-gradient(var(--grid) 1px, transparent 1px),
+      linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+    background-size: 32px 32px;
+    background-position: center;
+    transition: background-color 0.15s, box-shadow 0.15s;
+  }
+  .stage.drag-over { background-color: rgba(77, 159, 224, 0.04); box-shadow: inset 0 0 0 2px var(--accent-500); }
+
+  .stage svg.hull { width: min(920px, 98%); height: auto; display: block; }
+  .stage-note {
+    font-size: 11px;
+    color: var(--text-3);
+    text-align: center;
+    max-width: 560px;
+    padding: 0 16px;
+  }
+
+  /* empty state drop zone */
+  .dropzone {
+    width: min(480px, 90%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    padding: 48px 32px 32px;
+    border: 1.5px dashed var(--line-2);
+    border-radius: 16px;
+    background: rgba(21, 29, 37, 0.45);
+    backdrop-filter: blur(4px);
+    transition: border-color 0.15s ease-out, background-color 0.15s ease-out;
+  }
+  .stage.drag-over .dropzone { border-color: var(--accent-500); background: rgba(77, 159, 224, 0.08); }
+
+  .drop-icon-wrap {
+    width: 56px;
+    height: 56px;
+    border-radius: 12px;
+    background: var(--surface);
+    border: 1px solid var(--line-2);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 20px;
+    color: var(--accent-500);
+  }
+  .drop-icon { width: 28px; height: 28px; }
+
+  .drop-title { margin: 0 0 8px; font-size: 16px; font-weight: 600; color: var(--text); letter-spacing: -0.01em; }
+  .drop-actions { display: flex; align-items: center; gap: 12px; margin-bottom: 24px; }
+
+  .btn {
+    height: 36px;
+    padding: 0 20px;
+    border-radius: 8px;
+    border: 0;
+    background: var(--accent-500);
+    color: var(--accent-ink);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color 0.12s, transform 0.1s;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .btn:hover:not(:disabled) { background: var(--accent-400); }
+  .btn:active:not(:disabled) { transform: scale(0.98); }
+  .btn:disabled {
+    background: var(--surface-2);
+    border: 1px solid var(--line-2);
+    color: var(--text-3);
+    cursor: not-allowed;
+  }
+
+  .drop-specs {
+    font-size: 11px;
+    color: var(--text-3);
+    border-top: 1px solid var(--line);
+    padding-top: 16px;
+    width: 100%;
+    display: flex;
+    justify-content: center;
+    gap: 16px;
+  }
+  .drop-specs span { display: inline-flex; align-items: center; gap: 4px; }
+  .drop-specs span::before {
+    content: '';
+    width: 3px;
+    height: 3px;
+    border-radius: 50%;
+    background: var(--text-3);
+  }
+  .drop-specs span:first-child::before { display: none; }
+
+  /* foot bar */
+  .foot {
+    flex: none;
+    height: 40px;
+    border-top: 1px solid var(--line);
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 0 16px;
+    font-size: 11px;
+    color: var(--text-3);
+    background: var(--bg);
+  }
+  .foot .file { font-family: var(--font-mono); color: var(--text-2); }
+  .foot .ok { display: inline-flex; align-items: center; gap: 6px; }
+  .foot .ok i { width: 6px; height: 6px; border-radius: 50%; background: var(--good); }
+  .foot .warn { display: inline-flex; align-items: center; gap: 6px; color: var(--warn); }
+  .foot .warn i { width: 6px; height: 6px; border-radius: 50%; background: var(--warn); }
+  .foot .spacer { flex: 1; }
+
+  .ghost {
+    height: 28px;
+    padding: 0 12px;
+    border-radius: 6px;
+    border: 1px solid var(--line-2);
+    background: transparent;
+    color: var(--text-2);
+    font-size: 11px;
+    cursor: pointer;
+    transition: color 0.12s, border-color 0.12s, background-color 0.12s;
+  }
+  .ghost:hover { color: var(--text); border-color: var(--text-3); background: var(--surface); }
+
+  /* ---------------- right side ---------------- */
+  .side {
+    border-left: 1px solid var(--line);
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 16px 20px 24px;
+    display: flex;
+    flex-direction: column;
+    background: var(--bg);
+  }
+  .label { margin: 0 0 8px; font-size: 11px; font-weight: 500; color: var(--text-3); }
+  .rule { height: 1px; background: var(--line); margin: 16px 0; }
+
+  .grid3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+  .field label { display: block; font-size: 11px; color: var(--text-2); margin-bottom: 4px; }
+
+  .control {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    height: 32px;
+    padding: 0 8px;
+    background: var(--surface);
+    border: 1px solid var(--line-2);
+    border-radius: 6px;
+  }
+  .control:focus-within { border-color: var(--accent-500); box-shadow: 0 0 0 2px var(--accent-soft); }
+  .control input {
+    width: 100%;
+    min-width: 0;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--text);
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    font-size: 13px;
+    outline: none;
+  }
+  .control .unit { font-size: 11px; color: var(--text-3); }
+
+  .cond-foot { display: flex; align-items: center; gap: 12px; margin-top: 12px; }
+
+  .switch-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0;
+    border: 0;
+    background: none;
+    cursor: pointer;
+    color: var(--text-2);
+    font-size: 13px;
+  }
+  .switch-row:hover { color: var(--text); }
+  .switch {
+    width: 28px; height: 16px; border-radius: 999px;
+    background: var(--line-2); position: relative; flex: none;
+    transition: background-color 0.12s;
+  }
+  .switch::after {
+    content: ''; position: absolute; top: 2px; left: 2px;
+    width: 12px; height: 12px; border-radius: 50%;
+    background: #f2f6f9; transition: transform 0.12s;
+  }
+  [data-on='1'] .switch { background: var(--accent-500); }
+  [data-on='1'] .switch::after { transform: translateX(12px); }
+
+  .btn-primary {
+    margin-left: auto;
+    height: 32px;
+    padding: 0 16px;
+    border: 0;
+    border-radius: 6px;
+    background: var(--accent-500);
+    color: var(--accent-ink);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color 0.12s;
+  }
+  .btn-primary:hover:not(:disabled) { background: var(--accent-400); }
+  .btn-primary:active:not(:disabled) { transform: scale(0.98); }
+  .btn-primary:disabled {
+    background: var(--surface-2);
+    border: 1px solid var(--line-2);
+    color: var(--text-3);
+    cursor: not-allowed;
+  }
+
+  .heel { margin-top: 12px; display: none; }
+  .side[data-heel='1'] .heel { display: block; }
+  .heel .row { display: flex; align-items: center; gap: 8px; }
+  .heel input[type='range'] { flex: 1; accent-color: var(--accent-500); height: 16px; }
+  .heel output { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 13px; color: var(--text-2); min-width: 32px; text-align: right; }
+  .heel .hint { font-size: 11px; color: var(--text-3); margin-top: 4px; }
+
+  /* a note under the control it names, not a tooltip */
+  .note {
+    margin: 8px 0 0;
+    font-size: 11px;
+    color: var(--text-3);
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+  }
+  .note.warn { color: var(--warn); }
+  .note i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; margin-top: 5px; flex: none; }
+
+  /* progress */
+  .progress { margin-top: 12px; }
+  .progress .bar { height: 4px; border-radius: 999px; background: var(--surface-2); overflow: hidden; }
+  .progress .bar span { display: block; height: 100%; width: 60%; background: var(--accent-500); }
+  .progress .meta { display: flex; justify-content: space-between; font-size: 11px; color: var(--text-3); margin-top: 8px; }
+
+  /* readout */
+  .keys-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); column-gap: 12px; }
+  .keys-row.lead { padding-bottom: 16px; border-bottom: 1px solid var(--line); }
+  .keys-row.sub { padding-top: 16px; }
+
+  .key { min-width: 0; }
+  .key .kk { display: block; font-size: 11px; color: var(--text-3); margin-bottom: 4px; }
+  .key .kv {
+    display: block;
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    font-size: 24px;
+    line-height: 1.15;
+    font-weight: 500;
+    letter-spacing: -0.02em;
+    white-space: nowrap;
+  }
+  .key .kv small { font-size: 11px; font-weight: 400; color: var(--text-3); margin-left: 4px; letter-spacing: 0; }
+  .key .kn { display: block; font-size: 11px; color: var(--text-3); margin-top: 4px; }
+  .key .kn.good { color: var(--good); }
+  .keys-row.sub .key .kv { font-size: 16px; letter-spacing: -0.01em; }
+
+  .app:not([data-state='loaded']) .key .kv { color: var(--text-3); }
+
+  /* the balance row — the number the Compare tab exists for */
+  .balance {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    margin-top: 16px;
+    padding-top: 12px;
+    border-top: 1px solid var(--line);
+  }
+  .balance .bk { font-size: 11px; color: var(--text-3); }
+  .balance .bv { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 16px; color: var(--accent-300); }
+  .bn { display: block; font-size: 11px; color: var(--text-3); margin-top: 4px; }
+
+  /* chart */
+  .chart-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 8px; }
+  .chart-head .label { margin: 0; }
+  .chart-head .stats { margin-left: auto; font-size: 11px; color: var(--text-3); font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+  .chart svg { display: block; width: 100%; height: auto; }
+  .chart.empty-chart {
+    padding: 8px 0 0;
+    border: 1px dashed var(--line-2);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.01);
+  }
+  .chart-note { font-size: 11px; color: var(--text-3); margin: 8px 0 0; line-height: 1.45; }
+
+  /* all values */
+  .all-row {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: auto;
+    padding: 12px 0 0;
+    border: 0;
+    border-top: 1px solid var(--line);
+    background: none;
+    text-align: left;
+    cursor: pointer;
+    font-size: 13px;
+    color: var(--text-2);
+    user-select: none;
+  }
+  .all-row:hover:not(:disabled) { color: var(--text); }
+  .all-row:disabled { opacity: 0.5; cursor: not-allowed; }
+  .all-row .switch { margin-left: auto; }
+  .more { display: none; }
+  .side[data-all='1'] .more { display: block; }
+
+  .group { margin-top: 16px; }
+  .group .label { margin-bottom: 8px; }
+  .kv { display: grid; gap: 4px; margin: 0; }
+  .kv div { display: flex; align-items: baseline; gap: 12px; font-size: 13px; }
+  .kv dt { color: var(--text-2); }
+  .kv dd { margin: 0 0 0 auto; font-family: var(--font-mono); font-variant-numeric: tabular-nums; color: var(--text); }
+  .kv dd.accent { color: var(--accent-300); }
+  .group-note { font-size: 11px; color: var(--text-3); margin: 8px 0 0; line-height: 1.45; }
+
+  /* ---------------- state visibility ----------------
+     Two kinds of class: only-X (visible in exactly one state) and not-X (visible
+     everywhere except one). An element that belongs to several states carries
+     both, so a placeholder can live in empty + solving + bad without leaking
+     into the solved state. */
+  .app[data-state='empty'] :is(.only-loaded, .only-solving, .only-bad, .not-empty) { display: none !important; }
+  .app[data-state='loaded'] :is(.only-empty, .only-solving, .only-bad, .not-loaded) { display: none !important; }
+  .app[data-state='solving'] :is(.only-empty, .only-loaded, .only-bad, .not-solving) { display: none !important; }
+  .app[data-state='bad'] :is(.only-empty, .only-loaded, .only-solving, .not-bad) { display: none !important; }
+</style>
+</head>
+<body>
+<div class="app" id="appRoot" data-state="empty">
+
+  <!-- Mockup chrome. Not part of the app: it exists so a reviewer can walk the states. -->
+  <div class="switcher" role="group" aria-label="Mockup state">
+    <span class="switcher-tag">mockup</span>
+    <button type="button" class="state-btn active" data-state-btn="empty">Empty</button>
+    <button type="button" class="state-btn" data-state-btn="loaded">Loaded</button>
+    <button type="button" class="state-btn" data-state-btn="solving">Solving</button>
+    <button type="button" class="state-btn" data-state-btn="bad">Not watertight</button>
+  </div>
+
+  <!-- ========== navigation rail ========== -->
+  <nav class="rail" aria-label="Main">
+    <svg class="mark" viewBox="0.5 9.3 30.7 19.1" fill="none" aria-hidden="true">
+      <!-- 1. the displaced volume: the part of this hull below the waterline -->
+  <path d="M 3.00 19.25 L 3.03 19.43 L 3.03 19.43 L 3.13 19.82 L 3.13 19.82 L 3.23 20.10 L 3.23 20.10 L 3.34 20.39 L 3.36 20.42 L 3.50 20.73 L 3.53 20.77 L 3.70 21.09 L 3.76 21.17 L 4.20 21.79 L 4.24 21.83 L 4.48 22.10 L 4.51 22.14 L 4.75 22.37 L 4.78 22.39 L 5.00 22.59 L 5.00 22.59 L 5.18 22.73 L 5.20 22.74 L 5.35 22.86 L 5.37 22.87 L 5.51 22.96 L 5.51 22.96 L 5.60 23.03 L 5.61 23.03 L 5.69 23.08 L 5.69 23.08 L 5.76 23.12 L 5.76 23.12 L 5.79 23.13 L 5.80 23.13 L 5.88 23.11 L 5.90 23.09 L 6.10 23.00 L 6.10 23.00 L 6.15 22.99 L 6.15 22.99 L 6.20 22.98 L 6.20 22.98 L 6.23 22.98 L 6.23 22.98 L 6.26 22.99 L 6.27 22.99 L 6.34 23.01 L 6.34 23.01 L 6.44 23.05 L 6.48 23.06 L 6.68 23.13 L 6.72 23.14 L 7.01 23.23 L 7.11 23.27 L 7.86 23.51 L 7.86 23.51 L 8.21 23.61 L 8.26 23.62 L 8.57 23.71 L 8.64 23.73 L 9.10 23.84 L 9.15 23.85 L 9.52 23.92 L 9.60 23.93 L 10.24 23.99 L 10.33 24.00 L 11.02 24.04 L 11.12 24.05 L 11.90 24.09 L 12.01 24.10 L 12.86 24.14 L 12.98 24.14 L 13.87 24.17 L 14.14 24.17 L 16.00 24.20 L 16.27 24.20 L 18.13 24.17 L 18.25 24.17 L 19.14 24.14 L 19.26 24.13 L 20.10 24.09 L 20.20 24.09 L 20.98 24.04 L 21.07 24.04 L 21.76 23.99 L 21.85 23.98 L 22.53 23.91 L 22.53 23.91 L 22.97 23.83 L 22.97 23.83 L 23.48 23.70 L 23.48 23.70 L 23.88 23.59 L 23.94 23.57 L 24.38 23.43 L 24.44 23.41 L 24.93 23.26 L 24.93 23.26 L 25.29 23.14 L 25.32 23.13 L 25.48 23.07 L 25.50 23.06 L 25.63 23.02 L 25.63 23.02 L 25.73 22.99 L 25.74 22.99 L 25.77 22.98 L 25.77 22.98 L 25.81 22.98 L 25.81 22.98 L 25.86 22.99 L 25.86 22.99 L 25.91 23.01 L 25.94 23.02 L 26.17 23.12 L 26.17 23.12 L 26.22 23.13 L 26.22 23.13 L 26.25 23.12 L 26.26 23.11 L 26.32 23.08 L 26.34 23.07 L 26.49 22.96 L 26.49 22.96 L 26.64 22.86 L 26.64 22.86 L 26.80 22.75 L 26.82 22.73 L 27.04 22.55 L 27.04 22.55 L 27.29 22.34 L 27.29 22.34 L 27.60 22.02 L 27.60 22.02 L 27.91 21.65 L 27.91 21.65 L 28.20 21.25 L 28.20 21.25 L 28.42 20.88 L 28.44 20.83 L 28.62 20.47 L 28.64 20.43 L 28.78 20.10 L 28.79 20.07 L 28.89 19.78 L 28.89 19.76 L 28.96 19.52 L 28.96 19.50 L 29.00 19.29 L 29.00 19.28 L 29.00 19.25 Z" fill="currentColor" fill-opacity="0.3" />
+  <!-- 2. the real section at the LCG station, cockpit and all -->
+  <path d="M 13.68 12.69 L 12.20 12.69 L 11.37 12.68 L 11.15 12.68 L 10.21 12.68 L 10.10 12.68 L 8.23 12.68 L 7.91 12.68 L 7.29 12.68 L 7.00 12.68 L 6.81 12.68 L 7.28 12.69 L 7.45 12.71 L 7.54 12.73 L 7.56 12.74 L 7.60 12.77 L 7.62 12.79 L 7.63 12.81 L 7.63 12.84 L 7.64 12.91 L 7.61 13.00 L 7.58 13.08 L 7.53 13.15 L 7.47 13.22 L 7.30 13.33 L 7.18 13.37 L 7.15 13.37 L 6.83 13.40 L 6.49 13.40 L 6.34 13.41 L 6.22 13.41 L 6.09 13.42 L 5.85 13.45 L 5.61 13.53 L 5.34 13.67 L 4.97 13.91 L 4.63 14.19 L 4.02 14.94 L 3.73 15.49 L 3.45 16.24 L 3.25 16.97 L 3.00 18.60 L 2.98 19.09 L 3.03 19.43 L 3.13 19.82 L 3.23 20.10 L 3.50 20.73 L 3.70 21.09 L 4.24 21.83 L 4.51 22.14 L 5.00 22.59 L 5.18 22.73 L 5.37 22.87 L 5.51 22.96 L 5.61 23.03 L 5.76 23.12 L 5.79 23.13 L 5.90 23.09 L 6.10 23.00 L 6.20 22.98 L 6.23 22.98 L 6.27 22.99 L 6.34 23.01 L 6.68 23.13 L 7.01 23.23 L 7.86 23.51 L 8.26 23.62 L 8.64 23.73 L 9.52 23.92 L 10.24 23.99 L 11.12 24.05 L 12.01 24.10 L 13.87 24.17 L 16.00 24.20 L 18.25 24.17 L 19.26 24.13 L 20.20 24.09 L 21.76 23.99 L 22.53 23.91 L 22.97 23.83 L 23.48 23.70 L 24.38 23.43 L 24.93 23.26 L 25.32 23.13 L 25.50 23.06 L 25.73 22.99 L 25.77 22.98 L 25.81 22.98 L 25.86 22.99 L 25.94 23.02 L 26.22 23.13 L 26.25 23.12 L 26.34 23.07 L 26.49 22.96 L 26.80 22.75 L 27.04 22.55 L 27.29 22.34 L 27.60 22.02 L 27.91 21.65 L 28.42 20.88 L 28.62 20.47 L 28.79 20.07 L 28.89 19.76 L 29.00 19.29 L 29.01 19.10 L 29.00 18.72 L 28.95 18.12 L 28.78 17.09 L 28.66 16.60 L 28.53 16.14 L 28.18 15.32 L 27.83 14.73 L 27.06 13.93 L 26.76 13.73 L 26.38 13.53 L 26.12 13.45 L 25.88 13.42 L 25.76 13.41 L 25.69 13.41 L 25.46 13.40 L 25.24 13.40 L 25.13 13.40 L 24.83 13.37 L 24.68 13.31 L 24.59 13.26 L 24.47 13.15 L 24.42 13.08 L 24.39 12.99 L 24.36 12.91 L 24.36 12.87 L 24.37 12.81 L 24.38 12.79 L 24.40 12.77 L 24.42 12.76 L 24.46 12.73 L 24.53 12.71 L 24.74 12.69 L 24.95 12.68 L 25.00 12.68 L 24.71 12.68 L 23.84 12.68 L 22.95 12.68 L 21.90 12.68 L 20.63 12.68 L 19.86 12.69 L 19.09 12.69 L 17.61 12.69 L 17.49 12.69 L 16.00 12.69 L 14.46 12.69 Z" stroke="currentColor" stroke-width="1.35" stroke-linejoin="round" />
+  <!-- 3. the waterline, running off to starboard with the flow arrow -->
+  <path d="M 0.7 19.25 L 30.9 19.25" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" />
+  <path d="M 29.6 18.30 L 31.1 19.25 L 29.6 20.20" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" />
+  <!-- 4. the centreplane, dash-dot, keel to deck -->
+  <path d="M 16 9.49 L 16 25.90" stroke="currentColor" stroke-width="1.05" stroke-dasharray="1.9 1.2 0.45 1.2" opacity="0.85" />
+  <!-- 5. the centre of gravity, in the cockpit opening -->
+  <circle cx="16" cy="12.79" r="1.25" fill="currentColor" />
+  <!-- 6. the centre of buoyancy, in the displaced volume -->
+  <circle cx="16" cy="20.95" r="1.15" stroke="currentColor" stroke-width="1.25" />
+  <!-- 7. the KB tick on the centreplane -->
+  <path d="M 14.2 20.98 L 17.8 20.98" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" opacity="0.8" />
+  <!-- 8. the BWL dimension, offset below the hull -->
+  <path d="M 3.00 27.70 L 29.00 27.70" stroke="currentColor" stroke-width="1.05" stroke-linecap="round" />
+  <path d="M 3.00 25.20 L 3.00 27.70 M 29.00 25.20 L 29.00 27.70" stroke="currentColor" stroke-width="1.05" opacity="0.65" />
+  <path d="M 4.60 27.15 L 3.00 27.70 L 4.60 28.25 M 27.40 27.15 L 29.00 27.70 L 27.40 28.25" stroke="currentColor" stroke-width="1.05" stroke-linecap="round" stroke-linejoin="round" />
+  <!-- 9. the draft dimension, off to port -->
+  <path d="M 1.6 19.25 L 1.6 24.20" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" />
+  <path d="M 0.6 19.25 L 1.6 19.25 L 0.6 19.95 M 0.6 24.20 L 1.6 24.20 L 0.6 23.50" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round" />
+    </svg>
+
+    <button type="button" class="nav" aria-current="page" title="Analyze hydrostatics">
+      <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <path d="M3 18h18M5 18c1.6-7 5.1-11 7-11s5.4 4 7 11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+      </svg>
+      <span>Analyze</span>
+    </button>
+    <button type="button" class="nav" title="Compare two runs">
+      <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <rect x="4" y="8" width="7" height="11" rx="1.2" stroke="currentColor" stroke-width="1.5" />
+        <rect x="13" y="5" width="7" height="11" rx="1.2" stroke="currentColor" stroke-width="1.5" />
+      </svg>
+      <span>Compare</span>
+    </button>
+
+    <div class="rail-end">
+      <button type="button" class="nav" title="Settings">
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+          <circle cx="9" cy="7" r="2" fill="var(--rail)" stroke="currentColor" stroke-width="1.5" />
+          <circle cx="15" cy="12" r="2" fill="var(--rail)" stroke="currentColor" stroke-width="1.5" />
+          <circle cx="9" cy="17" r="2" fill="var(--rail)" stroke="currentColor" stroke-width="1.5" />
+        </svg>
+        <span>Settings</span>
+      </button>
+    </div>
+  </nav>
+
+  <!-- ========== stage ========== -->
+  <div class="stage-col">
+    <div class="stage" id="stage">
+
+      <!-- EMPTY: the drop zone. The dashed edge and the icon ARE the instruction. -->
+      <div class="dropzone only-empty">
+        <div class="drop-icon-wrap">
+          <svg class="drop-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
+            <polyline points="3.27 6.96 12 12.01 20.73 6.96" />
+            <line x1="12" y1="22.08" x2="12" y2="12" />
+          </svg>
+        </div>
+
+        <h2 class="drop-title">Drop your kayak STL here</h2>
+
+        <div class="drop-actions">
+          <button type="button" class="btn" onclick="setState('loaded')">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <polyline points="17 8 12 3 7 8" />
+              <line x1="12" y1="3" x2="12" y2="15" />
+            </svg>
+            Browse files
+          </button>
+        </div>
+
+        <div class="drop-specs">
+          <span>STL in mm</span>
+          <span>Watertight closed deck</span>
+          <span>&le; 25 MB</span>
+        </div>
+      </div>
+
+      <!-- RESULT: the real hull, the real waterline, the real numbers. -->
+      <svg class="hull not-empty" viewBox="-40 -6 840 262" role="img"
+           aria-label="Side elevation of the hull in its own frame. The waterline is tilted 3.6 degrees because the hull floats bow up. Draft at midship 127.9 millimetres, bow freeboard 222.2 millimetres, stern freeboard 22.3 millimetres. The centre of gravity is marked in red 280 millimetres above the keel, the centre of buoyancy in green.">
+        <defs>
+          <linearGradient id="hullFill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="var(--hull-top)" />
+            <stop offset="1" stop-color="var(--hull-bottom)" />
+          </linearGradient>
+          <clipPath id="belowWL">
+            <polygon points="33.7,107.8 726.3,151.3 726.3,262 -40,262" />
+          </clipPath>
+          <path id="hullShape" d="M 48.1 101.0 L 55.3 100.7 L 62.4 100.8 L 69.5 100.9 L 76.7 101.2 L 83.8 101.4 L 90.9 101.6 L 98.1 101.8 L 105.2 102.0 L 112.4 102.2 L 119.5 102.4 L 126.6 102.5 L 133.8 102.6 L 140.9 102.7 L 148.0 102.8 L 155.2 102.8 L 162.3 102.8 L 169.4 102.8 L 176.6 102.7 L 183.7 102.6 L 190.9 102.5 L 198.0 102.4 L 205.1 102.3 L 212.3 102.2 L 219.4 102.1 L 226.5 102.0 L 233.7 101.9 L 240.8 101.9 L 248.0 101.8 L 255.1 101.9 L 262.2 102.2 L 269.4 102.6 L 276.5 98.7 L 283.6 98.1 L 290.8 97.4 L 297.9 96.8 L 305.1 96.2 L 312.2 95.6 L 319.3 95.0 L 326.5 94.4 L 333.6 93.8 L 340.7 93.3 L 347.9 92.7 L 355.0 92.2 L 362.2 91.7 L 369.3 91.1 L 376.4 90.6 L 383.6 90.1 L 390.7 89.5 L 397.8 89.0 L 405.0 88.5 L 412.1 87.9 L 419.3 87.4 L 426.4 86.8 L 433.5 86.2 L 440.7 85.6 L 447.8 85.1 L 454.9 84.5 L 462.1 83.9 L 469.2 83.3 L 476.4 82.7 L 483.5 82.1 L 490.6 81.5 L 497.8 80.9 L 504.9 85.6 L 512.0 86.5 L 519.2 87.5 L 526.3 88.5 L 533.5 89.4 L 540.6 90.3 L 547.7 91.1 L 554.9 91.9 L 562.0 92.5 L 569.1 93.1 L 576.3 93.6 L 583.4 93.9 L 590.6 94.2 L 597.7 94.3 L 604.8 94.2 L 612.0 94.1 L 619.1 93.8 L 626.2 93.5 L 633.4 93.1 L 640.5 92.6 L 647.6 92.0 L 654.8 91.4 L 661.9 90.9 L 669.1 90.3 L 676.2 89.8 L 683.3 89.5 L 690.5 89.4 L 697.6 89.5 L 704.7 90.2 L 711.9 92.3 L 711.9 101.4 L 704.7 107.5 L 697.6 112.0 L 690.5 116.1 L 683.3 119.9 L 676.2 123.6 L 669.1 127.0 L 661.9 130.2 L 654.8 133.1 L 647.6 135.8 L 640.5 138.2 L 633.4 140.4 L 626.2 142.4 L 619.1 144.2 L 612.0 145.8 L 604.8 147.3 L 597.7 148.6 L 590.6 149.8 L 583.4 150.9 L 576.3 152.0 L 569.1 152.9 L 562.0 153.9 L 554.9 154.7 L 547.7 155.5 L 540.6 156.2 L 533.5 156.9 L 526.3 157.5 L 519.2 158.1 L 512.0 158.6 L 504.9 159.1 L 497.8 159.6 L 490.6 160.0 L 483.5 160.3 L 476.4 160.7 L 469.2 160.9 L 462.1 161.0 L 454.9 161.1 L 447.8 161.1 L 440.7 161.1 L 433.5 160.9 L 426.4 160.8 L 419.3 160.6 L 412.1 160.3 L 405.0 160.1 L 397.8 159.8 L 390.7 159.5 L 383.6 159.2 L 376.4 158.9 L 369.3 158.5 L 362.2 158.1 L 355.0 157.6 L 347.9 157.1 L 340.7 156.6 L 333.6 156.0 L 326.5 155.3 L 319.3 154.5 L 312.2 153.6 L 305.1 152.6 L 297.9 151.5 L 290.8 150.4 L 283.6 149.1 L 276.5 147.9 L 269.4 146.6 L 262.2 145.3 L 255.1 144.0 L 248.0 142.7 L 240.8 141.4 L 233.7 140.1 L 226.5 138.8 L 219.4 137.5 L 212.3 136.2 L 205.1 135.0 L 198.0 133.7 L 190.9 132.4 L 183.7 131.0 L 176.6 129.7 L 169.4 128.4 L 162.3 127.1 L 155.2 125.8 L 148.0 124.5 L 140.9 123.2 L 133.8 121.8 L 126.6 120.5 L 119.5 119.2 L 112.4 117.8 L 105.2 116.5 L 98.1 115.1 L 90.9 113.8 L 83.8 112.4 L 76.7 111.0 L 69.5 109.6 L 62.4 108.2 L 55.3 106.7 L 48.1 105.0" />
+        </defs>
+
+        <!-- the hull itself: this is the mesh, and it is drawn in every state
+             that has a mesh. -->
+        <use href="#hullShape" fill="url(#hullFill)" stroke="var(--hull-line)" stroke-width="1.2" stroke-linejoin="round" />
+        <path d="M 48.1 101.0 L 55.3 100.7 L 62.4 100.8 L 69.5 100.9 L 76.7 101.2 L 83.8 101.4 L 90.9 101.6 L 98.1 101.8 L 105.2 102.0 L 112.4 102.2 L 119.5 102.4 L 126.6 102.5 L 133.8 102.6 L 140.9 102.7 L 148.0 102.8 L 155.2 102.8 L 162.3 102.8 L 169.4 102.8 L 176.6 102.7 L 183.7 102.6 L 190.9 102.5 L 198.0 102.4 L 205.1 102.3 L 212.3 102.2 L 219.4 102.1 L 226.5 102.0 L 233.7 101.9 L 240.8 101.9 L 248.0 101.8 L 255.1 101.9 L 262.2 102.2 L 269.4 102.6 L 276.5 98.7 L 283.6 98.1 L 290.8 97.4 L 297.9 96.8 L 305.1 96.2 L 312.2 95.6 L 319.3 95.0 L 326.5 94.4 L 333.6 93.8 L 340.7 93.3 L 347.9 92.7 L 355.0 92.2 L 362.2 91.7 L 369.3 91.1 L 376.4 90.6 L 383.6 90.1 L 390.7 89.5 L 397.8 89.0 L 405.0 88.5 L 412.1 87.9 L 419.3 87.4 L 426.4 86.8 L 433.5 86.2 L 440.7 85.6 L 447.8 85.1 L 454.9 84.5 L 462.1 83.9 L 469.2 83.3 L 476.4 82.7 L 483.5 82.1 L 490.6 81.5 L 497.8 80.9 L 504.9 85.6 L 512.0 86.5 L 519.2 87.5 L 526.3 88.5 L 533.5 89.4 L 540.6 90.3 L 547.7 91.1 L 554.9 91.9 L 562.0 92.5 L 569.1 93.1 L 576.3 93.6 L 583.4 93.9 L 590.6 94.2 L 597.7 94.3 L 604.8 94.2 L 612.0 94.1 L 619.1 93.8 L 626.2 93.5 L 633.4 93.1 L 640.5 92.6 L 647.6 92.0 L 654.8 91.4 L 661.9 90.9 L 669.1 90.3 L 676.2 89.8 L 683.3 89.5 L 690.5 89.4 L 697.6 89.5 L 704.7 90.2 L 711.9 92.3" fill="none" stroke="#5d6d7a" stroke-width="1" stroke-linejoin="round" opacity="0.9" />
+
+        <!-- Everything below belongs to a SOLVED result. Before the solve there
+             is no waterline to draw and no freeboard to measure, so none of it
+             appears: the bare hull is not a half-answer. -->
+        <g class="only-loaded">
+          <use href="#hullShape" fill="var(--accent-500)" opacity="0.16" clip-path="url(#belowWL)" />
+
+          <!-- waterline, in the hull frame: it is tilted because the hull is trimmed -->
+          <line x1="33.7" y1="107.8" x2="726.3" y2="151.3" stroke="var(--water)" stroke-width="1.25" />
+          <text x="36" y="122" fill="var(--text-3)" font-size="11" font-family="var(--font-mono)">WL</text>
+
+          <!-- keel reference -->
+          <line x1="48" y1="161.1" x2="712" y2="161.1" stroke="var(--line)" stroke-width="1" stroke-dasharray="3 3" />
+
+          <!-- CG (load) with its leader to the keel -->
+          <line x1="366.6" y1="95" x2="366.6" y2="161.1" stroke="var(--bad)" stroke-width="1" opacity="0.55" />
+          <circle cx="366.6" cy="92" r="3.2" fill="var(--bad)" />
+          <text x="360" y="86" fill="var(--text-2)" font-size="11" text-anchor="end">CG</text>
+          <text x="362" y="158" fill="var(--text-3)" font-size="11" text-anchor="end" font-family="var(--font-mono)">KG 280</text>
+
+          <!-- CB (buoyancy) -->
+          <circle cx="364" cy="139.4" r="3.2" fill="var(--good)" />
+          <text x="357" y="134" fill="var(--text-2)" font-size="11" text-anchor="end">CB</text>
+
+          <!-- draft at midship -->
+          <line x1="380" y1="129.5" x2="380" y2="161.1" stroke="var(--text-2)" stroke-width="1" />
+          <line x1="374" y1="129.5" x2="386" y2="129.5" stroke="var(--text-2)" stroke-width="1" />
+          <line x1="374" y1="161.1" x2="386" y2="161.1" stroke="var(--text-2)" stroke-width="1" />
+          <text x="380" y="180" fill="var(--text-2)" font-size="11" text-anchor="middle" font-family="var(--font-mono)">127.9 mm</text>
+
+          <!-- bow freeboard -->
+          <line x1="715.2" y1="95.7" x2="715.2" y2="150.6" stroke="var(--text-2)" stroke-width="1" />
+          <line x1="709.2" y1="95.7" x2="721.2" y2="95.7" stroke="var(--text-2)" stroke-width="1" />
+          <line x1="709.2" y1="150.6" x2="721.2" y2="150.6" stroke="var(--text-2)" stroke-width="1" />
+          <text x="722" y="126" fill="var(--text-2)" font-size="11" font-family="var(--font-mono)">222.2 mm</text>
+
+          <!-- stern freeboard: 22.3 mm is 5 px on this scale, so it gets a leader -->
+          <line x1="44.8" y1="102.9" x2="36" y2="90" stroke="var(--text-3)" stroke-width="1" />
+          <text x="32" y="86" fill="var(--text-2)" font-size="11" text-anchor="end" font-family="var(--font-mono)">22.3 mm</text>
+
+          <!-- ends -->
+          <text x="716" y="84" fill="var(--text-3)" font-size="11">bow</text>
+          <text x="40" y="70" fill="var(--text-3)" font-size="11" text-anchor="end">stern</text>
+        </g>
+      </svg>
+
+      <p class="stage-note only-loaded">
+        Side elevation &middot; hull frame &mdash; the waterline is tilted 3.60&deg; because the hull
+        floats bow-up, and every height above is the hull-frame value the app reports.
+      </p>
+    </div>
+
+    <!-- Foot bar -->
+    <div class="foot">
+      <span class="file not-empty">kayak.stl</span>
+      <span class="not-empty">2714.4 &times; 613.1 &times; 325.1 mm</span>
+      <span class="ok not-empty not-bad"><i></i>watertight</span>
+      <span class="warn only-bad"><i></i>12 open edges</span>
+      <span class="only-empty">No model loaded</span>
+      <span class="spacer"></span>
+      <button type="button" class="ghost not-empty" onclick="setState('empty')">Replace STL</button>
+    </div>
+  </div>
+
+  <!-- ========== conditions + results ========== -->
+  <aside class="side" id="side" data-heel="0" data-all="0" aria-label="Conditions and results">
+
+    <p class="label">Conditions</p>
+    <div class="grid3">
+      <div class="field">
+        <label for="w">Target weight</label>
+        <div class="control"><input id="w" value="75" inputmode="decimal" aria-label="Target weight in kilograms" /><span class="unit">kg</span></div>
+      </div>
+      <div class="field">
+        <label for="l">LCG from bow</label>
+        <div class="control"><input id="l" value="52" inputmode="decimal" aria-label="Longitudinal centre of gravity, percent from the bow" /><span class="unit">%</span></div>
+      </div>
+      <div class="field">
+        <label for="k">KG above keel</label>
+        <div class="control"><input id="k" value="280" inputmode="decimal" aria-label="Height of the centre of gravity above the keel, in millimetres" /><span class="unit">mm</span></div>
+      </div>
+    </div>
+
+    <div class="cond-foot">
+      <button type="button" class="switch-row" id="heelBtn" aria-pressed="false">
+        <span class="switch"></span>
+        <span>Fixed heel</span>
+      </button>
+      <button type="button" class="btn-primary only-loaded" onclick="setState('solving')">Calculate</button>
+      <button type="button" class="btn-primary only-solving" disabled>Calculating&hellip;</button>
+      <button type="button" class="btn-primary not-loaded not-solving" disabled>Calculate</button>
+    </div>
+
+    <div class="heel">
+      <div class="row">
+        <input type="range" min="-30" max="30" step="1" value="0" aria-label="Fixed heel angle in degrees" />
+        <output>0&deg;</output>
+      </div>
+      <p class="hint">+ = the &minus;Y side goes down.</p>
+    </div>
+
+    <p class="note only-empty"><i></i>Load an STL hull to enable the solve.</p>
+    <p class="note warn only-bad"><i></i>12 open edges &mdash; the solver needs a closed hull, so Calculate is disabled.</p>
+
+    <div class="progress only-solving">
+      <div class="bar"><span></span></div>
+      <div class="meta"><span class="num">angle 18 / 30</span><span class="num">sweeping &plusmn;4.5&deg; at 0.1&deg;</span></div>
+    </div>
+
+    <div class="rule"></div>
+
+    <!-- READOUT -->
+    <div class="results-block">
+      <div class="keys-row lead">
+        <div class="key">
+          <span class="kk">Draft</span>
+          <span class="kv not-loaded">&mdash;</span>
+          <span class="kv only-loaded">127.9<small>mm</small></span>
+          <span class="kn only-loaded">at midship</span>
+        </div>
+        <div class="key">
+          <span class="kk">Trim</span>
+          <span class="kv not-loaded">&mdash;</span>
+          <span class="kv only-loaded">+3.6<small>&deg;</small></span>
+          <span class="kn only-loaded">bow up</span>
+        </div>
+        <div class="key">
+          <span class="kk">GM</span>
+          <span class="kv not-loaded">&mdash;</span>
+          <span class="kv only-loaded">106.9<small>mm</small></span>
+          <span class="kn good only-loaded">stable</span>
+        </div>
+      </div>
+
+      <div class="keys-row sub">
+        <div class="key">
+          <span class="kk">Waterline length</span>
+          <span class="kv not-loaded">&mdash;</span>
+          <span class="kv only-loaded">2,211.8<small>mm</small></span>
+        </div>
+        <div class="key">
+          <span class="kk">Bow freeboard</span>
+          <span class="kv not-loaded">&mdash;</span>
+          <span class="kv only-loaded">222.2<small>mm</small></span>
+        </div>
+        <div class="key">
+          <span class="kk">Stern freeboard</span>
+          <span class="kv not-loaded">&mdash;</span>
+          <span class="kv only-loaded">22.3<small>mm</small></span>
+        </div>
+      </div>
+
+      <div class="balance only-loaded">
+        <span class="bk">LCB &minus; LCG offset</span>
+        <span class="bv">1.68 mm</span>
+      </div>
+      <p class="bn only-loaded">The longitudinal balance of this pose &mdash; the number Compare compares.</p>
+    </div>
+
+    <div class="rule"></div>
+
+    <!-- RIGHTING ARM -->
+    <div class="chart-section">
+      <div class="chart-head">
+        <p class="label">Righting arm (GZ)</p>
+        <span class="stats only-loaded">AVS 40.7&deg;</span>
+      </div>
+
+      <div class="chart only-loaded">
+        <svg viewBox="0 0 380 170" role="img"
+             aria-label="Righting arm curve. The arm peaks at 23.8 millimetres at 20 degrees of heel and comes back to zero at 40.7 degrees; the shaded band past that angle is where the hull will not right itself.">
+          <!-- the band past the vanishing angle: the only red in this chart -->
+          <rect x="319.3" y="25" width="30.7" height="117" fill="var(--bad)" opacity="0.07" />
+
+          <line x1="30" y1="105" x2="350" y2="105" stroke="var(--line-2)" stroke-width="1" />
+          <line x1="30" y1="43.5" x2="350" y2="43.5" stroke="var(--line)" stroke-width="1" stroke-dasharray="2 3" />
+          <line x1="30" y1="25" x2="30" y2="142" stroke="var(--line-2)" stroke-width="1" />
+
+          <path d="M 30.0 105.0 L 65.6 77.6 L 101.1 55.2 L 136.7 39.2 L 172.2 31.8 L 207.8 35.8 L 243.3 49.3 L 278.9 71.2 L 314.4 100.4 L 350.0 134.5" fill="none" stroke="var(--accent-500)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" />
+
+          <!-- the vanishing angle -->
+          <line x1="319.3" y1="25" x2="319.3" y2="105" stroke="var(--bad)" stroke-width="1" stroke-dasharray="2 3" opacity="0.8" />
+          <circle cx="319.3" cy="105" r="3" fill="var(--bad)" />
+          <text x="315" y="99" fill="var(--text-2)" font-size="11" text-anchor="end" font-family="var(--font-mono)">AVS 40.7&deg;</text>
+
+          <!-- the peak -->
+          <circle cx="172.2" cy="31.8" r="3" fill="var(--warn)" />
+          <text x="179" y="24" fill="var(--text-2)" font-size="11" font-family="var(--font-mono)">23.8 mm @ 20&deg;</text>
+
+          <!-- axes -->
+          <text x="34" y="20" fill="var(--text-3)" font-size="11">GZ (mm)</text>
+          <text x="26" y="47" fill="var(--text-3)" font-size="11" text-anchor="end">20</text>
+          <text x="26" y="118" fill="var(--text-3)" font-size="11">0</text>
+          <text x="136.7" y="118" fill="var(--text-3)" font-size="11" text-anchor="middle">15&deg;</text>
+          <text x="243.3" y="118" fill="var(--text-3)" font-size="11" text-anchor="middle">30&deg;</text>
+          <text x="350" y="118" fill="var(--text-3)" font-size="11" text-anchor="end">45&deg;</text>
+          <text x="350" y="160" fill="var(--text-3)" font-size="11" text-anchor="end">heel (&deg;)</text>
+        </svg>
+      </div>
+
+      <div class="chart empty-chart not-loaded">
+        <svg viewBox="0 0 380 170" aria-hidden="true">
+          <line x1="30" y1="105" x2="350" y2="105" stroke="var(--line-2)" stroke-width="1" />
+          <line x1="30" y1="25" x2="30" y2="105" stroke="var(--line-2)" stroke-width="1" />
+          <text x="34" y="20" fill="var(--text-3)" font-size="11">GZ (mm)</text>
+          <text x="26" y="118" fill="var(--text-3)" font-size="11">0</text>
+          <text x="136.7" y="118" fill="var(--text-3)" font-size="11" text-anchor="middle">15&deg;</text>
+          <text x="243.3" y="118" fill="var(--text-3)" font-size="11" text-anchor="middle">30&deg;</text>
+          <text x="350" y="118" fill="var(--text-3)" font-size="11" text-anchor="end">45&deg;</text>
+        </svg>
+      </div>
+
+      <p class="chart-note only-loaded">
+        GZ<sub>max</sub> 23.8 mm at 20&deg; &middot; AVS &asymp; 40.7&deg; &middot; no stem tip reaches the
+        water within 45&deg;. GM 106.9 mm is the small-angle stability of the trimmed solve; the
+        curve is the upright, untrimmed hull re-floated at each heel.
+      </p>
+    </div>
+
+    <!-- ALL VALUES -->
+    <button type="button" class="all-row only-loaded" id="allBtn" aria-expanded="false">
+      <span>All values</span>
+      <span class="switch"></span>
+    </button>
+    <button type="button" class="all-row not-loaded" disabled>
+      <span>All values</span>
+      <span class="switch"></span>
+    </button>
+
+    <div class="more only-loaded">
+      <div class="group">
+        <p class="label">Equilibrium</p>
+        <dl class="kv">
+          <div><dt>Displacement</dt><dd>74.97 kg</dd></div>
+          <div><dt>Target</dt><dd>75 kg</dd></div>
+          <div><dt>Waterplane area</dt><dd>1.036 m&sup2;</dd></div>
+          <div><dt>Waterline length (LWL)</dt><dd>2,211.8 mm</dd></div>
+          <div><dt>Waterline beam (BWL)</dt><dd>612.9 mm</dd></div>
+          <div><dt>LCG X</dt><dd>&minus;54.2 mm</dd></div>
+          <div><dt>LCB X</dt><dd>&minus;64.6 mm</dd></div>
+          <div><dt>LCF X</dt><dd>&minus;106.8 mm</dd></div>
+          <div><dt>Tonnes per cm immersion</dt><dd>0.0104</dd></div>
+          <div><dt>Converged</dt><dd>yes (991 planes)</dd></div>
+        </dl>
+      </div>
+
+      <div class="group">
+        <p class="label">Form coefficients</p>
+        <dl class="kv">
+          <div><dt>Block (Cb)</dt><dd>0.4611</dd></div>
+          <div><dt>Prismatic (Cp)</dt><dd>0.5454</dd></div>
+          <div><dt>Midship (Cm)</dt><dd>0.8467</dd></div>
+          <div><dt>Waterplane (Cwp)</dt><dd>0.7641</dd></div>
+          <div><dt>Wetted surface area</dt><dd>1.214 m&sup2;</dd></div>
+        </dl>
+      </div>
+
+      <div class="group">
+        <p class="label">Stability</p>
+        <dl class="kv">
+          <div><dt>KB (keel&rarr;buoyancy)</dt><dd>75.9 mm</dd></div>
+          <div><dt>BM (metacentric radius)</dt><dd>311 mm</dd></div>
+          <div><dt>KM (keel&rarr;metacenter)</dt><dd>386.9 mm</dd></div>
+          <div><dt>KG (keel&rarr;gravity)</dt><dd>280 mm</dd></div>
+          <div><dt>GM (metacentric height)</dt><dd class="accent">106.9 mm</dd></div>
+          <div><dt>Waterplane I&#8320;</dt><dd>3.143e11 mm&sup4;</dd></div>
+        </dl>
+        <p class="group-note">
+          X values are measured from the mesh centre; the LCB&minus;LCG offset above is the
+          residual of the trim solve, measured in the posed frame.
+        </p>
+      </div>
+    </div>
+
+  </aside>
+</div>
+
+<script>
+  const appRoot = document.getElementById('appRoot')
+  const side = document.getElementById('side')
+  const stage = document.getElementById('stage')
+  const stateButtons = document.querySelectorAll('[data-state-btn]')
+
+  function setState(state) {
+    appRoot.dataset.state = state
+    stateButtons.forEach((b) => {
+      b.classList.toggle('active', b.dataset.stateBtn === state)
+    })
+    if (state === 'empty') {
+      side.dataset.all = '0'
+      const allBtn = document.getElementById('allBtn')
+      if (allBtn) allBtn.setAttribute('aria-expanded', 'false')
+    }
+  }
+
+  stateButtons.forEach((b) => {
+    b.addEventListener('click', () => setState(b.dataset.stateBtn))
+  })
+
+  // Drag and drop visual feedback on the stage.
+  stage.addEventListener('dragover', (e) => {
+    e.preventDefault()
+    stage.classList.add('drag-over')
+  })
+  stage.addEventListener('dragleave', (e) => {
+    e.preventDefault()
+    stage.classList.remove('drag-over')
+  })
+  stage.addEventListener('drop', (e) => {
+    e.preventDefault()
+    stage.classList.remove('drag-over')
+    setState('loaded')
+  })
+
+  // Heel toggle.
+  const heelBtn = document.getElementById('heelBtn')
+  heelBtn.addEventListener('click', () => {
+    const on = side.dataset.heel === '1'
+    side.dataset.heel = on ? '0' : '1'
+    heelBtn.setAttribute('aria-pressed', String(!on))
+  })
+
+  const range = document.querySelector('.heel input')
+  const out = document.querySelector('.heel output')
+  range.addEventListener('input', () => {
+    const v = Number(range.value)
+    out.textContent = (v > 0 ? '+' : '') + v + '°'
+  })
+
+  // All values toggle.
+  const allBtn = document.getElementById('allBtn')
+  allBtn.addEventListener('click', () => {
+    const on = side.dataset.all === '1'
+    side.dataset.all = on ? '0' : '1'
+    allBtn.setAttribute('aria-expanded', String(!on))
+  })
+</script>
+</body>
+</html>

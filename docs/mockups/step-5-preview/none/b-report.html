@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>b · Report — kayak-analyzer</title>
+<style>
+  :root {
+    --mono: ui-monospace, "Cascadia Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+    --sans: ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif;
+    --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, "Times New Roman", serif;
+    --paper: #fdfdfb;
+    --ink: #1a1a18;
+    --ink-2: #44443e;
+    --ink-3: #7a7a70;
+    --rule: #c9c7bd;
+    --rule-2: #e4e2d9;
+    --navy: #1c3a5e;
+    --navy-2: #3a5f8a;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; overflow: hidden; }
+  body {
+    background: #e9e7e0;
+    color: var(--ink);
+    font-family: var(--serif);
+    font-variant-numeric: tabular-nums;
+    font-size: 13px;
+    line-height: 1.5;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .sheet {
+    width: 1280px;
+    height: 800px;
+    background: var(--paper);
+    border: 1px solid var(--rule);
+    box-shadow: 0 2px 18px rgba(30, 30, 25, 0.12);
+    padding: 44px 56px 34px;
+    display: flex;
+    flex-direction: column;
+  }
+  .micro {
+    font-family: var(--sans);
+    font-size: 9px;
+    letter-spacing: 0.24em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+  /* ---------- masthead ---------- */
+  .masthead { flex: none; border-bottom: 2px solid var(--ink); padding-bottom: 12px; display: flex; align-items: flex-end; }
+  .masthead .l { max-width: 760px; }
+  .masthead .micro { display: block; margin-bottom: 6px; }
+  .masthead h1 { margin: 0; font-size: 30px; font-weight: 400; letter-spacing: -0.01em; }
+  .masthead h1 em { font-style: italic; color: var(--navy); }
+  .masthead .r { margin-left: auto; text-align: right; font-family: var(--mono); font-size: 10px; color: var(--ink-3); line-height: 1.7; }
+  .masthead .r b { color: var(--ink); font-weight: 400; }
+  /* ---------- columns ---------- */
+  .cols { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 0 44px; padding-top: 20px; }
+  .col { min-width: 0; display: flex; flex-direction: column; }
+  section { margin-bottom: 18px; }
+  h2 {
+    margin: 0 0 8px;
+    font-size: 15px;
+    font-weight: 400;
+    letter-spacing: 0.01em;
+    color: var(--navy);
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    border-bottom: 1px solid var(--rule);
+    padding-bottom: 4px;
+  }
+  h2 .no { font-family: var(--mono); font-size: 10px; color: var(--ink-3); }
+  h2 .r { margin-left: auto; font-family: var(--sans); font-size: 8px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--ink-3); }
+  p { margin: 0 0 8px; color: var(--ink-2); }
+  p.lead { color: var(--ink); }
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  td { padding: 3px 0; vertical-align: baseline; }
+  td.k { color: var(--ink-2); }
+  td.d { color: var(--rule); padding: 0 6px; white-space: nowrap; width: 100%; }
+  td.v { font-family: var(--mono); text-align: right; white-space: nowrap; color: var(--ink); }
+  td.v em { font-style: normal; color: var(--ink-3); font-size: 10px; margin-left: 3px; }
+  tr.key td { border-top: 1px solid var(--rule-2); padding-top: 6px; }
+  tr.key td.v { color: var(--navy); font-size: 14px; }
+  /* headline */
+  .answers { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0 16px; margin: 4px 0 10px; }
+  .answers > div { border-top: 2px solid var(--navy); padding-top: 6px; }
+  .answers .v { font-family: var(--mono); font-size: 24px; letter-spacing: -0.02em; display: block; }
+  .answers .v small { font-size: 11px; color: var(--ink-3); margin-left: 2px; }
+  .answers .micro { display: block; margin-bottom: 3px; }
+  .figcap { font-size: 11px; color: var(--ink-3); font-style: italic; margin-top: 4px; }
+  /* ---------- footer ---------- */
+  .colophon {
+    flex: none; border-top: 1px solid var(--rule);
+    margin-top: 6px; padding-top: 8px;
+    display: flex; justify-content: space-between;
+    font-family: var(--sans); font-size: 9px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--ink-3);
+  }
+</style>
+</head>
+<body>
+<div class="sheet">
+
+  <div class="masthead">
+    <div class="l">
+      <span class="micro">kayak-analyzer · hydrostatic analysis report</span>
+      <h1>Static equilibrium of <em>kayak.stl</em> at 75.0 kg</h1>
+    </div>
+    <div class="r">
+      sheet 1 of 1<br>
+      <b>2026-11-23</b><br>
+      units mm · kg
+    </div>
+  </div>
+
+  <div class="cols">
+    <!-- ============ left column ============ -->
+    <div class="col">
+
+      <section>
+        <h2><span class="no">1</span> The subject <span class="r">model identity</span></h2>
+        <table>
+          <tr><td class="k">File</td><td class="d"></td><td class="v">kayak.stl</td></tr>
+          <tr><td class="k">Mesh</td><td class="d"></td><td class="v">watertight<em>closed deck</em></td></tr>
+          <tr><td class="k">Length × beam × depth</td><td class="d"></td><td class="v">2 714.4 × 613.1 × 325.1<em>mm</em></td></tr>
+          <tr><td class="k">Frame after auto-orient</td><td class="d"></td><td class="v">Z-up · bow +X</td></tr>
+        </table>
+      </section>
+
+      <section>
+        <h2><span class="no">2</span> The loading condition <span class="r">as solved</span></h2>
+        <table>
+          <tr><td class="k">Weight (paddler, gear, boat)</td><td class="d"></td><td class="v">75.0<em>kg</em></td></tr>
+          <tr><td class="k">LCG from bow</td><td class="d"></td><td class="v">52.0<em>% of LWL</em></td></tr>
+          <tr><td class="k">KG above keel — a height, not an absolute Z</td><td class="d"></td><td class="v">280<em>mm</em></td></tr>
+          <tr><td class="k">Heel</td><td class="d"></td><td class="v">0<em>deg</em></td></tr>
+          <tr><td class="k">Trim sweep</td><td class="d"></td><td class="v">±4.5<em>deg · fine 0.1°</em></td></tr>
+        </table>
+      </section>
+
+      <section>
+        <h2><span class="no">3</span> Answers <span class="r">headline</span></h2>
+        <div class="answers">
+          <div><span class="micro">Draft</span><span class="v num">94.0<small>mm</small></span></div>
+          <div><span class="micro">Trim</span><span class="v num">+3.60<small>°</small></span></div>
+          <div><span class="micro">GM</span><span class="v num">+122<small>mm</small></span></div>
+          <div><span class="micro">LCB–LCG</span><span class="v num">1.68<small>mm</small></span></div>
+        </div>
+        <p class="lead">At 75.0 kg the hull takes 94.0 mm of draft and floats bow-up by 3.60 degrees. The
+        centre of buoyancy sits 1.68 mm abaft the centre of gravity — a residual of the 0.1° fine sweep,
+        not an error. Metacentric height is positive at +122 mm: the kayak is stable at this condition.</p>
+      </section>
+
+      <section>
+        <h2><span class="no">4</span> Flotation <span class="r">equilibrium</span></h2>
+        <table>
+          <tr><td class="k">Displacement</td><td class="d"></td><td class="v">75.0<em>kg</em></td></tr>
+          <tr><td class="k">Draft at midship</td><td class="d"></td><td class="v">94.0<em>mm</em></td></tr>
+          <tr><td class="k">Waterline length LWL</td><td class="d"></td><td class="v">2 384<em>mm</em></td></tr>
+          <tr><td class="k">Waterline beam BWL</td><td class="d"></td><td class="v">489<em>mm</em></td></tr>
+          <tr><td class="k">Waterplane area</td><td class="d"></td><td class="v">0.412<em>m²</em></td></tr>
+          <tr><td class="k">TPC</td><td class="d"></td><td class="v">0.0042</td></tr>
+          <tr><td class="k">Wetted surface</td><td class="d"></td><td class="v">1.842e6<em>mm²</em></td></tr>
+          <tr class="key"><td class="k">Bow freeboard</td><td class="d"></td><td class="v">222.2<em>mm</em></td></tr>
+          <tr class="key"><td class="k">Stern freeboard</td><td class="d"></td><td class="v">22.3<em>mm</em></td></tr>
+          <tr><td class="k">LCB–LCG offset</td><td class="d"></td><td class="v">1.68<em>mm</em></td></tr>
+        </table>
+      </section>
+
+    </div>
+
+    <!-- ============ right column ============ -->
+    <div class="col">
+
+      <section>
+        <h2><span class="no">5</span> Form coefficients <span class="r">hull shape</span></h2>
+        <table>
+          <tr><td class="k">Cb — block coefficient</td><td class="d"></td><td class="v">0.4721</td></tr>
+          <tr><td class="k">Cp — prismatic coefficient</td><td class="d"></td><td class="v">0.5813</td></tr>
+          <tr><td class="k">Cm — midship section coefficient</td><td class="d"></td><td class="v">0.8120</td></tr>
+          <tr><td class="k">Cwp — waterplane coefficient</td><td class="d"></td><td class="v">0.6394</td></tr>
+        </table>
+      </section>
+
+      <section>
+        <h2><span class="no">6</span> Stability <span class="r">transverse</span></h2>
+        <table>
+          <tr><td class="k">KB — centre of buoyancy above keel</td><td class="d"></td><td class="v">58<em>mm</em></td></tr>
+          <tr><td class="k">BM — metacentric radius</td><td class="d"></td><td class="v">344<em>mm</em></td></tr>
+          <tr><td class="k">KM — keel to metacenter</td><td class="d"></td><td class="v">402<em>mm</em></td></tr>
+          <tr><td class="k">KG — centre of gravity above keel</td><td class="d"></td><td class="v">280<em>mm</em></td></tr>
+          <tr class="key"><td class="k">GM — metacentric height</td><td class="d"></td><td class="v">+122<em>mm</em></td></tr>
+          <tr><td class="k">Maximum GZ</td><td class="d"></td><td class="v">61<em>mm @ 38 deg</em></td></tr>
+          <tr><td class="k">Angle of vanishing stability</td><td class="d"></td><td class="v">62<em>deg</em></td></tr>
+          <tr><td class="k">End-tip immersion</td><td class="d"></td><td class="v">41<em>deg</em></td></tr>
+        </table>
+      </section>
+
+      <section>
+        <h2><span class="no">7</span> The righting-arm curve <span class="r">fig. 1</span></h2>
+        <svg viewBox="0 0 800 260" width="100%" height="240" preserveAspectRatio="xMidYMin meet" role="img" aria-label="GZ righting arm curve">
+          <!-- frame -->
+          <rect x="56" y="24" width="716" height="196" fill="none" stroke="#c9c7bd" stroke-width="1"/>
+          <!-- grid -->
+          <g stroke="#e4e2d9" stroke-width="1">
+            <line x1="56" y1="73" x2="772" y2="73"/>
+            <line x1="56" y1="122" x2="772" y2="122"/>
+            <line x1="56" y1="171" x2="772" y2="171"/>
+          </g>
+          <line x1="56" y1="122" x2="772" y2="122" stroke="#9a988d" stroke-width="1"/>
+          <!-- labels -->
+          <g font-family="ui-monospace, monospace" font-size="9" fill="#7a7a70" text-anchor="end">
+            <text x="50" y="48">60</text>
+            <text x="50" y="76">40</text>
+            <text x="50" y="125">0</text>
+            <text x="50" y="174">−20</text>
+            <text x="50" y="215">−40</text>
+          </g>
+          <text x="60" y="18" font-family="ui-monospace, monospace" font-size="9" fill="#7a7a70">GZ · mm</text>
+          <!-- AVS + end tip -->
+          <line x1="637.8" y1="24" x2="637.8" y2="220" stroke="#1c3a5e" stroke-width="1" stroke-dasharray="3 3"/>
+          <text x="642" y="36" font-family="ui-monospace, monospace" font-size="9" fill="#1c3a5e">AVS 62°</text>
+          <line x1="437.8" y1="24" x2="437.8" y2="220" stroke="#8a6a1f" stroke-width="1" stroke-dasharray="2 4"/>
+          <text x="443" y="36" font-family="ui-monospace, monospace" font-size="9" fill="#8a6a1f">end-tip 41°</text>
+          <!-- curve -->
+          <path d="M56 122 L137 102 L217 82 L298 66 L362 53 L433 44 L504 51 L581 70 L640 96 L678 122 L758 157"
+                fill="none" stroke="#1c3a5e" stroke-width="1.8" stroke-linejoin="round"/>
+          <path d="M678 122 L758 157" fill="none" stroke="#1c3a5e" stroke-width="1.8" stroke-dasharray="5 4"/>
+          <!-- peak -->
+          <circle cx="433" cy="44" r="3.5" fill="#1c3a5e"/>
+          <text x="433" y="34" font-family="ui-monospace, monospace" font-size="10" fill="#1a1a18" text-anchor="middle">61 mm @ 38°</text>
+          <!-- axis -->
+          <g font-family="ui-monospace, monospace" font-size="9" fill="#7a7a70" text-anchor="middle">
+            <text x="56" y="238">0</text>
+            <text x="152" y="238">10</text>
+            <text x="248" y="238">20</text>
+            <text x="343" y="238">30</text>
+            <text x="439" y="238">40</text>
+            <text x="535" y="238">50</text>
+            <text x="630" y="238">60</text>
+            <text x="726" y="238">70</text>
+            <text x="772" y="238">80</text>
+          </g>
+          <text x="414" y="256" font-family="ui-monospace, monospace" font-size="9" fill="#7a7a70" text-anchor="middle">heel · deg</text>
+        </svg>
+        <p class="figcap">Fig. 1 — Righting arm against heel, 0° to 80°. The arm peaks at 61 mm at 38°, vanishes at
+        62° (AVS), and turns negative beyond. The end-tip immersion at 41° marks the angle where one stem enters
+        the water — the stern, at 22.3 mm freeboard, immerses first.</p>
+      </section>
+
+      <section>
+        <h2><span class="no">8</span> Notes <span class="r">method</span></h2>
+        <p>Reported heights are hull-frame: draft is measured from the lowest un-rotated keel point to the
+        waterline at midship. Trim is positive bow-up. All computation is client-side; no data leaves the machine.
+        The 1.68 mm LCB–LCG offset is the residual left by the 0.1° fine sweep of the ±4.5° trim search.</p>
+      </section>
+
+    </div>
+  </div>
+
+  <div class="colophon">
+    <span>kayak-analyzer · analyze</span>
+    <span>printed for review · baseline run 75.0 kg · LCG 52.0 % · KG 280 mm</span>
+    <span>b · report</span>
+  </div>
+
+</div>
+</body>
+</html>

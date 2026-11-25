@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Hydrographic plate · kayak.stl</title>
+<style>
+  :root{
+    --chart:#efe8d8; --chart2:#e7dfcc; --panel:#f6f1e4;
+    --ink:#17304d; --ink2:#3d5268; --muted:#7b8391;
+    --red:#a2452e; --blue:#2f5f8f;
+    --hair:rgba(23,48,77,.22); --hair2:rgba(23,48,77,.42);
+    --sea-a:#e6dfcd; --sea-b:#ddd5c0;
+    --deck-a:#fbf7ec; --deck-b:#e7dfcd; --deck-c:#c6bda6;
+    --side-a:#c2b9a2; --side-b:#8d8570; --under-a:#a49b85; --under-b:#6f6957;
+    --waterline:#2f5f8f; --hull-edge:rgba(23,48,77,.6); --hull-seam:rgba(23,48,77,.3);
+    --hull-label:#17304d; --cockpit-rim:#8d8570; --cockpit-hole:#5d5847;
+    --marker-lcg:#a2452e; --marker-lcb:#2f5f8f; --leader:#17304d; --dim:#a2452e;
+    --ax-z:#17304d; --ax-x:#2f5f8f; --ax-y:#8d8570; --ax-t:#7b8391;
+    --serif:Georgia,"Iowan Old Style","Times New Roman",Times,serif;
+    --sans:"Inter","Segoe UI",system-ui,-apple-system,sans-serif;
+    --mono:ui-monospace,"Cascadia Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{background:#ddd6c4;color:var(--ink);font-family:var(--sans);font-size:12.5px;
+    font-variant-numeric:tabular-nums;overflow:hidden;-webkit-font-smoothing:antialiased}
+  .app{height:100vh;max-height:800px;width:100vw;max-width:1280px;margin:0 auto;background:var(--chart);
+    display:flex;flex-direction:column;overflow:hidden;position:relative}
+  .vh{position:absolute;opacity:0;width:0;height:0;pointer-events:none}
+
+  .head{height:50px;flex:0 0 50px;display:flex;align-items:center;gap:18px;padding:0 20px;
+    background:var(--chart2);border-bottom:1px solid var(--hair2)}
+  .head .title{font-family:var(--serif);font-size:16px;letter-spacing:.02em}
+  .head .sub{font-size:11px;color:var(--muted);letter-spacing:.14em;text-transform:uppercase}
+  .head .sp{flex:1}
+  .tabs{display:flex;gap:2px;border:1px solid var(--hair2);background:var(--panel)}
+  .tabs label{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink2);padding:4px 12px;cursor:pointer}
+  #scr-hull:checked ~ .head .tabs label[for="scr-hull"],
+  #scr-hydro:checked ~ .head .tabs label[for="scr-hydro"]{background:var(--ink);color:var(--panel)}
+
+  .stage{position:relative;flex:1;min-height:0}
+  .pane{position:absolute;inset:0;display:none;flex-direction:column}
+  .body{flex:1;min-height:0;display:flex;padding:14px;gap:14px}
+
+  /* the chart sheet */
+  .sheet{flex:1;min-width:0;position:relative;background:var(--chart);
+    border:1px solid var(--hair2);padding:6px}
+  .neat{position:absolute;inset:6px;border:1px solid var(--hair2);pointer-events:none}
+  .neat::before{content:"";position:absolute;inset:3px;border:1px solid var(--hair)}
+  .chartarea{position:absolute;inset:16px;overflow:hidden}
+  .hullview{position:absolute;inset:0;width:100%;height:100%}
+  .hull-under{fill:url(#underG)} .hull-side{fill:url(#sideG)}
+  .hull-deck{fill:url(#deckG);stroke:var(--hull-edge);stroke-width:1.1}
+  .submerged{fill:#7fa6c8;opacity:.5}
+  .waterline{fill:none;stroke:var(--waterline);stroke-width:1.7}
+  .seam{fill:none;stroke:var(--hull-seam);stroke-width:.9}
+  .cockpit-rim{fill:none;stroke:var(--cockpit-rim);stroke-width:3}
+  .cockpit-hole{fill:var(--cockpit-hole)}
+  .marker-lcg{fill:var(--marker-lcg)} .marker-lcb{fill:none;stroke:var(--marker-lcb);stroke-width:2}
+  .leader{stroke:var(--leader);stroke-width:1;fill:none}
+  .dim{stroke:var(--dim);stroke-width:1}
+  .hull-label{fill:var(--hull-label);font-size:11px;font-family:var(--mono)}
+  .ax{stroke-width:1.5} .ax-z{stroke:var(--ax-z)} .ax-x{stroke:var(--ax-x)} .ax-y{stroke:var(--ax-y)}
+  .ax-t{fill:var(--ax-t);font-size:11px;font-family:var(--mono)}
+
+  .sound{position:absolute;font-family:var(--mono);font-size:10.5px;color:var(--ink2);opacity:.75}
+  .contour{position:absolute;inset:0;pointer-events:none}
+  .contour path{fill:none;stroke:var(--hair);stroke-width:1}
+  .contour path.dash{stroke-dasharray:5 4}
+  .rose{position:absolute;left:22px;bottom:20px;width:96px;height:96px;opacity:.85}
+  .scalebar{position:absolute;right:22px;bottom:24px;font-family:var(--mono);font-size:10px;color:var(--ink2);text-align:center}
+  .scalebar .bar{height:7px;border:1px solid var(--hair2);display:flex;margin-bottom:5px}
+  .scalebar .bar i{flex:1}
+  .scalebar .bar i:nth-child(odd){background:var(--ink)}
+  .sheetcap{position:absolute;left:22px;top:20px;font-family:var(--serif);font-size:13px;letter-spacing:.04em}
+  .sheetcap small{display:block;font-family:var(--sans);font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);margin-top:3px}
+
+  /* legend panel */
+  .legend{flex:0 0 356px;background:var(--panel);border:1px solid var(--hair2);display:flex;flex-direction:column;min-height:0}
+  .legend .lh{font-family:var(--serif);font-size:14px;padding:12px 16px;border-bottom:1px solid var(--hair2);letter-spacing:.02em}
+  .legend .lh small{display:block;font-family:var(--sans);font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);margin-top:3px}
+  .legend .lb{flex:1;min-height:0;overflow:hidden;padding:12px 16px}
+  .lgrow{display:flex;justify-content:space-between;align-items:baseline;padding:9px 0;border-bottom:1px solid var(--hair)}
+  .lgrow:last-child{border-bottom:0}
+  .lgrow .k{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+  .lgrow .v{font-family:var(--mono);font-size:17px}
+  .lgrow .v u{text-decoration:none;font-size:10.5px;color:var(--muted);margin-left:4px;font-family:var(--sans)}
+  .lgrow .v.blue{color:var(--blue)}
+  .lgrow .v.red{color:var(--red)}
+  .lgblock{margin-top:14px;padding-top:12px;border-top:1px solid var(--hair2)}
+  .lgblock .bt{font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted);margin-bottom:6px}
+  .gzchart{width:100%;height:auto;display:block}
+  .grid path{stroke:rgba(23,48,77,.12);stroke-width:1}
+  .zero{stroke:rgba(23,48,77,.4);stroke-dasharray:4 4}
+  .axis{stroke:var(--ink2)}
+  .tick-y text,.tick-x text{fill:var(--muted);font-size:10px;font-family:var(--mono)}
+  .cur{fill:none;stroke:var(--blue);stroke-width:2;stroke-linejoin:round}
+  .cur-fill{fill:rgba(47,95,143,.14)}
+  .marker-max{fill:var(--blue)} .marker-max-ring{fill:none;stroke:var(--blue);opacity:.3}
+  .marker-avs{fill:var(--panel);stroke:var(--ink2);stroke-width:1.4}
+  .marker-endtip{stroke:var(--red);stroke-dasharray:3 4}
+  .marker-endtip-dot{fill:var(--red)}
+  .ann{fill:var(--ink);font-size:11px;font-family:var(--mono)}
+  .ann-d{fill:var(--muted);font-size:10px;font-family:var(--mono)}
+  .ann-d.endtip{fill:var(--red)}
+  .axis-label{fill:var(--ink2);font-size:10px;font-family:var(--sans)}
+  .lgfoot{border-top:1px solid var(--hair2);padding:11px 16px;font-size:11px;color:var(--muted);line-height:1.5}
+
+  .strip{height:36px;flex:0 0 36px;display:flex;align-items:center;gap:0;padding:0 20px;
+    background:var(--chart2);border-top:1px solid var(--hair2);font-size:11.5px;color:var(--ink2)}
+  .strip span{padding:0 16px;border-left:1px solid var(--hair)}
+  .strip span:first-child{padding-left:0;border-left:0}
+  .strip b{font-weight:500;color:var(--ink)}
+
+  /* data sheet */
+  .data{flex:1;min-height:0;overflow:hidden;padding:22px 28px;display:grid;grid-template-columns:repeat(3,1fr);
+    gap:0 30px;align-content:start}
+  .dbox{border:1px solid var(--hair2);background:var(--panel);padding:12px 14px;margin-bottom:14px}
+  .dbox h3{font-family:var(--serif);font-size:13px;font-weight:400;padding-bottom:8px;border-bottom:1px solid var(--hair2);margin-bottom:2px}
+  table{width:100%;border-collapse:collapse}
+  th{text-align:left;font-weight:400;font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);
+    padding:7px 0;border-bottom:1px solid var(--hair)}
+  td{text-align:right;font-family:var(--mono);font-size:12px;padding:7px 0;border-bottom:1px solid var(--hair);white-space:nowrap}
+  td u{text-decoration:none;color:var(--muted);font-size:9.5px;margin-left:5px;font-family:var(--sans)}
+  td.blue{color:var(--blue)} td.red{color:var(--red)}
+</style>
+</head>
+<body>
+<div class="app">
+  <input type="radio" name="scr" id="scr-hull" class="vh" checked>
+  <input type="radio" name="scr" id="scr-hydro" class="vh">
+
+  <div class="head">
+    <div class="title">Hydrographic plate — kayak.stl</div>
+    <div class="sub">Hydrostatics</div>
+    <div class="sp"></div>
+    <div class="tabs">
+      <label for="scr-hull">Plate</label>
+      <label for="scr-hydro">Soundings</label>
+    </div>
+  </div>
+
+  <div class="stage">
+
+    <section class="pane pane-hull">
+      <div class="body">
+        <div class="sheet">
+          <div class="neat"></div>
+          <div class="chartarea">
+            <svg class="contour" viewBox="0 0 1000 700" preserveAspectRatio="none" aria-hidden="true">
+              <path d="M-40,470 C120,430 210,520 360,495 C520,468 560,390 700,404 C850,419 900,500 1040,478"/>
+              <path d="M-40,520 C110,486 215,570 370,548 C530,525 575,448 715,462 C860,477 915,552 1040,534"/>
+              <path class="dash" d="M-40,392 C130,350 220,442 375,415 C535,387 570,310 715,325 C865,340 905,420 1040,398"/>
+              <path class="dash" d="M-40,570 C100,540 210,620 375,600 C545,580 580,505 720,520 C870,536 925,600 1040,586"/>
+            </svg>
+            {{HULL}}
+            <span class="sound" style="left:14%;top:22%">18</span>
+            <span class="sound" style="left:22%;top:34%">24</span>
+            <span class="sound" style="left:11%;top:52%">31</span>
+            <span class="sound" style="left:33%;top:16%">17</span>
+            <span class="sound" style="left:52%;top:30%">22</span>
+            <span class="sound" style="left:72%;top:20%">19</span>
+            <span class="sound" style="left:86%;top:38%">26</span>
+            <span class="sound" style="left:64%;top:58%">34</span>
+            <span class="sound" style="left:38%;top:66%">28</span>
+            <span class="sound" style="left:80%;top:72%">21</span>
+          </div>
+          <div class="sheetcap">Figure 1 — kayak.stl afloat on the solved waterline<small>Three-quarter view, bow to the right · 2 714.4 × 613.1 × 325.1 mm</small></div>
+          <svg class="rose" viewBox="0 0 100 100" aria-hidden="true">
+            <circle cx="50" cy="50" r="30" fill="none" stroke="#17304d" stroke-width="1" opacity="0.5"/>
+            <circle cx="50" cy="50" r="44" fill="none" stroke="#17304d" stroke-width="0.7" opacity="0.35"/>
+            <path d="M50,6 L56,44 L50,50 L44,44 Z" fill="#17304d" opacity="0.85"/>
+            <path d="M50,94 L44,56 L50,50 L56,56 Z" fill="#17304d" opacity="0.3"/>
+            <path d="M6,50 L44,44 L50,50 L44,56 Z" fill="#17304d" opacity="0.3"/>
+            <path d="M94,50 L56,56 L50,50 L56,44 Z" fill="#17304d" opacity="0.3"/>
+            <text x="50" y="4" text-anchor="middle" font-family="Georgia,serif" font-size="11" fill="#17304d">N</text>
+          </svg>
+          <div class="scalebar">
+            <div class="bar"><i></i><i></i><i></i><i></i><i></i><i></i></div>
+            500 mm
+          </div>
+        </div>
+
+        <aside class="legend">
+          <div class="lh">Legend<small>Principal results</small></div>
+          <div class="lb">
+            <div class="lgrow"><span class="k">Draft</span><span class="v">94.0<u>mm</u></span></div>
+            <div class="lgrow"><span class="k">Trim</span><span class="v blue">+3.60<u>deg</u></span></div>
+            <div class="lgrow"><span class="k">GM</span><span class="v blue">+122<u>mm</u></span></div>
+            <div class="lgrow"><span class="k">LCB–LCG</span><span class="v">1.68<u>mm</u></span></div>
+            <div class="lgrow"><span class="k">Displacement</span><span class="v">75.0<u>kg</u></span></div>
+            <div class="lgrow"><span class="k">AVS</span><span class="v">62<u>deg</u></span></div>
+            <div class="lgrow"><span class="k">End tip</span><span class="v red">41<u>deg</u></span></div>
+
+            <div class="lgblock">
+              <div class="bt">Tide curve — righting arm GZ</div>
+              {{GZ}}
+            </div>
+            <div class="lgblock">
+              <div class="bt">Soundings</div>
+              <div class="lgrow"><span class="k">GZ maximum</span><span class="v">61<u>mm at 38 deg</u></span></div>
+              <div class="lgrow"><span class="k">Draft at LCG</span><span class="v">94.0<u>mm</u></span></div>
+              <div class="lgrow"><span class="k">Bow freeboard</span><span class="v">222.2<u>mm</u></span></div>
+              <div class="lgrow"><span class="k">Stern freeboard</span><span class="v">22.3<u>mm</u></span></div>
+            </div>
+          </div>
+          <div class="lgfoot">Mass 75.0 kg · LCG 52.0 % from bow · KG 280 mm · heel 0 deg. Soundings on the second sheet.</div>
+        </aside>
+      </div>
+
+      <div class="strip">
+        <span><b>kayak.stl</b> · watertight</span>
+        <span>2 714.4 × 613.1 × 325.1 mm</span>
+        <span>mass <b>75.0 kg</b></span>
+        <span>lcg <b>52.0 % from bow</b></span>
+        <span>kg <b>280 mm</b></span>
+        <span>heel <b>0 deg</b></span>
+        <span>sweep <b>±4.5 deg</b>, fine step <b>0.1 deg</b></span>
+      </div>
+    </section>
+
+    <section class="pane pane-hydro">
+      <div class="data">
+        <div>
+          <div class="dbox">
+            <h3>Flotation</h3>
+            <table>
+              <tr><th>LWL</th><td>2 384 <u>mm</u></td></tr>
+              <tr><th>BWL</th><td>489 <u>mm</u></td></tr>
+              <tr><th>Waterplane area</th><td>0.412 <u>m²</u></td></tr>
+              <tr><th>TPC</th><td>0.0042</td></tr>
+              <tr><th>Wetted surface</th><td>1.842e6 <u>mm²</u></td></tr>
+              <tr><th>Displacement</th><td class="blue">75.0 <u>kg</u></td></tr>
+            </table>
+          </div>
+          <div class="dbox">
+            <h3>Trim and freeboard</h3>
+            <table>
+              <tr><th>Trim</th><td>+3.60 <u>deg, bow up</u></td></tr>
+              <tr><th>Bow freeboard</th><td>222.2 <u>mm</u></td></tr>
+              <tr><th>Stern freeboard</th><td>22.3 <u>mm</u></td></tr>
+              <tr><th>LCB–LCG offset</th><td>1.68 <u>mm</u></td></tr>
+              <tr><th>Draft</th><td>94.0 <u>mm</u></td></tr>
+            </table>
+          </div>
+        </div>
+        <div>
+          <div class="dbox">
+            <h3>Form coefficients</h3>
+            <table>
+              <tr><th>Cb — block</th><td>0.4721</td></tr>
+              <tr><th>Cp — prismatic</th><td>0.5813</td></tr>
+              <tr><th>Cm — midship</th><td>0.8120</td></tr>
+              <tr><th>Cwp — waterplane</th><td>0.6394</td></tr>
+            </table>
+          </div>
+          <div class="dbox">
+            <h3>Stability</h3>
+            <table>
+              <tr><th>KB</th><td>58 <u>mm</u></td></tr>
+              <tr><th>BM</th><td>344 <u>mm</u></td></tr>
+              <tr><th>KM</th><td>402 <u>mm</u></td></tr>
+              <tr><th>KG</th><td>280 <u>mm</u></td></tr>
+              <tr><th>GM</th><td class="blue">+122 <u>mm</u></td></tr>
+            </table>
+          </div>
+        </div>
+        <div>
+          <div class="dbox">
+            <h3>Righting arm</h3>
+            <table>
+              <tr><th>GZ max</th><td>61 <u>mm at 38 deg</u></td></tr>
+              <tr><th>AVS</th><td>62 <u>deg</u></td></tr>
+              <tr><th>End-tip immersion</th><td class="red">41 <u>deg</u></td></tr>
+              <tr><th>Sweep</th><td>±4.5 <u>deg</u></td></tr>
+              <tr><th>Fine step</th><td>0.1 <u>deg</u></td></tr>
+            </table>
+          </div>
+          <div class="dbox">
+            <h3>Notes</h3>
+            <p style="font-size:12px;color:var(--ink2);line-height:1.55">Trim solved coarse at 0.5 deg across ±4.5 deg, then fine at 0.1 deg around the winner. Heights are measured from the keel in the hull's own frame; each freeboard is read at its own end's station. Fresh water, 1000 kg/m³.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </div>
+</div>
+</body>
+</html>

@@ -1,0 +1,540 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Analyze — Minimal</title>
+<style>
+  :root {
+    --bg: #f8f8f5;
+    --ink: #141513;
+    --ink-2: #6a6b66;
+    --ink-3: #a5a6a0;
+    --rule: #e3e3dc;
+    --accent: #2f6b57;
+    --mono: ui-monospace, "Cascadia Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+    --sans: ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body { height: 100%; margin: 0; }
+
+  body {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: var(--bg);
+    color: var(--ink);
+    font: 12px/1.4 var(--sans);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .lbl {
+    font-size: 9px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+
+  /* ---------- header ---------- */
+
+  header {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 34px;
+    height: 56px;
+    padding: 0 40px;
+  }
+
+  .wordmark {
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+  }
+
+  .wordmark span {
+    font-weight: 400;
+    font-size: 9px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    margin-left: 7px;
+  }
+
+  nav.tabs { display: flex; gap: 22px; height: 100%; }
+
+  nav.tabs a {
+    display: flex;
+    align-items: center;
+    font-size: 10px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    text-decoration: none;
+    color: var(--ink-3);
+    border-bottom: 1px solid transparent;
+  }
+
+  nav.tabs a[aria-current="page"] { color: var(--ink); border-bottom-color: var(--ink); }
+  nav.tabs a:hover { color: var(--ink-2); }
+
+  header .right {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.04em;
+    color: var(--ink-3);
+  }
+
+  /* ---------- conditions ---------- */
+
+  .conds {
+    flex: none;
+    display: flex;
+    justify-content: flex-end;
+    align-items: baseline;
+    gap: 26px;
+    padding: 0 40px 10px;
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+
+  .conds .f { display: flex; align-items: baseline; gap: 6px; }
+
+  .conds label { cursor: text; }
+
+  .conds input {
+    width: 46px;
+    border: 0;
+    background: transparent;
+    color: var(--ink);
+    font: 11px var(--mono);
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+    border-bottom: 1px solid transparent;
+    padding: 0 0 1px;
+  }
+
+  .conds input:hover { border-bottom-color: var(--rule); }
+  .conds input:focus { outline: none; border-bottom-color: var(--accent); }
+
+  /* ---------- main ---------- */
+
+  main {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    padding: 0 40px;
+  }
+
+  .numbers {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    align-items: end;
+    padding: 26px 0 30px;
+  }
+
+  .n .k {
+    display: block;
+    margin-bottom: 10px;
+    font-size: 9px;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+
+  .n .v {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    font-family: var(--mono);
+    font-variant-numeric: tabular-nums;
+    font-size: 88px;
+    line-height: 0.86;
+    letter-spacing: -0.055em;
+    color: var(--ink);
+  }
+
+  .n .v small {
+    font-size: 15px;
+    letter-spacing: 0.02em;
+    color: var(--ink-3);
+  }
+
+  .n .v.hi { color: var(--accent); }
+
+  .n .note {
+    margin-top: 12px;
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--ink-3);
+    letter-spacing: 0.02em;
+  }
+
+  /* ---------- drawing ---------- */
+
+  .hull {
+    flex: none;
+    height: 150px;
+  }
+
+  .hull svg { display: block; width: 100%; height: 100%; }
+
+  .gz {
+    flex: 1;
+    min-height: 0;
+    padding-top: 6px;
+  }
+
+  .gz svg { display: block; width: 100%; height: 100%; }
+
+  /* ---------- foot ---------- */
+
+  .foot {
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 24px;
+    height: 44px;
+    padding: 0 40px;
+    border-top: 1px solid var(--rule);
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.04em;
+    color: var(--ink-3);
+  }
+
+  .more {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 0;
+    border: 0;
+    background: none;
+    color: var(--ink-2);
+    font: 10px var(--sans);
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    cursor: pointer;
+  }
+
+  .more:hover { color: var(--ink); }
+  .more .chev { font-size: 8px; transition: transform 140ms ease; }
+  .more[aria-expanded="true"] .chev { transform: rotate(180deg); }
+
+  .foot .r { display: flex; gap: 20px; }
+
+  /* ---------- sheet overlay ---------- */
+
+  .sheet {
+    position: fixed;
+    inset: 0;
+    z-index: 5;
+    display: flex;
+    flex-direction: column;
+    background: var(--bg);
+    padding: 40px;
+  }
+
+  .sheet[hidden] { display: none; }
+
+  .sheet-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    padding-bottom: 14px;
+    border-bottom: 1px solid var(--ink);
+  }
+
+  .sheet-head h2 {
+    margin: 0;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+  }
+
+  .sheet-head button {
+    border: 0;
+    background: none;
+    padding: 2px 0;
+    color: var(--ink-3);
+    font: 10px var(--sans);
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    cursor: pointer;
+  }
+
+  .sheet-head button:hover { color: var(--ink); }
+
+  .sheet-grid {
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0 56px;
+    padding-top: 22px;
+  }
+
+  .sheet-grid h3 {
+    margin: 0 0 6px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid var(--rule);
+    font-size: 9px;
+    font-weight: 400;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+
+  .sheet-grid dl {
+    margin: 0;
+    display: grid;
+    grid-template-columns: 1fr auto;
+    column-gap: 16px;
+  }
+
+  .sheet-grid dt {
+    padding: 4px 0;
+    font-size: 11px;
+    color: var(--ink-2);
+    border-bottom: 1px solid var(--rule);
+  }
+
+  .sheet-grid dd {
+    margin: 0;
+    padding: 4px 0;
+    border-bottom: 1px solid var(--rule);
+    text-align: right;
+    font-family: var(--mono);
+    font-variant-numeric: tabular-nums;
+    font-size: 11.5px;
+  }
+
+  .sheet-grid dd.hi { color: var(--accent); }
+
+  .sheet-grid .cols { display: grid; grid-template-columns: 1fr; gap: 26px; align-content: start; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wordmark">kayak-analyzer</div>
+  <nav class="tabs" aria-label="Workspace">
+    <a href="#analyze" aria-current="page">Analyze</a>
+    <a href="#compare">Compare</a>
+  </nav>
+  <div class="right">
+    <span>kayak.stl</span>
+    <span>2 714.4 × 613.1 × 325.1</span>
+    <span>watertight</span>
+  </div>
+</header>
+
+<div class="conds">
+  <div class="f"><label for="m-mass">Weight</label><input id="m-mass" type="text" value="75.0" inputmode="decimal"><span>kg</span></div>
+  <div class="f"><label for="m-lcg">LCG</label><input id="m-lcg" type="text" value="52.0" inputmode="decimal"><span>%</span></div>
+  <div class="f"><label for="m-kg">KG</label><input id="m-kg" type="text" value="280" inputmode="decimal"><span>mm</span></div>
+  <div class="f"><label for="m-heel">Heel</label><input id="m-heel" type="text" value="0.0" inputmode="decimal"><span>°</span></div>
+</div>
+
+<main>
+
+  <div class="numbers">
+    <div class="n">
+      <span class="k">Draft</span>
+      <div class="v">94.0<small>mm</small></div>
+      <div class="note">LCF 1 192 mm aft of bow</div>
+    </div>
+    <div class="n">
+      <span class="k">Trim</span>
+      <div class="v">+3.60<small>°</small></div>
+      <div class="note">bow up · LCB–LCG 1.68 mm</div>
+    </div>
+    <div class="n">
+      <span class="k">Metacentric height</span>
+      <div class="v hi">+122<small>mm</small></div>
+      <div class="note">KM 402 · KG 280</div>
+    </div>
+  </div>
+
+  <div class="hull">
+    <svg viewBox="0 0 900 170" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Hull side elevation with the waterline at 94 millimetres draft">
+      <line x1="46" y1="104" x2="854" y2="104" stroke="#d3d3ca" stroke-width="1" stroke-dasharray="7 5"/>
+
+      <g transform="translate(0,-146)">
+        <path d="M 800 190
+                 C 620 194 440 206 260 224
+                 C 200 230 140 237 100 244
+                 L 100 250
+                 C 160 268 320 276 450 276
+                 C 580 276 700 262 762 244
+                 C 788 236 799 212 800 190 Z"
+              fill="#f1f1ec" stroke="#84857d" stroke-width="1.1" stroke-linejoin="round"/>
+        <path d="M 800 190 C 620 194 440 206 260 224 C 200 230 140 237 100 244"
+              fill="none" stroke="#c4c5bd" stroke-width="0.8"/>
+      </g>
+
+      <text x="46" y="146" font-family="ui-monospace, monospace" font-size="9" fill="#a5a6a0">222.2 bow</text>
+      <text x="854" y="146" font-family="ui-monospace, monospace" font-size="9" fill="#a5a6a0" text-anchor="end">22.3 stern</text>
+      <text x="450" y="146" font-family="ui-monospace, monospace" font-size="9" fill="#a5a6a0" text-anchor="middle">94.0 draft · 2 384 LWL</text>
+    </svg>
+  </div>
+
+  <div class="gz">
+    <svg viewBox="0 0 900 190" preserveAspectRatio="xMidYMid meet" role="img" aria-label="GZ curve, peak 61 millimetres at 38 degrees, vanishing at 62 degrees">
+      <line x1="46" y1="150" x2="854" y2="150" stroke="#dcdcd4" stroke-width="1"/>
+
+      <g stroke="#e6e6df" stroke-width="1">
+        <line x1="46" y1="92" x2="854" y2="92"/>
+        <line x1="46" y1="121" x2="854" y2="121"/>
+      </g>
+
+      <g font-family="ui-monospace, monospace" font-size="9" fill="#a5a6a0">
+        <text x="40" y="153" text-anchor="end">0</text>
+        <text x="40" y="124" text-anchor="end">20</text>
+        <text x="40" y="95" text-anchor="end">40</text>
+        <text x="40" y="66" text-anchor="end">60</text>
+      </g>
+      <path d="M46 150 L136 124 L226 95 L315 72 L387 62 L450 66 L513 86 L567 112 L603 150 L675 170 L764 188"
+            fill="none" stroke="#2f6b57" stroke-width="1.4" stroke-linejoin="round"/>
+
+      <circle cx="387" cy="62" r="2.4" fill="#2f6b57"/>
+      <text x="396" y="58" font-family="ui-monospace, monospace" font-size="9" fill="#2f6b57">61 @ 38°</text>
+
+      <circle cx="603" cy="150" r="2.4" fill="none" stroke="#2f6b57" stroke-width="1.1"/>
+      <text x="603" y="142" font-family="ui-monospace, monospace" font-size="9" fill="#2f6b57" text-anchor="middle">avs 62°</text>
+
+      <g font-family="ui-monospace, monospace" font-size="9" fill="#a5a6a0" text-anchor="middle">
+        <text x="46" y="170">0°</text>
+        <text x="315" y="170">30°</text>
+        <text x="585" y="170">60°</text>
+        <text x="854" y="170">90°</text>
+      </g>
+    </svg>
+  </div>
+
+</main>
+
+<div class="foot">
+  <button class="more" id="more" type="button" aria-expanded="false" aria-controls="sheet">
+    <span class="chev">▾</span> All readings
+  </button>
+  <div class="r">
+    <span>watertight</span>
+    <span>30 planes · ±4.5° / 0.1°</span>
+    <span>converged</span>
+  </div>
+</div>
+
+<section class="sheet" id="sheet" hidden aria-label="All readings">
+  <div class="sheet-head">
+    <h2>All readings</h2>
+    <button type="button" id="close">Close ✕</button>
+  </div>
+
+  <div class="sheet-grid">
+    <div class="cols">
+      <div>
+        <h3>Vessel</h3>
+        <dl>
+          <dt>File</dt><dd>kayak.stl</dd>
+          <dt>LOA</dt><dd>2 714.4 mm</dd>
+          <dt>Beam</dt><dd>613.1 mm</dd>
+          <dt>Depth</dt><dd>325.1 mm</dd>
+          <dt>Shell</dt><dd>watertight</dd>
+        </dl>
+      </div>
+      <div>
+        <h3>Flotation</h3>
+        <dl>
+          <dt>Draft</dt><dd>94.0 mm</dd>
+          <dt>LWL</dt><dd>2 384 mm</dd>
+          <dt>BWL</dt><dd>489 mm</dd>
+          <dt>Waterplane</dt><dd>0.412 m²</dd>
+          <dt>TPC</dt><dd>0.0042</dd>
+          <dt>Wetted area</dt><dd>1.842e6 mm²</dd>
+          <dt>LCB–LCG</dt><dd>1.68 mm</dd>
+        </dl>
+      </div>
+    </div>
+
+    <div class="cols">
+      <div>
+        <h3>Freeboard</h3>
+        <dl>
+          <dt>Bow</dt><dd>222.2 mm</dd>
+          <dt>Stern</dt><dd>22.3 mm</dd>
+          <dt>Trim</dt><dd>+3.60°</dd>
+        </dl>
+      </div>
+      <div>
+        <h3>Form</h3>
+        <dl>
+          <dt>Cb</dt><dd>0.4721</dd>
+          <dt>Cp</dt><dd>0.5813</dd>
+          <dt>Cm</dt><dd>0.8120</dd>
+          <dt>Cwp</dt><dd>0.6394</dd>
+        </dl>
+      </div>
+    </div>
+
+    <div class="cols">
+      <div>
+        <h3>Stability</h3>
+        <dl>
+          <dt>KB</dt><dd>58 mm</dd>
+          <dt>BM</dt><dd>344 mm</dd>
+          <dt>KM</dt><dd>402 mm</dd>
+          <dt>KG</dt><dd>280 mm</dd>
+          <dt>GM</dt><dd class="hi">+122 mm</dd>
+        </dl>
+      </div>
+      <div>
+        <h3>Curve</h3>
+        <dl>
+          <dt>GZ max</dt><dd>61 mm</dd>
+          <dt>at heel</dt><dd>38.0°</dd>
+          <dt>AVS</dt><dd>62.0°</dd>
+          <dt>End-tip immersion</dt><dd>41.0°</dd>
+        </dl>
+      </div>
+    </div>
+  </div>
+</section>
+
+<script>
+  (function () {
+    var more = document.getElementById('more')
+    var sheet = document.getElementById('sheet')
+    var close = document.getElementById('close')
+
+    function open() {
+      sheet.hidden = false
+      more.setAttribute('aria-expanded', 'true')
+      close.focus()
+    }
+
+    function shut() {
+      sheet.hidden = true
+      more.setAttribute('aria-expanded', 'false')
+      more.focus()
+    }
+
+    more.addEventListener('click', open)
+    close.addEventListener('click', shut)
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && !sheet.hidden) shut()
+    })
+  })()
+</script>
+
+</body>
+</html>

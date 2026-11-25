@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>e · Blueprint — kayak-analyzer</title>
+<style>
+:root{
+  --bp:#0e3a8c; --bp2:#0b2f73; --line:rgba(255,255,255,.85); --dim:rgba(255,255,255,.55);
+  --grid:rgba(255,255,255,.07); --grid2:rgba(255,255,255,.16);
+  --cyan:#9fd8ff; --amber:#ffd479;
+  --mono:ui-monospace,"Cascadia Mono","SFMono-Regular",Menlo,Consolas,monospace;
+  --sans:ui-sans-serif,system-ui,"Segoe UI",Roboto,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{width:1280px;height:800px;overflow:hidden}
+body{background:var(--bp);color:#fff;font-family:var(--sans);-webkit-font-smoothing:antialiased;
+  background-image:repeating-linear-gradient(0deg,var(--grid) 0 1px,transparent 1px 25px),
+    repeating-linear-gradient(90deg,var(--grid) 0 1px,transparent 1px 25px),
+    repeating-linear-gradient(0deg,var(--grid2) 0 1px,transparent 1px 125px),
+    repeating-linear-gradient(90deg,var(--grid2) 0 1px,transparent 1px 125px)}
+.screen{width:1280px;height:800px;padding:26px 30px;display:flex;flex-direction:column}
+.num{font-variant-numeric:tabular-nums}
+.head{display:flex;justify-content:space-between;align-items:baseline;border-bottom:2px solid var(--line);padding-bottom:10px}
+.head h1{font:600 20px var(--mono);letter-spacing:.12em;text-transform:uppercase}
+.head .meta{font:11px var(--mono);color:var(--dim)}
+main{flex:1;min-height:0;display:flex;gap:24px;margin-top:16px}
+.drawing{flex:1;min-width:0;border:1px solid var(--line);position:relative;padding:10px}
+.drawing svg{width:100%;height:100%}
+.side{width:400px;flex:none;display:flex;flex-direction:column;gap:10px}
+.box{border:1px solid var(--line);padding:8px 12px 10px}
+.box .lbl{font:9px var(--sans);letter-spacing:.22em;text-transform:uppercase;color:var(--cyan);display:block;border-bottom:1px solid rgba(255,255,255,.35);padding-bottom:4px;margin-bottom:5px}
+.box .row{display:flex;justify-content:space-between;font:11.5px var(--mono);padding:1.5px 0;color:#fff}
+.box .row .k{color:var(--dim)}
+.tblock{margin-top:auto;border:2px solid var(--line)}
+.tblock .t{font:600 10px var(--mono);letter-spacing:.2em;text-transform:uppercase;padding:5px 10px;border-bottom:1px solid var(--line);color:var(--amber)}
+.tblock table{width:100%;border-collapse:collapse;font:10.5px var(--mono)}
+.tblock td{padding:4px 10px;border-bottom:1px solid rgba(255,255,255,.3);vertical-align:top}
+.tblock td.k{color:var(--dim);width:86px;text-transform:uppercase;letter-spacing:.1em;font-size:9px}
+</style>
+</head>
+<body>
+<div class="screen">
+  <div class="head">
+    <h1>Hydrostatic analysis — kayak.stl</h1>
+    <span class="meta num">sheet 1/1 · watertight · scale 1:10 · Z-up · bow +X</span>
+  </div>
+  <main>
+    <section class="drawing">
+      <svg viewBox="0 0 760 560" preserveAspectRatio="xMidYMid meet">
+        <g font-family="ui-monospace,Menlo,Consolas,monospace" font-size="13" fill="#fff">
+          <path d="M 70 250 Q 260 190 380 186 Q 580 182 710 232 L 710 236 Q 560 320 380 324 Q 220 318 70 250 Z"
+                fill="rgba(255,255,255,.06)" stroke="#fff" stroke-width="2"/>
+          <ellipse cx="380" cy="196" rx="52" ry="8" fill="none" stroke="#fff" stroke-width="1.5"/>
+          <line x1="40" y1="288" x2="730" y2="288" stroke="#9fd8ff" stroke-width="1.5" stroke-dasharray="10 7"/>
+          <text x="46" y="281" fill="#9fd8ff">WL · draft 94.0 mm</text>
+          <line x1="380" y1="324" x2="380" y2="288" stroke="#ffd479" stroke-width="1.5"/>
+          <text x="390" y="312" fill="#ffd479">94.0</text>
+          <line x1="70" y1="392" x2="710" y2="392" stroke="#fff" stroke-width="1"/>
+          <line x1="70" y1="382" x2="70" y2="402" stroke="#fff"/><line x1="710" y1="382" x2="710" y2="402" stroke="#fff"/>
+          <text x="390" y="416" text-anchor="middle">2 714.4 (LOA)</text>
+          <line x1="742" y1="186" x2="742" y2="324" stroke="#fff" stroke-width="1"/>
+          <line x1="732" y1="186" x2="752" y2="186" stroke="#fff"/><line x1="732" y1="324" x2="752" y2="324" stroke="#fff"/>
+          <text x="756" y="260" fill="#fff" transform="rotate(90 756 260)">325.1 (depth)</text>
+          <text x="716" y="222" font-size="12">beam 613.1</text>
+          <text x="716" y="238" font-size="12" fill="#ffd479">trim +3.60° bow-up</text>
+          <text x="30" y="240" font-size="12">stern fb 22.3 mm</text>
+          <text x="560" y="176" font-size="12">bow fb 222.2 mm</text>
+          <text x="70" y="540" font-size="12" fill="rgba(255,255,255,.55)">profile view · bow +X → · load 75.0 kg · LCG 52.0 % from bow · KG 280 mm · heel 0°</text>
+          <circle cx="380" cy="288" r="3" fill="#ffd479"/>
+          <text x="30" y="60" font-size="12" fill="#9fd8ff">GZ curve of stability → see panel</text>
+          <g transform="translate(60 70)">
+            <rect x="0" y="0" width="640" height="150" fill="none" stroke="rgba(255,255,255,.4)" stroke-width="1"/>
+            <g stroke="rgba(255,255,255,.18)" stroke-width="1">
+              <line x1="30" y1="10" x2="30" y2="130"/><line x1="110" y1="10" x2="110" y2="130"/>
+              <line x1="190" y1="10" x2="190" y2="130"/><line x1="270" y1="10" x2="270" y2="130"/>
+              <line x1="350" y1="10" x2="350" y2="130"/><line x1="430" y1="10" x2="430" y2="130"/>
+              <line x1="510" y1="10" x2="510" y2="130"/><line x1="590" y1="10" x2="590" y2="130"/>
+              <line x1="30" y1="20" x2="590" y2="20"/><line x1="30" y1="50" x2="590" y2="50"/>
+              <line x1="30" y1="110" x2="590" y2="110"/><line x1="30" y1="130" x2="590" y2="130"/>
+            </g>
+            <line x1="30" y1="80" x2="590" y2="80" stroke="#fff" stroke-width="1.2"/>
+            <polyline fill="none" stroke="#ffd479" stroke-width="2" stroke-linejoin="round"
+              points="30,80 65,68 100,56 135,45 170,36 205,29 240,24 275,20 296,19 310,19 335,22 370,30 394,36 415,45 436,55 450,66 464,80 485,92 506,102 520,110 555,120 590,128"/>
+            <g fill="#ffd479"><circle cx="296" cy="19" r="3"/><circle cx="464" cy="80" r="3"/><circle cx="317" cy="21" r="2.6"/></g>
+            <text x="302" y="14" font-size="11" fill="#ffd479">61 mm @ 38°</text>
+            <text x="470" y="74" font-size="11" fill="#ffd479">AVS 62°</text>
+            <text x="30" y="145" font-size="11" fill="rgba(255,255,255,.75)">GZ (mm) vs heel (deg) · end-tip 41°</text>
+          </g>
+        </g>
+      </svg>
+    </section>
+    <aside class="side num">
+      <div class="box">
+        <span class="lbl">Answers</span>
+        <div class="row"><span class="k">draft</span><span>94.0 mm</span></div>
+        <div class="row"><span class="k">trim</span><span>+3.60° bow-up</span></div>
+        <div class="row"><span class="k">GM</span><span>+122 mm</span></div>
+        <div class="row"><span class="k">LCB–LCG offset</span><span>1.68 mm</span></div>
+      </div>
+      <div class="box">
+        <span class="lbl">Flotation</span>
+        <div class="row"><span class="k">LWL · BWL</span><span>2 384 · 489 mm</span></div>
+        <div class="row"><span class="k">waterplane area</span><span>0.412 m²</span></div>
+        <div class="row"><span class="k">TPC</span><span>0.0042</span></div>
+        <div class="row"><span class="k">wetted surface</span><span>1.842e6 mm²</span></div>
+        <div class="row"><span class="k">displacement</span><span>75.0 kg</span></div>
+      </div>
+      <div class="box">
+        <span class="lbl">Form coefficients</span>
+        <div class="row"><span class="k">Cb · Cp</span><span>0.4721 · 0.5813</span></div>
+        <div class="row"><span class="k">Cm · Cwp</span><span>0.8120 · 0.6394</span></div>
+      </div>
+      <div class="box">
+        <span class="lbl">Stability</span>
+        <div class="row"><span class="k">KB · BM · KM</span><span>58 · 344 · 402 mm</span></div>
+        <div class="row"><span class="k">KG · GM</span><span>280 · +122 mm</span></div>
+        <div class="row"><span class="k">GZ max · AVS</span><span>61 mm @ 38° · 62°</span></div>
+        <div class="row"><span class="k">end-tip immersion</span><span>41°</span></div>
+      </div>
+      <div class="tblock">
+        <div class="t">Title block</div>
+        <table>
+          <tr><td class="k">project</td><td>kayak-analyzer · analyze</td></tr>
+          <tr><td class="k">file</td><td>kayak.stl · watertight · 2 714.4 × 613.1 × 325.1 mm</td></tr>
+          <tr><td class="k">condition</td><td>75.0 kg · LCG 52.0 % from bow · KG 280 mm · heel 0°</td></tr>
+          <tr><td class="k">sweep</td><td>±4.5° · fine step 0.1°</td></tr>
+        </table>
+      </div>
+    </aside>
+  </main>
+</div>
+</body>
+</html>

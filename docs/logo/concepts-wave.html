@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>kayak-analyzer — 8 wave directions</title>
+<style>
+  :root { --ink:#12181F; --paper:#EEF2F5; --accent:#0FA3B5; --accent-dark:#2EC4D6; }
+  * { box-sizing:border-box; margin:0; }
+  body { font-family:"Segoe UI","Helvetica Neue",Arial,sans-serif; background:#E9EBEE; color:var(--ink); padding:40px; max-width:1060px; }
+  h1 { font-size:20px; font-weight:600; letter-spacing:-0.4px; margin-bottom:4px; }
+  .sub { font-size:13px; opacity:.65; margin-bottom:26px; }
+  h2 { font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:1.2px; opacity:.55; margin:30px 0 12px; }
+  .strip { display:flex; flex-wrap:wrap; gap:10px; align-items:flex-end; background:#fff; border-radius:14px; padding:16px; }
+  .tile { display:flex; flex-direction:column; align-items:center; gap:6px; }
+  .tile .box { background:#fff; border:1px solid #e3e6ea; border-radius:8px; display:flex; align-items:center; justify-content:center; padding:6px; }
+  .cap { font-size:10px; opacity:.55; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(470px,1fr)); gap:14px; }
+  .card { background:#fff; border-radius:14px; padding:18px; display:flex; gap:18px; }
+  .renders { display:flex; flex-direction:column; gap:8px; align-items:center; }
+  .panel { border-radius:10px; display:flex; align-items:center; justify-content:center; padding:14px; }
+  .light { background:#F4F6F8; }
+  .dark  { background:var(--ink); }
+  .meta { flex:1; }
+  .meta h3 { font-size:14px; font-weight:600; margin-bottom:4px; }
+  .meta .why { font-size:12px; line-height:1.45; opacity:.8; margin-bottom:8px; }
+  .meta .risk { font-size:11px; line-height:1.4; opacity:.55; }
+  .meta b { font-weight:600; opacity:.8; }
+  .note { font-size:12px; opacity:.65; margin-top:18px; line-height:1.5; }
+</style>
+</head>
+<body>
+<h1>kayak-analyzer — 8 wave directions</h1>
+<p class="sub">&ldquo;Just a wave&rdquo; is a good instinct, and the report&rsquo;s own warning is that a <i>generic</i> wave is the most clich&eacute;d mark in the category — so the question is <b>which</b> wave. Eight answers, all on the approved style (ink / paper / teal, geometric, grid-built on 120&times;120), each a different wave.</p>
+
+<h2>The 16-pixel survival strip (favicon first — this is the test that kills marks)</h2>
+<div class="strip" id="strip"></div>
+
+<h2>Directions</h2>
+<div class="grid" id="grid"></div>
+
+<p class="note">Next: you shortlist 2&ndash;3, we stress them (busy ground, print, mono, embroidery-ish scenarios) and refine the winners on the grid — the way the report's protocol does it.</p>
+
+<script>
+const INK="#12181F", PAPER="#EEF2F5", TEAL="#0FA3B5", TEALD="#2EC4D6";
+const lens = "M22 60 C 30 40 90 40 98 60 C 90 80 30 80 22 60 Z";
+const notch = " M50 46 H70 V56 H50 Z";
+
+function svg(inner, vb, colors, size, id) {
+  const [vx, vy, vw, vh] = vb.split(" ").map(Number);
+  return `<svg width="${size}" height="${Math.round(size*vh/vw)}" viewBox="${vb}" fill="none" xmlns="http://www.w3.org/2000/svg">${inner(colors, id)}</svg>`;
+}
+
+const marks = {
+
+  W1: { name:"W1 — One crest (the literal reading)",
+    why:"Exactly what you asked for: a single clean wave, rising out of the water. One quadratic hump, grid-built, no clip-art curl — the most literal, most legible option, and the shape everyone reads first.",
+    risk:"The most common mark in the water category; legible but not ownable on its own.",
+    draw:(c,id)=>`
+      <rect x="0" y="94" width="120" height="18" fill="${c.TEAL}"/>
+      <path d="M0 92 Q 60 6 120 92 L120 98 L0 98 Z" fill="${c.INK}"/>
+      <path d="M0 92 Q 60 6 120 92" fill="none" stroke="${c.TEAL}" stroke-width="4" stroke-linecap="round"/>` },
+
+  W2: { name:"W2 — Kelvin wake (the physicist&rsquo;s wave)",
+    why:"The wake a real displacement hull leaves: two diverging arms plus the transverse crests between them, fanned off the ship&rsquo;s track. The angle is fixed by physics (19.47&deg;, drawn slightly wider to survive 16&nbsp;px) — a wave nobody else in software owns.",
+    risk:"Abstract; reads &lsquo;fork / fan&rsquo; to non-naval eyes.",
+    draw:(c,id)=>`
+      <line x1="60" y1="34" x2="26" y2="110" stroke="${c.INK}" stroke-width="5" stroke-linecap="round"/>
+      <line x1="60" y1="34" x2="94" y2="110" stroke="${c.INK}" stroke-width="5" stroke-linecap="round"/>
+      <path d="M50 55 Q 60 48 70 55" fill="none" stroke="${c.INK}" stroke-width="4" stroke-linecap="round"/>
+      <path d="M43 72 Q 60 64 77 72" fill="none" stroke="${c.INK}" stroke-width="4" stroke-linecap="round"/>
+      <path d="M35 89 Q 60 79 85 89" fill="none" stroke="${c.INK}" stroke-width="4" stroke-linecap="round"/>
+      <line x1="42" y1="34" x2="78" y2="34" stroke="${c.TEAL}" stroke-width="4" stroke-linecap="round"/>
+      <circle cx="60" cy="34" r="6" fill="${c.INK}"/>` },
+
+  W3: { name:"W3 — Wave with a trough (a hole for a hull)",
+    why:"A water body whose surface has two crests and a central trough — the depression a floating hull makes in the waterline. It reads as a wave and hints at a boat without drawing one: the void is the idea.",
+    risk:"Abstract; could read as a &lsquo;W&rsquo; or a chart, not water.",
+    draw:(c,id)=>`
+      <defs><clipPath id="w3-cp-${id}"><path d="M0 44 C 18 44 26 74 60 74 C 94 74 102 44 120 44 L120 112 L0 112 Z"/></clipPath></defs>
+      <rect x="0" y="0" width="120" height="120" fill="${c.TEAL}" clip-path="url(#w3-cp-${id})"/>
+      <path d="M0 44 C 18 44 26 74 60 74 C 94 74 102 44 120 44" fill="none" stroke="${c.INK}" stroke-width="5" stroke-linecap="round"/>` },
+
+  W4: { name:"W4 — A wavy waterplane through a section",
+    why:"The app&rsquo;s own object — the waterplane — made a wave, cut through a real hull section. Inside the hull the surface is a wave line instead of a flat rule: the one place where the app draws a straight line, this mark lets it move.",
+    risk:"Busiest of the eight; the section + the wave compete.",
+    draw:(c,id)=>`
+      <defs><clipPath id="w4-cp-${id}"><path d="M28 60 C 28 34 46 22 60 22 C 74 22 92 34 92 60 C 92 86 74 98 60 98 C 46 98 28 86 28 60 Z"/></clipPath></defs>
+      <path d="M28 60 C 28 34 46 22 60 22 C 74 22 92 34 92 60 C 92 86 74 98 60 98 C 46 98 28 86 28 60 Z M50 28 H70 V40 H50 Z" fill-rule="evenodd" fill="${c.INK}"/>
+      <g clip-path="url(#w4-cp-${id})">
+        <path d="M6 50 C 24 42 36 60 60 56 C 84 52 96 40 114 46 L114 104 L6 104 Z" fill="${c.TEAL}"/>
+      </g>
+      <path d="M6 50 C 24 42 36 60 60 56 C 84 52 96 40 114 46" fill="none" stroke="${c.INK}" stroke-width="5" stroke-linecap="round"/>` },
+
+  W5: { name:"W5 — Ripples (equilibrium after a stroke)",
+    why:"Concentric ripples off one point source, spacing widening outward the way real ripples do, the outermost ring in teal. The calmest wave: water settling back to equilibrium — which is the state this app solves for.",
+    risk:"Reads &lsquo;signal / sonar / wifi&rsquo; more than water.",
+    draw:(c,id)=>`
+      <ellipse cx="60" cy="76" rx="58" ry="20" fill="none" stroke="${c.TEAL}" stroke-width="4"/>
+      <ellipse cx="60" cy="76" rx="44" ry="15" fill="none" stroke="${c.INK}" stroke-width="3.5"/>
+      <ellipse cx="60" cy="76" rx="27" ry="9" fill="none" stroke="${c.INK}" stroke-width="4"/>
+      <ellipse cx="60" cy="76" rx="12" ry="4" fill="none" stroke="${c.INK}" stroke-width="5"/>
+      <circle cx="60" cy="76" r="4" fill="${c.INK}"/>` },
+
+  W6: { name:"W6 — Meniscus (the calm wave)",
+    why:"The quietest possible wave: one nearly flat surface with the faintest crown over a body of water. Honest to the subject — <i>static</i> hydrostatics is a still sea — and the boldest subtraction of the eight.",
+    risk:"Almost nothing: at 16&nbsp;px it is a line over a bar.",
+    draw:(c,id)=>`
+      <rect x="0" y="76" width="120" height="20" fill="${c.TEAL}"/>
+      <path d="M0 76 Q 60 71 120 76" fill="none" stroke="${c.INK}" stroke-width="5" stroke-linecap="round"/>
+      <path d="M0 88 Q 60 84 120 88" fill="none" stroke="${c.INK}" stroke-width="2.5" stroke-linecap="round" opacity="0.45"/>` },
+
+  W7: { name:"W7 — Standing wave (two waves meeting)",
+    why:"Two opposed waves meeting at a trough — clapotis, the standing wave. Symmetric and instantly readable as water, with an internal structure that keeps it from looking like a stock hump: one mark, two waves.",
+    risk:"Reads &lsquo;M / W&rsquo; more than &lsquo;wave&rsquo; at speed.",
+    draw:(c,id)=>`
+      <rect x="0" y="98" width="120" height="18" fill="${c.TEAL}"/>
+      <path d="M0 98 C 28 40 34 40 60 78 C 86 40 92 40 120 98 L120 100 L0 100 Z" fill="${c.INK}"/>
+      <path d="M0 98 C 28 40 34 40 60 78 C 86 40 92 40 120 98" fill="none" stroke="${c.TEAL}" stroke-width="4" stroke-linecap="round"/>` },
+
+  W8: { name:"W8 — Hull and its wake (the fusion)",
+    why:"A kayak under way, trailing the wake of W2 behind it: the boat is still there, but the wave is doing the talking. Both halves of the product in one mark — the hull you upload, and the motion the solver has to account for.",
+    risk:"Two ideas in one small box; weakest of the eight at 16&nbsp;px.",
+    draw:(c,id)=>`
+      <path d="M46 52 C 52 36 90 36 96 52 C 90 68 52 68 46 52 Z M64 40 H78 V46 H64 Z" fill-rule="evenodd" fill="${c.INK}"/>
+      <path d="M44 58 L6 90" fill="none" stroke="${c.INK}" stroke-width="4.5" stroke-linecap="round"/>
+      <path d="M44 64 L2 106" fill="none" stroke="${c.INK}" stroke-width="4.5" stroke-linecap="round"/>
+      <path d="M25 74 Q 13 80 23 85" fill="none" stroke="${c.TEAL}" stroke-width="4" stroke-linecap="round"/>` }
+};
+
+const strip = document.getElementById("strip");
+const grid = document.getElementById("grid");
+
+for (const [k, m] of Object.entries(marks)) {
+  const lightC = {INK, PAPER, TEAL}, darkC = {INK:PAPER, PAPER:INK, TEAL:TEALD};
+  strip.insertAdjacentHTML("beforeend", `<div class="tile"><div class="box">${svg(m.draw,"0 0 120 120",lightC,16,k)}</div><span class="cap">${k} @16px</span></div>`);
+  grid.insertAdjacentHTML("beforeend", `
+    <div class="card">
+      <div class="renders">
+        <div class="panel light">${svg(m.draw,"0 0 120 120",lightC,120,k+"l")}</div>
+        <div class="panel dark">${svg(m.draw,"0 0 120 120",darkC,120,k+"d")}</div>
+        <div class="panel light">${svg(m.draw,"0 0 120 120",{INK:INK,PAPER:PAPER,TEAL:INK},120,k+"m")}</div>
+      </div>
+      <div class="meta">
+        <h3>${m.name}</h3>
+        <p class="why">${m.why}</p>
+        <p class="risk"><b>Watch out:</b> ${m.risk}</p>
+        <p class="cap" style="margin-top:8px">light &middot; dark &middot; one-colour</p>
+      </div>
+    </div>`);
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>kayak-analyzer — 12 unhinged directions</title>
+<style>
+  :root { --ink:#12181F; --paper:#EEF2F5; --accent:#0FA3B5; --accent-dark:#2EC4D6; }
+  * { box-sizing:border-box; margin:0; }
+  body { font-family:"Segoe UI","Helvetica Neue",Arial,sans-serif; background:#E9EBEE; color:var(--ink); padding:40px; max-width:1060px; }
+  h1 { font-size:20px; font-weight:600; letter-spacing:-0.4px; margin-bottom:4px; }
+  .sub { font-size:13px; opacity:.65; margin-bottom:26px; }
+  h2 { font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:1.2px; opacity:.55; margin:30px 0 12px; }
+  .strip { display:flex; flex-wrap:wrap; gap:10px; align-items:flex-end; background:#fff; border-radius:14px; padding:16px; }
+  .tile { display:flex; flex-direction:column; align-items:center; gap:6px; }
+  .tile .box { background:#fff; border:1px solid #e3e6ea; border-radius:8px; display:flex; align-items:center; justify-content:center; padding:6px; }
+  .cap { font-size:10px; opacity:.55; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(470px,1fr)); gap:14px; }
+  .card { background:#fff; border-radius:14px; padding:18px; display:flex; gap:18px; }
+  .renders { display:flex; flex-direction:column; gap:8px; align-items:center; }
+  .panel { border-radius:10px; display:flex; align-items:center; justify-content:center; padding:14px; }
+  .light { background:#F4F6F8; }
+  .dark  { background:var(--ink); }
+  .meta { flex:1; }
+  .meta h3 { font-size:14px; font-weight:600; margin-bottom:4px; }
+  .meta .why { font-size:12px; line-height:1.45; opacity:.8; margin-bottom:8px; }
+  .meta .risk { font-size:11px; line-height:1.4; opacity:.55; }
+  .meta b { font-weight:600; opacity:.8; }
+  .note { font-size:12px; opacity:.65; margin-top:18px; line-height:1.5; }
+</style>
+</head>
+<body>
+<h1>kayak-analyzer — 12 unhinged directions</h1>
+<p class="sub">Compared with the earlier eight, these are deliberately riskier: each one is a different <b>kind</b> of idea, not a restyle. Same approved style (ink / paper / teal, geometric, grid-built on 120&times;120). The 16-px strip is the honest filter.</p>
+
+<h2>The 16-pixel survival strip (favicon first — this is the test that kills marks)</h2>
+<div class="strip" id="strip"></div>
+
+<h2>Directions</h2>
+<div class="grid" id="grid"></div>
+
+<p class="note">Next: you shortlist 2&ndash;3, we stress them (busy ground, print, mono, embroidery-ish scenarios) and refine the winners on the grid — the way the report's protocol does it.</p>
+
+<script>
+const INK="#12181F", PAPER="#EEF2F5", TEAL="#0FA3B5", TEALD="#2EC4D6";
+const lens = "M22 60 C 30 40 90 40 98 60 C 90 80 30 80 22 60 Z";
+const notch = " M50 46 H70 V56 H50 Z";
+
+function svg(inner, vb, colors, size, id) {
+  const [vx, vy, vw, vh] = vb.split(" ").map(Number);
+  return `<svg width="${size}" height="${Math.round(size*vh/vw)}" viewBox="${vb}" fill="none" xmlns="http://www.w3.org/2000/svg">${inner(colors, id)}</svg>`;
+}
+
+const marks = {
+
+  I: { name:"I — The displaced water (negative mark)",
+    why:"The mark is the <b>hole</b>, not the boat: a solid body of water with a kayak-shaped void punched through it. Everything else draws the hull; this draws what the hull removes. The one idea that is this app&rsquo;s thesis — displaced volume — and nothing else&rsquo;s.",
+    risk:"Reads abstract. Most inventive of the twelve; most likely to be &lsquo;explained&rsquo; rather than &lsquo;seen&rsquo;.",
+    draw:(c,id)=>`
+      <rect x="0" y="26" width="120" height="68" fill="${c.INK}"/>
+      <path d="${lens}${notch}" fill-rule="evenodd" fill="${c.TEAL}"/>
+      <line x1="0" y1="60" x2="120" y2="60" stroke="${c.PAPER}" stroke-width="3" opacity="0.5"/>` },
+
+  J: { name:"J — Draft contour chart",
+    why:"The hull drawn as a bathymetric chart: successive waterplanes rising through the section, the final one a solid teal wedge. This is literally what the app sweeps — every draft it evaluates, on one still image.",
+    risk:"Three similar profiles risk reading as &lsquo;target&rsquo; or &lsquo;logo mark&rsquo; generically.",
+    draw:(c,id)=>`
+      <defs><clipPath id="j-cp-${id}"><path d="M28 60 C 28 34 46 22 60 22 C 74 22 92 34 92 60 C 92 86 74 98 60 98 C 46 98 28 86 28 60 Z"/></clipPath></defs>
+      <g clip-path="url(#j-cp-${id})">
+        <rect x="0" y="50" width="120" height="48" fill="${c.TEAL}"/>
+        <line x1="0" y1="68" x2="120" y2="68" stroke="${c.INK}" stroke-width="2.5"/>
+        <line x1="0" y1="80" x2="120" y2="80" stroke="${c.INK}" stroke-width="2.5"/>
+        <line x1="0" y1="91" x2="120" y2="91" stroke="${c.INK}" stroke-width="2.5"/>
+      </g>
+      <path d="M28 60 C 28 34 46 22 60 22 C 74 22 92 34 92 60 C 92 86 74 98 60 98 C 46 98 28 86 28 60 Z M50 28 H70 V40 H50 Z" fill-rule="evenodd" fill="${c.INK}"/>
+      <line x1="12" y1="50" x2="108" y2="50" stroke="${c.INK}" stroke-width="5" stroke-linecap="round"/>` },
+
+  K: { name:"K — Rib-cage hull (skin off)",
+    why:"The hull as its own sections — a lattice of ribs with visible rocker, the way the solver actually integrates the mesh. Skin off: <i>see the method, not the surface</i>. Nautical and true to the code at once.",
+    risk:"Reads &lsquo;cage / fence&rsquo; more than &lsquo;hull&rsquo; until the wordmark is beside it.",
+    draw:(c,id)=>`
+      <path d="M14 82 Q 62 106 106 82" fill="none" stroke="${c.TEAL}" stroke-width="6" stroke-linecap="round"/>
+      <path d="M12 42 Q 44 18 62 16 Q 80 18 108 42" fill="none" stroke="${c.INK}" stroke-width="4" stroke-linecap="round"/>
+      <path d="M13 60 Q26 34 39 60 Q26 86 13 60 Z" fill="none" stroke="${c.INK}" stroke-width="5" stroke-linejoin="round"/>
+      <path d="M31 60 Q44 22 57 60 Q44 98 31 60 Z" fill="none" stroke="${c.INK}" stroke-width="5" stroke-linejoin="round"/>
+      <path d="M49 60 Q62 16 75 60 Q62 104 49 60 Z" fill="none" stroke="${c.INK}" stroke-width="5" stroke-linejoin="round"/>
+      <path d="M67 60 Q80 22 93 60 Q80 98 67 60 Z" fill="none" stroke="${c.INK}" stroke-width="5" stroke-linejoin="round"/>
+      <path d="M85 60 Q98 34 111 60 Q98 86 85 60 Z" fill="none" stroke="${c.INK}" stroke-width="5" stroke-linejoin="round"/>` },
+
+  L: { name:"L — Displacement histogram",
+    why:"The boat riding on its own sectional-area curve: &int;A(x)dx = displacement, drawn as the bars it really is. The bars are teal water; the hull sits on top of the volume it pushes out.",
+    risk:"Reads &lsquo;chart + boat&rsquo; — needs the wordmark to say hydrostatics, not finance.",
+    draw:(c,id)=>`
+      <line x1="2" y1="104" x2="118" y2="104" stroke="${c.INK}" stroke-width="5" stroke-linecap="round"/>
+      <rect x="6"   y="88" width="9" height="16" rx="2" fill="${c.TEAL}"/>
+      <rect x="20"  y="70" width="9" height="34" rx="2" fill="${c.TEAL}"/>
+      <rect x="34"  y="52" width="9" height="52" rx="2" fill="${c.TEAL}"/>
+      <rect x="48"  y="38" width="9" height="66" rx="2" fill="${c.TEAL}"/>
+      <rect x="62"  y="38" width="9" height="66" rx="2" fill="${c.TEAL}"/>
+      <rect x="76"  y="52" width="9" height="52" rx="2" fill="${c.TEAL}"/>
+      <rect x="90"  y="70" width="9" height="34" rx="2" fill="${c.TEAL}"/>
+      <rect x="104" y="88" width="9" height="16" rx="2" fill="${c.TEAL}"/>
+      <path d="M20 44 C 30 24 90 24 100 44 C 90 60 30 60 20 44 Z M48 30 H72 V38 H48 Z" fill-rule="evenodd" fill="${c.INK}"/>` },
+
+  M: { name:"M — Eureka cylinder",
+    why:"Archimedes in a graduated cylinder, with the kayak as the bather: the rise is measured, and the app&rsquo;s own units joke (1&nbsp;kg = 1&nbsp;L) becomes the mark. Physics-lab honesty at kayak scale.",
+    risk:"The most &lsquo;apparatus-like&rsquo; of the twelve; at 16&nbsp;px the graduation ticks turn to mush.",
+    draw:(c,id)=>`
+      <line x1="36" y1="32" x2="45" y2="32" stroke="${c.INK}" stroke-width="2.5"/>
+      <line x1="36" y1="42" x2="45" y2="42" stroke="${c.INK}" stroke-width="2.5"/>
+      <line x1="36" y1="52" x2="45" y2="52" stroke="${c.INK}" stroke-width="2.5"/>
+      <line x1="36" y1="72" x2="45" y2="72" stroke="${c.INK}" stroke-width="2.5"/>
+      <line x1="36" y1="82" x2="45" y2="82" stroke="${c.INK}" stroke-width="2.5"/>
+      <line x1="36" y1="92" x2="45" y2="92" stroke="${c.INK}" stroke-width="2.5"/>
+      <defs><clipPath id="m-cp-${id}"><path d="M36 20 L36 88 Q36 100 48 100 L72 100 Q84 100 84 88 L84 20 Z"/></clipPath></defs>
+      <g clip-path="url(#m-cp-${id})"><rect x="0" y="62" width="120" height="60" fill="${c.TEAL}"/></g>
+      <path d="M36 20 L36 88 Q36 100 48 100 L72 100 Q84 100 84 88 L84 20" fill="none" stroke="${c.INK}" stroke-width="5" stroke-linejoin="round"/>
+      <path d="M42 62 C 48 48 72 48 78 62 C 72 76 48 76 42 62 Z" fill="${c.INK}"/>
+      <path d="M84 48 H101" stroke="${c.INK}" stroke-width="2.5" stroke-dasharray="4 4"/>
+      <line x1="94" y1="50" x2="94" y2="76" stroke="${c.TEAL}" stroke-width="3"/>
+      <path d="M94 50 L90.5 58 L97.5 58 Z" fill="${c.TEAL}"/>
+      <path d="M94 76 L90.5 68 L97.5 68 Z" fill="${c.TEAL}"/>` },
+
+  N: { name:"N — The GZ curve as the hull",
+    why:"Two mirrored GZ curves <i>are</i> the planform — the mark&rsquo;s outline is the very curve the app charts. The boat&rsquo;s shape and its stability signature become one line. Nothing else in the category can do this.",
+    risk:"Reads &lsquo;eye / leaf&rsquo; at small sizes; the physical reading needs the story.",
+    draw:(c,id)=>`
+      <path d="M16 60 C 40 26 80 26 104 60 C 80 94 40 94 16 60 Z" fill="${c.INK}"/>
+      <path d="M16 60 C 40 26 80 26 104 60" fill="none" stroke="${c.TEAL}" stroke-width="5" stroke-linecap="round"/>
+      <circle cx="60" cy="34.5" r="5" fill="${c.TEAL}"/>
+      <line x1="60" y1="34.5" x2="60" y2="26" stroke="${c.TEAL}" stroke-width="3" stroke-linecap="round"/>
+      <line x1="4" y1="60" x2="16" y2="60" stroke="${c.TEAL}" stroke-width="4" stroke-linecap="round"/>
+      <line x1="104" y1="60" x2="116" y2="60" stroke="${c.TEAL}" stroke-width="4" stroke-linecap="round"/>` }
+,
+  O: { name:"O — Paddle over the river (the waterline is the shaft)",
+    why:"A double-bladed paddle laid across the mark, its shaft the waterplane: one blade in the air, one displacing teal water below. The single object that says &lsquo;kayak&rsquo; to anyone on earth, re-cut as displacement.",
+    risk:"No hull — it says paddling, not analysis. Anchor with the wordmark.",
+    draw:(c,id)=>`
+      <rect x="0" y="70" width="120" height="36" fill="${c.TEAL}"/>
+      <g transform="rotate(-32 20 56)"><path d="M8 51 Q18 42 30 47 Q22 58 8 51 Z" fill="${c.INK}"/></g>
+      <g transform="rotate(32 100 56)"><path d="M90 61 Q100 52 112 57 Q104 68 90 61 Z" fill="${c.INK}"/></g>
+      <line x1="12" y1="56" x2="108" y2="56" stroke="${c.INK}" stroke-width="9" stroke-linecap="round"/>
+      <ellipse cx="100" cy="80" rx="17" ry="5" fill="none" stroke="${c.INK}" stroke-width="3"/>` },
+
+  P: { name:"P — Plimsoll kayak",
+    why:"The load-line marking of real ships, applied at kayak scale: a disc struck by horizontal lines, the teal waterline running through it, draft ticks down the stem. The mark is literally <b>certified draft</b>.",
+    risk:"Reads &lsquo;target / dial&rsquo; unless the maritime story lands.",
+    draw:(c,id)=>`
+      <path d="${lens}${notch}" fill-rule="evenodd" fill="${c.INK}"/>
+      <line x1="6" y1="60" x2="114" y2="60" stroke="${c.TEAL}" stroke-width="5" stroke-linecap="round"/>
+      <circle cx="62" cy="60" r="12" fill="none" stroke="${c.TEAL}" stroke-width="3"/>
+      <line x1="56" y1="55" x2="68" y2="55" stroke="${c.TEAL}" stroke-width="2.5" stroke-linecap="round"/>
+      <line x1="56" y1="65" x2="68" y2="65" stroke="${c.TEAL}" stroke-width="2.5" stroke-linecap="round"/>
+      <line x1="22" y1="50" x2="30" y2="48" stroke="${c.INK}" stroke-width="2.5" stroke-linecap="round"/>
+      <line x1="20" y1="60" x2="29" y2="60" stroke="${c.INK}" stroke-width="2.5" stroke-linecap="round"/>
+      <line x1="22" y1="70" x2="30" y2="72" stroke="${c.INK}" stroke-width="2.5" stroke-linecap="round"/>` },
+
+  Q: { name:"Q — One person, one boat, one equilibrium",
+    why:"Stripped to three elements: waterline (teal), hull, and a single filled circle above it — the paddler at G. The app takes weight, not a body; this mark refuses to forget where the weight comes from. Quietest and strangest of the twelve.",
+    risk:"Reads &lsquo;balloon over a boat&rsquo; — the stem is doing all the work.",
+    draw:(c,id)=>`
+      <path d="${lens}${notch}" fill-rule="evenodd" fill="${c.INK}"/>
+      <line x1="8" y1="60" x2="112" y2="60" stroke="${c.TEAL}" stroke-width="5" stroke-linecap="round"/>
+      <circle cx="60" cy="22" r="11" fill="${c.INK}"/>
+      <line x1="60" y1="33" x2="60" y2="48" stroke="${c.INK}" stroke-width="5" stroke-linecap="round"/>` },
+
+  R: { name:"R — Static in a dynamic sea (the trough)",
+    why:"Two breaking waves, and a kayak floating in the calm trough between them. The app computes a <i>static</i> answer in a moving world — the calm centre is the product.",
+    risk:"Waves are a crowded idiom; 16&nbsp;px turns the hull into a dot.",
+    draw:(c,id)=>`
+      <rect x="0" y="44" width="120" height="60" fill="${c.TEAL}"/>
+      <path d="M-4 104 L-4 76 Q14 72 26 52 Q33 44 40 44 L40 104 Z" fill="${c.INK}"/>
+      <path d="M124 104 L124 76 Q106 72 94 52 Q87 44 80 44 L80 104 Z" fill="${c.INK}"/>
+      <path d="M48 62 C 54 52 66 52 72 62 C 66 72 54 72 48 62 Z" fill="${c.INK}"/>` },
+
+  S: { name:"S — Mirror equilibrium",
+    why:"The hull and its own reflection, split by a single teal waterline. Perfect mirror symmetry is what &lsquo;equilibrium&rsquo; means — and the app&rsquo;s double-ended, bow-neutral convention is drawn, not argued.",
+    risk:"Reads &lsquo;eye / seed&rsquo; — beautiful, but not obviously a boat.",
+    draw:(c,id)=>`
+      <path d="M22 60 C 30 42 90 42 98 60 C 78 54 42 54 22 60 Z" fill="${c.INK}"/>
+      <path d="M22 60 C 30 78 90 78 98 60 C 78 66 42 66 22 60 Z" fill="${c.TEAL}" opacity="0.5"/>
+      <line x1="4" y1="60" x2="116" y2="60" stroke="${c.TEAL}" stroke-width="5" stroke-linecap="round"/>
+      <rect x="53" y="47" width="14" height="9" fill="${c.PAPER}"/>` },
+
+  T: { name:"T — Stability cross-curves (the expert handshake)",
+    why:"The family of GZ curves at rising displacements, fanned off one baseline — the diagram a naval architect actually draws. The most obscurely correct of the twelve: nobody outside the field owns this picture.",
+    risk:"Reads &lsquo;fan / flower&rsquo; to everyone else. Category signal, zero public legibility.",
+    draw:(c,id)=>`
+      <path d="M18 100 Q 60 64 102 100" fill="none" stroke="${c.INK}" stroke-width="4"/>
+      <path d="M18 100 Q 60 36 102 100" fill="none" stroke="${c.INK}" stroke-width="4"/>
+      <path d="M18 100 Q 60 8 102 100" fill="none" stroke="${c.INK}" stroke-width="4"/>
+      <path d="M18 100 Q 60 -20 102 100" fill="none" stroke="${c.TEAL}" stroke-width="5"/>
+      <line x1="6" y1="100" x2="114" y2="100" stroke="${c.TEAL}" stroke-width="5" stroke-linecap="round"/>
+      <circle cx="60" cy="40" r="5" fill="${c.TEAL}"/>` }
+};
+
+const strip = document.getElementById("strip");
+const grid = document.getElementById("grid");
+
+for (const [k, m] of Object.entries(marks)) {
+  const lightC = {INK, PAPER, TEAL}, darkC = {INK:PAPER, PAPER:INK, TEAL:TEALD};
+  strip.insertAdjacentHTML("beforeend", `<div class="tile"><div class="box">${svg(m.draw,"0 0 120 120",lightC,16,k)}</div><span class="cap">${k} @16px</span></div>`);
+  grid.insertAdjacentHTML("beforeend", `
+    <div class="card">
+      <div class="renders">
+        <div class="panel light">${svg(m.draw,"0 0 120 120",lightC,120,k+"l")}</div>
+        <div class="panel dark">${svg(m.draw,"0 0 120 120",darkC,120,k+"d")}</div>
+        <div class="panel light">${svg(m.draw,"0 0 120 120",{INK:INK,PAPER:PAPER,TEAL:INK},120,k+"m")}</div>
+      </div>
+      <div class="meta">
+        <h3>${m.name}</h3>
+        <p class="why">${m.why}</p>
+        <p class="risk"><b>Watch out:</b> ${m.risk}</p>
+        <p class="cap" style="margin-top:8px">light &middot; dark &middot; one-colour</p>
+      </div>
+    </div>`);
+}
+</script>
+</body>
+</html>

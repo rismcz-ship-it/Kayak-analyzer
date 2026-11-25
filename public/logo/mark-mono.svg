@@ -1,0 +1,6 @@
+<svg width="120" height="84" viewBox="0 0 120 84" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="kayak-analyzer mark">
+  <title>kayak-analyzer mark</title>
+  <!-- one-color silhouette: inline this file so currentColor inherits -->
+  <path d="M10 22 L44 22 Q60 33 76 22 L110 22 C108 44 86 66 60 66 C34 66 12 44 10 22 Z" fill="currentColor" />
+  <line x1="2" y1="48" x2="118" y2="48" stroke="currentColor" stroke-width="4" stroke-linecap="round" opacity="0.45" />
+</svg>

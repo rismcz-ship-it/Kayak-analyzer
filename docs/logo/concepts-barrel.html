@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>kayak-analyzer — barreled waves</title>
+<style>
+  :root { --ink:#12181F; --paper:#EEF2F5; --accent:#0FA3B5; --accent-dark:#2EC4D6; }
+  * { box-sizing:border-box; margin:0; }
+  body { font-family:"Segoe UI","Helvetica Neue",Arial,sans-serif; background:#E9EBEE; color:var(--ink); padding:40px; max-width:1060px; }
+  h1 { font-size:20px; font-weight:600; letter-spacing:-0.4px; margin-bottom:4px; }
+  .sub { font-size:13px; opacity:.65; margin-bottom:26px; line-height:1.5; }
+  h2 { font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:1.2px; opacity:.55; margin:30px 0 12px; }
+  .strip { display:flex; flex-wrap:wrap; gap:10px; align-items:flex-end; background:#fff; border-radius:14px; padding:16px; }
+  .tile { display:flex; flex-direction:column; align-items:center; gap:6px; }
+  .tile .box { background:#fff; border:1px solid #e3e6ea; border-radius:8px; display:flex; align-items:center; justify-content:center; padding:6px; }
+  .cap { font-size:10px; opacity:.55; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(470px,1fr)); gap:14px; }
+  .card { background:#fff; border-radius:14px; padding:18px; display:flex; gap:18px; }
+  .renders { display:flex; flex-direction:column; gap:8px; align-items:center; }
+  .panel { border-radius:10px; display:flex; align-items:center; justify-content:center; padding:14px; }
+  .light { background:#F4F6F8; }
+  .dark  { background:var(--ink); }
+  .meta { flex:1; }
+  .meta h3 { font-size:14px; font-weight:600; margin-bottom:4px; }
+  .meta .why { font-size:12px; line-height:1.45; opacity:.8; margin-bottom:8px; }
+  .meta .risk { font-size:11px; line-height:1.4; opacity:.55; }
+  .meta b { font-weight:600; opacity:.8; }
+  .note { font-size:12px; opacity:.65; margin-top:18px; line-height:1.5; }
+</style>
+</head>
+<body>
+<h1>kayak-analyzer — barreled waves</h1>
+<p class="sub">Not a swell, not a hump — a wave that has <b>already broken and hollowed</b>: the lip thrown over, the tube sealed behind it, air inside the water. The most dynamic thing water does, and the most honest picture of what this app sees (a hull sitting in a hollow of its own making). Same approved style: ink / paper / teal, geometric, built on the 120&times;120 grid. The 16-px strip is the filter.</p>
+
+<h2>The 16-pixel survival strip (favicon first — this is the test that kills marks)</h2>
+<div class="strip" id="strip"></div>
+
+<h2>Directions</h2>
+<div class="grid" id="grid"></div>
+
+<p class="note">Next: you shortlist 2&ndash;3, we stress them (busy ground, print, mono, embroidery-ish scenarios) and refine the winners on the grid — the way the report's protocol does it.</p>
+
+<script>
+const INK="#12181F", PAPER="#EEF2F5", TEAL="#0FA3B5", TEALD="#2EC4D6";
+
+function svg(inner, vb, colors, size, id) {
+  const [vx, vy, vw, vh] = vb.split(" ").map(Number);
+  return `<svg width="${size}" height="${Math.round(size*vh/vw)}" viewBox="${vb}" fill="none" xmlns="http://www.w3.org/2000/svg">${inner(colors, id)}</svg>`;
+}
+
+const marks = {
+
+  B1: { name:"B1 — The barrel (open tube)",
+    why:"The curl drawn as one thick hook: the wave rises out of the water, the lip throws right and folds, and the <b>air inside the tube</b> is negative space. A teal arc inside the tube is the inner wall — you are looking <i>into</i> it.",
+    risk:"Reads &lsquo;C / hook&rsquo; before it reads &lsquo;wave&rsquo;; the tube is the part that teaches it.",
+    draw:(c,id)=>`
+      <rect x="0" y="106" width="120" height="12" fill="${c.TEAL}"/>
+      <path d="M 16 106 C 16 66 42 32 70 32 C 90 32 100 48 96 66" fill="none" stroke="${c.INK}" stroke-width="20" stroke-linecap="round"/>
+      <path d="M 30 98 C 32 66 48 40 62 40 C 78 40 90 52 88 66" fill="none" stroke="${c.TEAL}" stroke-width="5" stroke-linecap="round"/>` },
+
+  B2: { name:"B2 — The closed tube",
+    why:"The same wave with the lip carried all the way round until it nearly touches the face — a <b>sealed</b> barrel, the instant the wave is at its most dangerous and most photogenic. One continuous line, no cut-outs.",
+    risk:"Reads &lsquo;spiral / G&rsquo; more than &lsquo;wave&rsquo;; boldest silhouette, least literal.",
+    draw:(c,id)=>`
+      <path d="M 16 106 C 16 62 44 28 72 28 C 94 28 104 46 100 68 C 98 78 88 84 82 78" fill="none" stroke="${c.INK}" stroke-width="20" stroke-linecap="round"/>
+      <path d="M 30 100 C 30 68 48 42 66 42 C 82 42 92 56 90 68" fill="none" stroke="${c.TEAL}" stroke-width="8" stroke-linecap="round"/>` },
+
+  B3: { name:"B3 — The hollow (negative water)",
+    why:"A solid body of teal water with the <b>barrel's hole punched through it</b> — the mark draws the air, exactly the way a real barrel is water around nothing. Nothing but the wave remains, and the void is the subject.",
+    risk:"Abstract; the hole has to be found, so it needs the wordmark near it.",
+    draw:(c,id)=>`
+      <path fill-rule="evenodd" fill="${c.TEAL}" d="M 0 118 L 0 96 C 12 80 26 62 44 48 C 58 38 72 32 84 34 C 98 37 106 52 106 68 C 106 84 100 96 90 106 C 80 116 70 118 62 118 Z
+        M 82 40 A 16 24 -18 1 1 68 84 A 16 24 -18 1 1 82 40 Z"/>` },
+
+  B4: { name:"B4 — Barrel over the waterplane rule",
+    why:"The barreled wave with the app&rsquo;s <b>straight waterline rule</b> cutting across it — one horizontal teal line through the most curved thing in nature. The contrast is the whole idea: the solver draws a flat plane through a moving surface.",
+    risk:"Two teal horizontals risk reading as a chart rather than a wave.",
+    draw:(c,id)=>`
+      <line x1="6" y1="88" x2="114" y2="88" stroke="${c.TEAL}" stroke-width="6" stroke-linecap="round"/>
+      <path d="M 16 106 C 16 66 42 32 70 32 C 90 32 100 48 96 66" fill="none" stroke="${c.INK}" stroke-width="20" stroke-linecap="round"/>
+      <path d="M 30 98 C 32 66 48 40 62 40 C 78 40 90 52 88 66" fill="none" stroke="${c.TEAL}" stroke-width="5" stroke-linecap="round"/>` },
+
+  B5: { name:"B5 — Broken lip (spray)",
+    why:"The wave caught at the moment it throws — the lip unravelling into spray, three detached marks off the crest. The energy of a breaking wave, still geometric, still a logo.",
+    risk:"Three separate dots are the first thing 16&nbsp;px destroys.",
+    draw:(c,id)=>`
+      <rect x="0" y="106" width="120" height="12" fill="${c.TEAL}"/>
+      <path d="M 14 106 C 14 64 42 30 70 30 C 90 30 100 46 96 64" fill="none" stroke="${c.INK}" stroke-width="20" stroke-linecap="round"/>
+      <path d="M 96 52 C 102 44 108 40 114 38" fill="none" stroke="${c.INK}" stroke-width="4.5" stroke-linecap="round"/>
+      <circle cx="106" cy="26" r="6" fill="${c.INK}"/>
+      <circle cx="114" cy="40" r="3.5" fill="${c.INK}"/>
+      <circle cx="99" cy="18" r="3" fill="${c.TEAL}"/>` },
+
+  B6: { name:"B6 — The hull in the tube",
+    why:"The barrel of B1 with a hull sitting <b>inside the hollow</b> — the boat in the pocket of the wave, the one place a kayak is allowed to be. The app's own object inside the motion it has to account for.",
+    risk:"Two ideas in one small box; weakest of the six at 16&nbsp;px.",
+    draw:(c,id)=>`
+      <rect x="0" y="106" width="120" height="12" fill="${c.TEAL}"/>
+      <path d="M 16 106 C 16 66 42 32 70 32 C 90 32 100 48 96 66" fill="none" stroke="${c.INK}" stroke-width="20" stroke-linecap="round"/>
+      <path d="M 47 70 C 51 60 65 60 69 70 C 65 80 51 80 47 70 Z" fill="${c.INK}"/>` }
+};
+
+const strip = document.getElementById("strip");
+const grid = document.getElementById("grid");
+
+for (const [k, m] of Object.entries(marks)) {
+  const lightC = {INK, PAPER, TEAL}, darkC = {INK:PAPER, PAPER:INK, TEAL:TEALD};
+  strip.insertAdjacentHTML("beforeend", `<div class="tile"><div class="box">${svg(m.draw,"0 0 120 120",lightC,16,k)}</div><span class="cap">${k} @16px</span></div>`);
+  grid.insertAdjacentHTML("beforeend", `
+    <div class="card">
+      <div class="renders">
+        <div class="panel light">${svg(m.draw,"0 0 120 120",lightC,120,k+"l")}</div>
+        <div class="panel dark">${svg(m.draw,"0 0 120 120",darkC,120,k+"d")}</div>
+        <div class="panel light">${svg(m.draw,"0 0 120 120",{INK:INK,PAPER:PAPER,TEAL:INK},120,k+"m")}</div>
+      </div>
+      <div class="meta">
+        <h3>${m.name}</h3>
+        <p class="why">${m.why}</p>
+        <p class="risk"><b>Watch out:</b> ${m.risk}</p>
+        <p class="cap" style="margin-top:8px">light &middot; dark &middot; one-colour</p>
+      </div>
+    </div>`);
+}
+</script>
+</body>
+</html>

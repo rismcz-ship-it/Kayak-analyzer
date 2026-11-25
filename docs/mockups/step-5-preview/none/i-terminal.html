@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>i · Terminal — kayak-analyzer</title>
+<style>
+  :root {
+    --mono: ui-monospace, "Cascadia Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+    --sans: ui-monospace, "Cascadia Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+    --bg: #050806;
+    --pane: #07110b;
+    --grn: #46e08c;
+    --grn-dim: #2c8a58;
+    --grn-faint: #1b5238;
+    --amb: #e5b45c;
+    --red: #e2604f;
+    --line: #14361f;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; overflow: hidden; }
+  body {
+    background: var(--bg);
+    color: var(--grn);
+    font-family: var(--mono);
+    font-variant-numeric: tabular-nums;
+    font-size: 12.5px;
+    line-height: 1.5;
+  }
+  .shell { width: 1280px; height: 800px; display: flex; flex-direction: column; padding: 10px; gap: 8px; }
+  .win { border: 1px solid var(--line); background: var(--pane); display: flex; flex-direction: column; min-height: 0; }
+  .winbar { flex: none; display: flex; align-items: center; gap: 8px; padding: 4px 10px; border-bottom: 1px solid var(--line); color: var(--grn-dim); font-size: 11px; }
+  .winbar .btns { color: var(--grn-faint); letter-spacing: 2px; }
+  .winbar .t { color: var(--grn); }
+  .winbar .r { margin-left: auto; color: var(--grn-dim); }
+  /* output grid */
+  .out { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+  .pane { padding: 8px 12px; overflow: hidden; display: flex; flex-direction: column; }
+  .pane h3 { margin: 0 0 6px; font-size: 11px; font-weight: 400; color: var(--amb); letter-spacing: 0.1em; }
+  .pane h3::before { content: "── "; color: var(--grn-faint); }
+  .pane h3::after { content: " ────────"; color: var(--grn-faint); }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  td { padding: 1px 0; white-space: nowrap; }
+  td.k { color: var(--grn-dim); }
+  td.d { color: var(--grn-faint); padding: 0 6px; width: 100%; }
+  td.v { color: var(--grn); text-align: right; }
+  td.v.amb { color: var(--amb); }
+  td.v.red { color: var(--red); }
+  .hero { flex: none; border: 1px solid var(--line); background: var(--pane); padding: 10px 14px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
+  .hero > div .k { color: var(--grn-dim); font-size: 11px; letter-spacing: 0.1em; }
+  .hero > div .v { font-size: 30px; letter-spacing: -0.02em; }
+  .hero > div .v small { font-size: 13px; color: var(--grn-dim); }
+  /* gz */
+  .gzwin { flex: none; height: 168px; }
+  .gzwin .body { flex: 1; min-height: 0; padding: 4px 10px 8px; }
+  /* prompt */
+  .prompt { flex: none; border: 1px solid var(--line); background: var(--pane); padding: 6px 12px; color: var(--grn); font-size: 12.5px; display: flex; align-items: center; gap: 8px; }
+  .prompt .ps { color: var(--amb); }
+  .prompt .cur { display: inline-block; width: 8px; height: 14px; background: var(--grn); }
+  .keys { color: var(--grn-dim); font-size: 11px; margin-left: auto; }
+  .keys b { color: var(--grn); font-weight: 400; border: 1px solid var(--line); padding: 0 5px; margin: 0 2px; }
+  /* status bar */
+  .status { flex: none; display: flex; gap: 18px; align-items: center; background: var(--grn); color: #04180c; font-size: 11px; padding: 3px 10px; }
+  .status .r { margin-left: auto; }
+</style>
+</head>
+<body>
+<div class="shell">
+<div class="win">
+    <div class="winbar"><span class="btns">▪ ▪ ▪</span><span class="t">kayak-analyzer — solve kayak.stl</span><span class="r">Z-UP · BOW +X · MM / KG</span></div>
+  </div>
+
+  <div class="hero">
+    <div><span class="k">DRAFT</span><br><span class="v num">94.0<small> mm</small></span></div>
+    <div><span class="k">TRIM (BOW UP)</span><br><span class="v num" style="color:var(--amb)">+3.60<small>°</small></span></div>
+    <div><span class="k">GM</span><br><span class="v num">+122<small> mm</small></span></div>
+    <div><span class="k">LCB–LCG</span><br><span class="v num">1.68<small> mm</small></span></div>
+  </div>
+
+  <div class="out">
+    <div class="win pane">
+      <h3>CONDITIONS</h3>
+      <table>
+        <tr><td class="k">file</td><td class="d"></td><td class="v">kayak.stl</td></tr>
+        <tr><td class="k">mesh</td><td class="d"></td><td class="v">watertight</td></tr>
+        <tr><td class="k">bounds</td><td class="d"></td><td class="v">2 714.4 × 613.1 × 325.1 mm</td></tr>
+        <tr><td class="k">weight</td><td class="d"></td><td class="v">75.0 kg</td></tr>
+        <tr><td class="k">LCG from bow</td><td class="d"></td><td class="v">52.0 %</td></tr>
+        <tr><td class="k">KG above keel</td><td class="d"></td><td class="v">280 mm</td></tr>
+        <tr><td class="k">heel</td><td class="d"></td><td class="v">0 deg</td></tr>
+        <tr><td class="k">displacement</td><td class="d"></td><td class="v">75.0 kg</td></tr>
+      </table>
+      <h3 style="margin-top:10px">FLOTATION</h3>
+      <table>
+        <tr><td class="k">LWL</td><td class="d"></td><td class="v">2 384 mm</td></tr>
+        <tr><td class="k">BWL</td><td class="d"></td><td class="v">489 mm</td></tr>
+        <tr><td class="k">waterplane area</td><td class="d"></td><td class="v">0.412 m²</td></tr>
+        <tr><td class="k">TPC</td><td class="d"></td><td class="v">0.0042</td></tr>
+        <tr><td class="k">wetted surface</td><td class="d"></td><td class="v">1.842e6 mm²</td></tr>
+        <tr><td class="k">bow freeboard</td><td class="d"></td><td class="v">222.2 mm</td></tr>
+        <tr><td class="k">stern freeboard</td><td class="d"></td><td class="v red">22.3 mm</td></tr>
+        <tr><td class="k">LCB–LCG offset</td><td class="d"></td><td class="v amb">1.68 mm</td></tr>
+      </table>
+    </div>
+
+    <div class="win pane">
+      <h3>FORM COEFFICIENTS</h3>
+      <table>
+        <tr><td class="k">Cb block</td><td class="d"></td><td class="v">0.4721</td></tr>
+        <tr><td class="k">Cp prismatic</td><td class="d"></td><td class="v">0.5813</td></tr>
+        <tr><td class="k">Cm midship</td><td class="d"></td><td class="v">0.8120</td></tr>
+        <tr><td class="k">Cwp waterplane</td><td class="d"></td><td class="v">0.6394</td></tr>
+      </table>
+      <h3 style="margin-top:10px">STABILITY</h3>
+      <table>
+        <tr><td class="k">KB</td><td class="d"></td><td class="v">58 mm</td></tr>
+        <tr><td class="k">BM</td><td class="d"></td><td class="v">344 mm</td></tr>
+        <tr><td class="k">KM</td><td class="d"></td><td class="v">402 mm</td></tr>
+        <tr><td class="k">KG</td><td class="d"></td><td class="v">280 mm</td></tr>
+        <tr><td class="k">GM</td><td class="d"></td><td class="v amb">+122 mm</td></tr>
+        <tr><td class="k">GZ max</td><td class="d"></td><td class="v">61 mm @ 38°</td></tr>
+        <tr><td class="k">AVS</td><td class="d"></td><td class="v">62°</td></tr>
+        <tr><td class="k">end-tip immersion</td><td class="d"></td><td class="v">41°</td></tr>
+      </table>
+      <h3 style="margin-top:10px">WARNINGS</h3>
+      <table>
+        <tr><td class="k">stern freeboard</td><td class="d"></td><td class="v red">LOW 22.3 mm</td></tr>
+        <tr><td class="k">end-tip order</td><td class="d"></td><td class="v">stern first @ 41°</td></tr>
+      </table>
+    </div>
+
+    <div class="win pane">
+      <h3>RUN LOG</h3>
+      <table>
+        <tr><td class="k">auto-orient</td><td class="d"></td><td class="v">Z-UP · bow +X</td></tr>
+        <tr><td class="k">scale</td><td class="d"></td><td class="v">1.00 (mm)</td></tr>
+        <tr><td class="k">watertight</td><td class="d"></td><td class="v">0 open edges</td></tr>
+        <tr><td class="k">trim sweep</td><td class="d"></td><td class="v">±4.5° coarse 0.5°</td></tr>
+        <tr><td class="k">fine sweep</td><td class="d"></td><td class="v">±0.5° @ 0.1°</td></tr>
+        <tr><td class="k">planes evaluated</td><td class="d"></td><td class="v">30</td></tr>
+        <tr><td class="k">status</td><td class="d"></td><td class="v amb">converged</td></tr>
+        <tr><td class="k">rho</td><td class="d"></td><td class="v">1000 kg/m³</td></tr>
+        <tr><td class="k">1 kg</td><td class="d"></td><td class="v">1 L</td></tr>
+      </table>
+      <h3 style="margin-top:10px">CURVE</h3>
+      <table>
+        <tr><td class="k">GZ @ 0°</td><td class="d"></td><td class="v">0 mm</td></tr>
+        <tr><td class="k">GZ max</td><td class="d"></td><td class="v">61 mm @ 38°</td></tr>
+        <tr><td class="k">AVS</td><td class="d"></td><td class="v">62°</td></tr>
+        <tr><td class="k">end-tip immersion</td><td class="d"></td><td class="v">41°</td></tr>
+        <tr><td class="k">beyond AVS</td><td class="d"></td><td class="v red">negative arm</td></tr>
+      </table>
+    </div>
+  </div>
+<div class="win gzwin">
+    <div class="winbar"><span class="btns">▪ ▪ ▪</span><span class="t">GZ CURVE — righting arm vs heel</span><span class="r">heel 0° base · sweep ±4.5°</span></div>
+    <div class="body">
+      <svg viewBox="0 0 1000 120" width="100%" height="100%" preserveAspectRatio="xMidYMid meet" role="img" aria-label="GZ righting arm curve">
+        <g stroke="var(--line)" stroke-width="1">
+          <line x1="40" y1="60" x2="960" y2="60"/>
+          <line x1="40" y1="36" x2="960" y2="36"/>
+          <line x1="40" y1="84" x2="960" y2="84"/>
+          <line x1="40" y1="104" x2="960" y2="104"/>
+        </g>
+        <line x1="40" y1="60" x2="960" y2="60" stroke="var(--grn-faint)" stroke-width="1"/>
+        <line x1="720" y1="10" x2="720" y2="112" stroke="var(--amb)" stroke-width="1" stroke-dasharray="4 4"/>
+        <text x="726" y="20" font-size="10" fill="var(--amb)">AVS 62°</text>
+        <line x1="502" y1="10" x2="502" y2="112" stroke="var(--grn-dim)" stroke-width="1" stroke-dasharray="2 4"/>
+        <text x="508" y="20" font-size="10" fill="var(--grn-dim)">end-tip 41°</text>
+        <path d="M40 60 L150 50 L260 41 L370 33 L446 27 L540 24 L634 28 L730 37 L806 50 L852 60 L960 84"
+              fill="none" stroke="var(--grn)" stroke-width="2" stroke-linejoin="round"/>
+        <path d="M852 60 L960 84" fill="none" stroke="var(--grn)" stroke-width="2" stroke-dasharray="6 4"/>
+        <circle cx="540" cy="24" r="4" fill="var(--grn)"/>
+        <text x="540" y="14" font-size="11" fill="var(--grn)" text-anchor="middle">GZ max 61 mm @ 38°</text>
+        <g font-size="10" fill="var(--grn-dim)" text-anchor="middle">
+          <text x="40" y="118">0</text><text x="280" y="118">20</text><text x="520" y="118">40</text><text x="760" y="118">60</text><text x="960" y="118">80</text>
+        </g>
+        <text x="460" y="8" font-size="9" fill="var(--grn-faint)" text-anchor="middle">GZ MM · HEEL DEG · HEEL 0° BASE</text>
+      </svg>
+    </div>
+  </div>
+
+  <div class="prompt">
+    <span class="ps">kayak@analyzer:~$</span>
+    <span>solve kayak.stl --mass 75.0 --lcg 52.0 --kg 280 --heel 0 --sweep 4.5 --step 0.1</span>
+    <span class="cur"></span>
+    <span class="keys"><b>d</b>details <b>c</b>coefficients <b>s</b>stability <b>g</b>gz <b>q</b>quit</span>
+  </div>
+
+  <div class="status">
+    <span>NORMAL</span><span>kayak.stl</span><span>watertight</span><span>75.0 kg</span><span>LCG 52.0 %</span><span>KG 280 mm</span>
+    <span class="r">30 planes · converged · i · terminal</span>
+  </div>
+</div>
+</body>
+</html>

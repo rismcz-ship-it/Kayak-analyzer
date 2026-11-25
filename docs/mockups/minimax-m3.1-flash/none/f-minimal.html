@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Kayak analyzer · kayak.stl</title>
+<style>
+  :root{
+    --paper:#f8f8f7; --ink:#151515; --ink2:#4a4a48; --muted:#8d8d89; --hair:#e3e3e0;
+    --sea-a:#f1f1ef; --sea-b:#e7e7e4;
+    --deck-a:#ffffff; --deck-b:#e0e0dd; --deck-c:#c2c2be;
+    --side-a:#c7c7c3; --side-b:#95958f; --under-a:#a9a9a4; --under-b:#7c7c78;
+    --waterline:#151515; --hull-edge:rgba(20,20,20,.35); --hull-seam:rgba(20,20,20,.2);
+    --hull-label:#5c5c58; --cockpit-rim:#8e8e88; --cockpit-hole:#3a3a37;
+    --marker-lcg:#151515; --marker-lcb:#6c6c67; --leader:#55554f; --dim:#151515;
+    --ax-z:#3a3a37; --ax-x:#151515; --ax-y:#9b9b96; --ax-t:#8d8d89;
+    --sans:"Inter","Segoe UI",system-ui,-apple-system,sans-serif;
+    --mono:ui-monospace,"Cascadia Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:13px;
+    font-variant-numeric:tabular-nums;overflow:hidden;-webkit-font-smoothing:antialiased}
+  .app{height:100vh;max-height:800px;width:100vw;max-width:1280px;margin:0 auto;display:flex;flex-direction:column;overflow:hidden;position:relative}
+  .vh{position:absolute;opacity:0;width:0;height:0;pointer-events:none}
+
+  .top{height:48px;flex:0 0 48px;display:flex;align-items:center;gap:24px;padding:0 32px;border-bottom:1px solid var(--hair)}
+  .top .brand{font-size:14px;letter-spacing:-.01em}
+  .top .sp{flex:1}
+  .top .meta{font-size:12px;color:var(--muted)}
+  .top .meta b{font-weight:400;color:var(--ink2)}
+  .tabs{display:flex;gap:22px;font-size:12.5px}
+  .tabs label{color:var(--muted);cursor:pointer;padding-bottom:2px;border-bottom:1px solid transparent}
+  #scr-hull:checked ~ .top .tabs label[for="scr-hull"],
+  #scr-hydro:checked ~ .top .tabs label[for="scr-hydro"]{color:var(--ink);border-bottom-color:var(--ink)}
+
+  .stage{position:relative;flex:1;min-height:0}
+  .pane{position:absolute;inset:0;display:none;flex-direction:column}
+
+  .viewer{flex:1;min-height:0;position:relative;overflow:hidden;background:linear-gradient(180deg,var(--sea-a),var(--sea-b))}
+  .hullview{position:absolute;inset:0;width:100%;height:100%}
+  .hull-under{fill:url(#underG)} .hull-side{fill:url(#sideG)}
+  .hull-deck{fill:url(#deckG);stroke:var(--hull-edge);stroke-width:.9}
+  .submerged{fill:#9aa3a6;opacity:.5}
+  .waterline{fill:none;stroke:var(--waterline);stroke-width:1.5}
+  .seam{fill:none;stroke:var(--hull-seam);stroke-width:.9}
+  .cockpit-rim{fill:none;stroke:var(--cockpit-rim);stroke-width:3}
+  .cockpit-hole{fill:var(--cockpit-hole)}
+  .marker-lcg{fill:var(--marker-lcg)} .marker-lcb{fill:none;stroke:var(--marker-lcb);stroke-width:2}
+  .leader{stroke:var(--leader);stroke-width:1;fill:none}
+  .dim{stroke:var(--dim);stroke-width:1}
+  .hull-label{fill:var(--hull-label);font-size:11px;font-family:var(--sans)}
+  .ax{stroke-width:1.5} .ax-z{stroke:var(--ax-z)} .ax-x{stroke:var(--ax-x)} .ax-y{stroke:var(--ax-y)}
+  .ax-t{fill:var(--ax-t);font-size:11px;font-family:var(--sans)}
+
+  .numbers{position:absolute;left:40px;bottom:34px;display:flex;align-items:flex-end;gap:0}
+  .num{padding:0 34px;border-left:1px solid var(--hair)}
+  .num:first-child{padding-left:0;border-left:0}
+  .num .k{font-size:11px;color:var(--muted);margin-bottom:8px}
+  .num .v{font-size:54px;line-height:.95;letter-spacing:-.03em;font-weight:400}
+  .num .v u{text-decoration:none;font-size:17px;color:var(--muted);margin-left:5px;letter-spacing:0}
+  .num .n{font-size:11.5px;color:var(--muted);margin-top:9px;max-width:19ch;line-height:1.35}
+  .offset{position:absolute;left:40px;bottom:14px;font-size:11.5px;color:var(--muted)}
+  .offset b{font-family:var(--mono);font-weight:400;color:var(--ink2)}
+
+  .chartcard{position:absolute;right:32px;bottom:32px;width:296px;border:1px solid var(--hair);background:rgba(248,248,247,.9);padding:12px 14px 8px}
+  .chartcard .ct{font-size:11px;color:var(--muted);padding-bottom:8px;border-bottom:1px solid var(--hair);margin-bottom:6px;display:flex;justify-content:space-between}
+  .gzchart{width:100%;height:auto;display:block}
+  .grid path{stroke:#ececea;stroke-width:1}
+  .zero{stroke:#c9c9c4;stroke-dasharray:4 4}
+  .axis{stroke:#8d8d89}
+  .tick-y text,.tick-x text{fill:#a0a09b;font-size:10px;font-family:var(--sans)}
+  .cur{fill:none;stroke:var(--ink);stroke-width:1.8;stroke-linejoin:round}
+  .cur-fill{fill:#e6e6e2}
+  .marker-max{fill:var(--ink)} .marker-max-ring{fill:none;stroke:var(--ink);opacity:.25}
+  .marker-avs{fill:var(--paper);stroke:#8d8d89;stroke-width:1.2}
+  .marker-endtip{stroke:#8d8d89;stroke-dasharray:3 4}
+  .marker-endtip-dot{fill:#8d8d89}
+  .ann{fill:var(--ink);font-size:11px;font-family:var(--sans)}
+  .ann-d{fill:var(--muted);font-size:10px;font-family:var(--sans)}
+  .axis-label{fill:#a0a09b;font-size:10px;font-family:var(--sans)}
+
+  .foot{height:56px;flex:0 0 56px;display:flex;align-items:center;gap:28px;padding:0 32px;
+    border-top:1px solid var(--hair);font-size:11.5px;color:var(--muted)}
+  .foot b{font-weight:400;color:var(--ink2)}
+  .foot .sp{flex:1}
+
+  /* detail */
+  .list{flex:1;min-height:0;overflow:hidden;padding:34px 32px 0;display:grid;
+    grid-template-columns:repeat(3,1fr);gap:0 48px;align-content:start}
+  .grp{padding-bottom:22px}
+  .grp h2{font-size:11px;color:var(--muted);font-weight:400;padding-bottom:9px;border-bottom:1px solid var(--ink);margin-bottom:2px}
+  .row{display:flex;justify-content:space-between;align-items:baseline;gap:16px;padding:9px 0;border-bottom:1px solid var(--hair)}
+  .row .k{font-size:12px;color:var(--ink2)}
+  .row .v{font-family:var(--mono);font-size:12.5px}
+  .row .v u{text-decoration:none;color:var(--muted);font-size:10px;margin-left:5px;font-family:var(--sans)}
+  .row .v.hi{font-weight:600}
+</style>
+</head>
+<body>
+<div class="app">
+  <input type="radio" name="scr" id="scr-hull" class="vh" checked>
+  <input type="radio" name="scr" id="scr-hydro" class="vh">
+
+  <div class="top">
+    <div class="brand">Kayak analyzer</div>
+    <div class="sp"></div>
+    <div class="meta"><b>kayak.stl</b> · watertight · 2 714.4 × 613.1 × 325.1 mm</div>
+    <div class="tabs">
+      <label for="scr-hull">Hull</label>
+      <label for="scr-hydro">All figures</label>
+    </div>
+  </div>
+
+  <div class="stage">
+
+    <section class="pane pane-hull">
+      <div class="viewer">
+        {{HULL}}
+        <div class="numbers">
+          <div class="num">
+            <div class="k">Draft</div>
+            <div class="v">94.0<u>mm</u></div>
+            <div class="n">keel to waterline</div>
+          </div>
+          <div class="num">
+            <div class="k">Trim</div>
+            <div class="v">+3.60<u>deg</u></div>
+            <div class="n">bow up</div>
+          </div>
+          <div class="num">
+            <div class="k">GM</div>
+            <div class="v">+122<u>mm</u></div>
+            <div class="n">KM 402 mm less KG 280 mm</div>
+          </div>
+        </div>
+        <div class="offset">LCB–LCG offset <b>1.68 mm</b> · 75.0 kg at LCG 52.0 % from bow, KG 280 mm, heel 0 deg</div>
+        <div class="chartcard">
+          <div class="ct"><span>Righting arm</span><span>61 mm at 38 deg</span></div>
+          {{GZ}}
+        </div>
+      </div>
+      <div class="foot">
+        <span>Mass <b>75.0 kg</b></span>
+        <span>LCG <b>52.0 % from bow</b></span>
+        <span>KG <b>280 mm</b></span>
+        <span>Heel <b>0 deg</b></span>
+        <span>Sweep <b>±4.5 deg</b>, fine step <b>0.1 deg</b></span>
+        <span class="sp"></span>
+        <span>AVS <b>62 deg</b> · end tip <b>41 deg</b></span>
+      </div>
+    </section>
+
+    <section class="pane pane-hydro">
+      <div class="list">
+        <div>
+          <div class="grp">
+            <h2>Flotation</h2>
+            <div class="row"><span class="k">LWL</span><span class="v">2 384 <u>mm</u></span></div>
+            <div class="row"><span class="k">BWL</span><span class="v">489 <u>mm</u></span></div>
+            <div class="row"><span class="k">Waterplane area</span><span class="v">0.412 <u>m²</u></span></div>
+            <div class="row"><span class="k">TPC</span><span class="v">0.0042</span></div>
+            <div class="row"><span class="k">Wetted surface</span><span class="v">1.842e6 <u>mm²</u></span></div>
+            <div class="row"><span class="k">Displacement</span><span class="v hi">75.0 <u>kg</u></span></div>
+          </div>
+          <div class="grp">
+            <h2>Form coefficients</h2>
+            <div class="row"><span class="k">Cb — block</span><span class="v">0.4721</span></div>
+            <div class="row"><span class="k">Cp — prismatic</span><span class="v">0.5813</span></div>
+            <div class="row"><span class="k">Cm — midship</span><span class="v">0.8120</span></div>
+            <div class="row"><span class="k">Cwp — waterplane</span><span class="v">0.6394</span></div>
+          </div>
+        </div>
+        <div>
+          <div class="grp">
+            <h2>Stability</h2>
+            <div class="row"><span class="k">KB</span><span class="v">58 <u>mm</u></span></div>
+            <div class="row"><span class="k">BM</span><span class="v">344 <u>mm</u></span></div>
+            <div class="row"><span class="k">KM</span><span class="v">402 <u>mm</u></span></div>
+            <div class="row"><span class="k">KG</span><span class="v">280 <u>mm</u></span></div>
+            <div class="row"><span class="k">GM</span><span class="v hi">+122 <u>mm</u></span></div>
+          </div>
+          <div class="grp">
+            <h2>Righting arm</h2>
+            <div class="row"><span class="k">GZ maximum</span><span class="v">61 <u>mm at 38 deg</u></span></div>
+            <div class="row"><span class="k">AVS</span><span class="v">62 <u>deg</u></span></div>
+            <div class="row"><span class="k">End-tip immersion</span><span class="v">41 <u>deg</u></span></div>
+          </div>
+        </div>
+        <div>
+          <div class="grp">
+            <h2>Trim and freeboard</h2>
+            <div class="row"><span class="k">Trim</span><span class="v">+3.60 <u>deg, bow up</u></span></div>
+            <div class="row"><span class="k">Bow freeboard</span><span class="v">222.2 <u>mm</u></span></div>
+            <div class="row"><span class="k">Stern freeboard</span><span class="v">22.3 <u>mm</u></span></div>
+            <div class="row"><span class="k">LCB–LCG offset</span><span class="v">1.68 <u>mm</u></span></div>
+            <div class="row"><span class="k">Draft</span><span class="v">94.0 <u>mm</u></span></div>
+          </div>
+          <div class="grp">
+            <h2>Model</h2>
+            <div class="row"><span class="k">File</span><span class="v">kayak.stl</span></div>
+            <div class="row"><span class="k">Overall</span><span class="v">2 714.4 × 613.1 × 325.1 <u>mm</u></span></div>
+            <div class="row"><span class="k">Mesh</span><span class="v">watertight</span></div>
+            <div class="row"><span class="k">Sweep</span><span class="v">±4.5 <u>deg</u></span></div>
+            <div class="row"><span class="k">Fine step</span><span class="v">0.1 <u>deg</u></span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </div>
+</div>
+</body>
+</html>
