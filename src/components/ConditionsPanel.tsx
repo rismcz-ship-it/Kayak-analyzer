@@ -185,11 +185,11 @@ export default function ConditionsPanel({
               <output
                 htmlFor="heel-input"
                 className="min-w-8 text-right font-mono text-[13px] tabular-nums text-ink-2"
+                title="+ = the −Y side goes down"
               >
                 {inputs.heelDeg > 0 ? `+${inputs.heelDeg}` : inputs.heelDeg}°
               </output>
             </div>
-            <p className="mt-1 text-[11px] text-ink-3">+ = the −Y side goes down.</p>
           </div>
         )}
 

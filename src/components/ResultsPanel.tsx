@@ -261,7 +261,6 @@ export default function ResultsPanel({ result, mesh, solving }: ResultsPanelProp
               marks={marks}
               currentHeelDeg={shown.heelDeg}
               endTipImmersionDeg={shown.endTipImmersionDeg}
-              gmMm={shown.GM}
             />
           ) : (
             <EmptyChart />
@@ -348,12 +347,12 @@ export default function ResultsPanel({ result, mesh, solving }: ResultsPanelProp
               />
             </Group>
             <p className="mt-2 text-[11px] leading-snug text-ink-3">
-              End-tip immersion is the stem tip on the upright, untrimmed hull, interpolated between
-              the GZ curve's 5° samples.
+              The stem tip on the upright, untrimmed hull, interpolated between the curve's 5°
+              samples.
             </p>
             <p className="mt-2 text-[11px] leading-snug text-ink-3">
-              X values are measured from the mesh centre; the LCB−LCG offset is the residual of the
-              trim solve, measured in the posed frame.
+              X values are from the mesh centre; the LCB−LCG offset is the trim solve's residual, in
+              the posed frame.
             </p>
           </div>
         )}

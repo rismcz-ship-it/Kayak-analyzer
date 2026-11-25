@@ -36,8 +36,6 @@ interface GzChartProps {
    * across the whole sampled range.
    */
   endTipImmersionDeg: number | null
-  /** Metacentric height in mm — the "initial stability" figure the caption names. */
-  gmMm: number
 }
 
 const INK_2 = '#a8b4bf'
@@ -52,7 +50,6 @@ export default function GzChart({
   marks,
   currentHeelDeg,
   endTipImmersionDeg,
-  gmMm,
 }: GzChartProps) {
   const { gzMax, avsDeg, maxHeelDeg } = marks
   // One line of words under the chart: the same numbers the markers carry, so
@@ -197,8 +194,7 @@ export default function GzChart({
           plotted range and so the peak can be read without hovering. */}
       <p className="mt-2 text-[11px] leading-snug text-ink-3">{parts.join(' · ')}</p>
       <p className="mt-1 text-[11px] leading-snug text-ink-3">
-        Initial stability is {fmt(gmMm)} mm; the curve is the upright, untrimmed hull re-floated at
-        each heel.
+        The curve is the upright, untrimmed hull re-floated at each heel.
       </p>
     </div>
   )

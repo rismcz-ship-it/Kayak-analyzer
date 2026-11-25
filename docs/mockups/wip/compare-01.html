@@ -133,12 +133,7 @@
   .sw-b { background: var(--slot-b); }
 
   /* the shared water surface, labelled once */
-  .water-note {
-    position: absolute; right: 16px; top: 16px;
-    font-size: 11px; color: var(--text-3);
-    padding: 6px 10px; border-radius: 6px;
-    background: var(--surface); border: 1px solid var(--line);
-  }
+  .water-note { display: none; }
 
   /* the stage's empty state */
   .stage-empty {
@@ -257,7 +252,6 @@
   }
   .drow:last-of-type { border-bottom: 0; }
   .dname { font-size: 12px; color: var(--text-2); line-height: 1.25; }
-  .dname em { display: block; font-style: normal; font-size: 10px; color: var(--text-3); }
   .dbars { display: grid; gap: 3px; min-width: 0; }
   .dbar { display: flex; align-items: center; gap: 6px; }
   .dbar .track { flex: 1; height: 5px; border-radius: 3px; background: var(--surface-2); overflow: hidden; }
@@ -473,8 +467,8 @@
         <!-- nothing loaded -->
         <div class="stage-empty s-empty">
           <div class="card">
-            <h3>Two runs, one question</h3>
-            <p>Drop a hull into slot A and another into slot B — or load two saved runs.</p>
+            <h3>Drop a hull into A and B</h3>
+            <p>or load two saved runs</p>
           </div>
         </div>
 
@@ -485,7 +479,6 @@
         <div class="legend s-one">
           <div class="legend-item"><i class="sw sw-a"></i><b>A</b> kayak-a.stl<span class="lg-sub">draft 134.3 mm</span></div>
         </div>
-        <div class="water-note s-two">one shared water surface</div>
       </div>
 
       <div class="foot">
@@ -572,7 +565,7 @@
           <div class="slot-head">
             <span class="badge badge-b">B</span><b>empty</b>
           </div>
-          <div class="slot-empty"><b>Drop a hull here</b>or load a saved run</div>
+          <div class="slot-empty"><b>Drop a hull here</b></div>
         </div>
       </div>
 
@@ -582,14 +575,14 @@
         <div class="slots">
           <div class="slot-card">
             <div class="slot-head"><span class="badge badge-a">A</span><b>empty</b></div>
-            <div class="slot-empty"><b>Drop a hull here</b>STL in mm, closed deck</div>
+            <div class="slot-empty"><b>Drop a hull here</b></div>
           </div>
           <div class="slot-card">
             <div class="slot-head"><span class="badge badge-b">B</span><b>empty</b></div>
-            <div class="slot-empty"><b>Drop a hull here</b>STL in mm, closed deck</div>
+            <div class="slot-empty"><b>Drop a hull here</b></div>
           </div>
         </div>
-        <p class="note info">Nothing to compare yet. Every solve on the Analyze tab is saved here as a run — pick two of them, or drop two hulls in.</p>
+        <p class="note info">Nothing to compare yet. Every Analyze solve is saved as a run.</p>
       </div>
 
       <!-- saved runs, collapsed by default -->
@@ -597,7 +590,6 @@
         <div class="runs-head" id="runsHead">
           <span class="caret">▸</span>
           <span>Saved runs</span>
-          <span class="count">4 in this browser</span>
         </div>
         <div class="runs-list" id="runsList" hidden>
           <div class="run">
@@ -636,7 +628,7 @@
         </div>
 
         <div class="drow s-two">
-          <span class="dname">Draft<em>deeper = lower</em></span>
+          <span class="dname">Draft</span>
           <div class="dbars">
             <div class="dbar"><span class="track"><i class="fill fill-a" style="width:89.8%"></i></span><span class="v">134.3</span></div>
             <div class="dbar"><span class="track"><i class="fill fill-b" style="width:100%"></i></span><span class="v">149.6</span></div>
@@ -645,7 +637,7 @@
         </div>
 
         <div class="drow s-two">
-          <span class="dname">Trim<em>bow up / down</em></span>
+          <span class="dname">Trim</span>
           <div class="dbars">
             <div class="dbar"><span class="track"><i class="fill fill-a" style="width:57%"></i></span><span class="v">+2.4°</span></div>
             <div class="dbar"><span class="track"><i class="fill fill-b" style="width:43%"></i></span><span class="v">−1.8°</span></div>
@@ -654,7 +646,7 @@
         </div>
 
         <div class="drow s-two">
-          <span class="dname">Initial stability<em>higher = stiffer</em></span>
+          <span class="dname">Initial stability</span>
           <div class="dbars">
             <div class="dbar"><span class="track"><i class="fill fill-a" style="width:100%"></i></span><span class="v">97.8</span></div>
             <div class="dbar"><span class="track"><i class="fill fill-b" style="width:62.6%"></i></span><span class="v">61.2</span></div>
@@ -663,7 +655,7 @@
         </div>
 
         <div class="drow s-two">
-          <span class="dname">GZ peak<em>righting arm</em></span>
+          <span class="dname">GZ peak</span>
           <div class="dbars">
             <div class="dbar"><span class="track"><i class="fill fill-a" style="width:100%"></i></span><span class="v">21.1</span></div>
             <div class="dbar"><span class="track"><i class="fill fill-b" style="width:87.2%"></i></span><span class="v">18.4</span></div>
@@ -672,7 +664,7 @@
         </div>
 
         <div class="drow s-two">
-          <span class="dname">Vanishing angle<em>higher = safer</em></span>
+          <span class="dname">Vanishing angle</span>
           <div class="dbars">
             <div class="dbar"><span class="track"><i class="fill fill-a" style="width:100%"></i></span><span class="v">39.3°</span></div>
             <div class="dbar"><span class="track"><i class="fill fill-b" style="width:89.3%"></i></span><span class="v">35.1°</span></div>
@@ -681,7 +673,7 @@
         </div>
 
         <div class="drow s-two">
-          <span class="dname">Waterline length<em>glide</em></span>
+          <span class="dname">Waterline length</span>
           <div class="dbars">
             <div class="dbar"><span class="track"><i class="fill fill-a" style="width:97.8%"></i></span><span class="v">2161.7</span></div>
             <div class="dbar"><span class="track"><i class="fill fill-b" style="width:100%"></i></span><span class="v">2210.4</span></div>
@@ -692,7 +684,7 @@
         <!-- one run: A's numbers, B waits -->
         <div class="s-one">
           <div class="drow dim">
-            <span class="dname">Draft<em>deeper = lower</em></span>
+            <span class="dname">Draft</span>
             <div class="dbars">
               <div class="dbar"><span class="track"><i class="fill fill-a" style="width:100%"></i></span><span class="v">134.3</span></div>
               <div class="dbar"><span class="track"></span><span class="v">—</span></div>
@@ -700,25 +692,24 @@
             <span class="ddelta">—</span>
           </div>
           <div class="drow dim">
-            <span class="dname">Initial stability<em>higher = stiffer</em></span>
+            <span class="dname">Initial stability</span>
             <div class="dbars">
               <div class="dbar"><span class="track"><i class="fill fill-a" style="width:100%"></i></span><span class="v">97.8</span></div>
               <div class="dbar"><span class="track"></span><span class="v">—</span></div>
             </div>
             <span class="ddelta">—</span>
           </div>
-          <p class="note info">A is solved. Load a second run into slot B and the difference, the bars and the verdict all fill in.</p>
+          <p class="note info">Load a second run into slot B.</p>
         </div>
 
         <div class="verdict s-two">
           <b>A floats stiffer.</b> Initial stability is 36.6 mm higher and the righting arm peaks
-          2.7 mm stronger, but A sits 15.3 mm shallower. B carries 20 kg more, so it is the
-          heavier boat — the two are not the same hull under two loads.
+          2.7 mm stronger, but A sits 15.3 mm shallower — B carries 20 kg more.
         </div>
 
         <div class="note s-two">
-          Different conditions: weight (75 kg vs 95 kg), LCG (52 % vs 55 %), KG (280 mm vs 300 mm).
-          The runs are not directly comparable.
+          Different conditions: 75 kg vs 95 kg, LCG 52 % vs 55 %, KG 280 mm vs 300 mm. Not directly
+          comparable.
         </div>
       </div>
 
@@ -767,7 +758,6 @@
     <div class="panel-foot s-loaded">
       <button class="foot-btn" type="button" id="footBtn" aria-expanded="false">
         <b id="footLabel">All metrics</b>
-        <span>the full 23-row table</span>
         <span class="caret">▾</span>
       </button>
     </div>
