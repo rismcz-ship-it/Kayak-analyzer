@@ -31,13 +31,17 @@ interface KeyProps {
   note?: string
   noteTone?: 'good' | 'warn' | 'bad'
   size?: 'lead' | 'sub'
+  /** Hover text for a label whose name is not self-explanatory. */
+  title?: string
 }
 
-function Key({ label, value, unit, note, noteTone = 'good', size = 'lead' }: KeyProps) {
+function Key({ label, value, unit, note, noteTone = 'good', size = 'lead', title }: KeyProps) {
   const tone = noteTone === 'warn' ? 'text-warn' : noteTone === 'bad' ? 'text-bad' : 'text-good'
   return (
     <div className="min-w-0">
-      <span className="block text-[11px] text-ink-3">{label}</span>
+      <span className="block text-[11px] text-ink-3" title={title}>
+        {label}
+      </span>
       <span
         className={`mt-1 block whitespace-nowrap font-mono font-medium tabular-nums ${
           size === 'lead'
@@ -165,7 +169,8 @@ export default function ResultsPanel({ result, mesh, solving }: ResultsPanelProp
         />
         <Key label="Trim" value={shown ? signed(shown.trimDeg) : '—'} unit="°" note={trimNote} />
         <Key
-          label="GM"
+          label="Initial stability"
+          title="Metacentric height (GM) — how strongly the hull rights itself when you tilt it"
           value={shown ? fmt(shown.GM) : '—'}
           unit="mm"
           note={gmNote}
@@ -204,10 +209,10 @@ export default function ResultsPanel({ result, mesh, solving }: ResultsPanelProp
           {shown.GM < 100 && (
             <Note tone={shown.GM < 0 ? 'bad' : 'warn'}>
               {shown.GM < 0
-                ? `Negative GM ${fmt(shown.GM)} mm — the hull does not right itself from upright.`
+                ? `Negative stability — the hull does not right itself from upright.`
                 : shown.GM === 0
-                  ? 'GM is 0 mm — neutrally stable: the hull holds upright but has no righting arm to return to.'
-                  : `Low initial stability — GM ${fmt(shown.GM)} mm is under 100 mm.`}
+                  ? 'Zero stability — the hull holds upright but has no righting arm to return to.'
+                  : `Low initial stability — ${fmt(shown.GM)} mm is under 100 mm.`}
             </Note>
           )}
           {endTipFirst !== null && (
@@ -220,8 +225,8 @@ export default function ResultsPanel({ result, mesh, solving }: ResultsPanelProp
           {shown.waterplaneLoopCount !== 1 && (
             <Note>
               {shown.waterplaneLoopCount === 0
-                ? 'no closed waterplane contour at this waterline — its area and Ix are 0, so BM is 0 and GM reads KB − KG.'
-                : `waterplane contour split into ${shown.waterplaneLoopCount} loops — BM and GM assume a single closed waterplane, so treat them as unreliable. A genuinely two-lobed waterplane (twin hull, tunnel) does this legitimately.`}
+                ? 'no closed waterplane contour at this waterline — its area and Ix are 0, so the stability figure reads KB − KG.'
+                : `waterplane contour split into ${shown.waterplaneLoopCount} loops — the stability figures assume a single closed waterplane, so treat them as unreliable. A genuinely two-lobed waterplane (twin hull, tunnel) does this legitimately.`}
             </Note>
           )}
         </>
@@ -346,7 +351,7 @@ export default function ResultsPanel({ result, mesh, solving }: ResultsPanelProp
             <Row label="BM (metacentric radius)" value={`${fmt(shown.BM)} mm`} />
             <Row label="KM (keel→metacenter)" value={`${fmt(shown.KM)} mm`} />
             <Row label="KG (keel→gravity)" value={`${fmt(shown.kgMm)} mm`} />
-            <Row label="GM (metacentric height)" value={`${fmt(shown.GM)} mm`} accent />
+            <Row label="Initial stability (GM)" value={`${fmt(shown.GM)} mm`} accent />
             <Row
               label="Waterplane I_y (longitudinal)"
               value={`${sci(shown.waterplaneIyyMm4)} mm⁴`}

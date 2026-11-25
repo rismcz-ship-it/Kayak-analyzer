@@ -165,7 +165,7 @@ function buildSections(
         metric('BM (Metacentric radius)', (r) => r.BM, ' mm'),
         metric('KM (Keel→Metacenter)', (r) => r.KM, ' mm'),
         metric('KG (Keel→Gravity)', (r) => r.kgMm, ' mm'),
-        metric('GM (Metacentric height)', (r) => r.GM, ' mm'),
+        metric('Initial stability (GM)', (r) => r.GM, ' mm'),
         gzRow,
         avsRow,
       ],
