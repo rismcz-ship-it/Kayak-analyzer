@@ -453,7 +453,7 @@ export default function App() {
             <ResultsPanel result={trimResult} mesh={mesh} solving={isCalculating} />
           </ConditionsPanel>
         </div>
-        <div className={tab === 'compare' ? 'flex min-h-0 flex-1 flex-col p-4' : 'hidden'}>
+        <div className={tab === 'compare' ? 'flex min-h-0 flex-1' : 'hidden'}>
           <CompareView
             roster={roster}
             onAddRecord={addRecord}

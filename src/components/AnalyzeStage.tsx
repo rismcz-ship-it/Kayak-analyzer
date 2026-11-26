@@ -58,6 +58,14 @@ export default function AnalyzeStage({ mesh, result, heelDeg, onLoaded }: Analyz
             <span className="hidden shrink-0 sm:inline">
               {fmt(s.bounds.size.x)} × {fmt(s.bounds.size.y)} × {fmt(s.bounds.size.z)} mm
             </span>
+            {/*
+              The hull's own volume, beside the dimensions that describe it -
+              the same line the Compare stage's foot reads, so both tabs
+              identify a hull the same way. This is the mesh's enclosed volume,
+              not the water it displaces at the solved draft (that is the
+              target weight by definition, 1 kg being 1 L).
+            */}
+            <span className="hidden shrink-0 sm:inline">{fmt(s.volumeLiters)} L</span>
             {s.watertight.watertight ? (
               <span className="inline-flex shrink-0 items-center gap-1.5">
                 <i className="h-1.5 w-1.5 rounded-full bg-good" />

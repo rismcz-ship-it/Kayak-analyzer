@@ -1,4 +1,4 @@
-﻿import { type ReactNode, useEffect, useRef, useState } from 'react'
+import { type ReactNode, useEffect, useRef, useState } from 'react'
 import { fmt, signed } from '../lib/format'
 import { endTipWetsBeforeVanishing, gzMarks } from '../lib/gz-marks'
 import type { TrimSolveResult } from '../lib/hydrostatics'
@@ -94,7 +94,7 @@ function Note({ tone = 'warn', children }: { tone?: 'warn' | 'bad'; children: Re
         tone === 'bad' ? 'text-bad' : 'text-warn'
       }`}
     >
-      <i className="mt-[5px] h-1.5 w-1.5 flex-none rounded-full bg-current" />
+      <i className="mt-1 h-1.5 w-1.5 flex-none rounded-full bg-current" />
       <span>{children}</span>
     </p>
   )

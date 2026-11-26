@@ -98,7 +98,7 @@ export default function GzChart({
                 value: `fixed heel ${signed(currentHeelDeg)}°`,
                 position: 'insideTopLeft',
                 fill: INK_2,
-                fontSize: 10,
+                fontSize: 11,
               }}
             />
           )}
@@ -111,7 +111,7 @@ export default function GzChart({
                 value: `end tip ${fmt(endTipImmersionDeg)}°`,
                 position: 'insideBottomRight',
                 fill: WARN,
-                fontSize: 10,
+                fontSize: 11,
               }}
             />
           )}
@@ -126,7 +126,7 @@ export default function GzChart({
                 value: `${fmt(gzMax.GZ)} mm @ ${fmt(gzMax.heelDeg)}°`,
                 position: 'top',
                 fill: INK_2,
-                fontSize: 10,
+                fontSize: 11,
               }}
             />
           )}
@@ -141,26 +141,26 @@ export default function GzChart({
                 value: `AVS ${fmt(avsDeg)}°`,
                 position: 'bottom',
                 fill: INK_2,
-                fontSize: 10,
+                fontSize: 11,
               }}
             />
           )}
           <XAxis
             dataKey="angle"
             type="number"
-            tick={{ fill: INK_3, fontSize: 10 }}
+            tick={{ fill: INK_3, fontSize: 11 }}
             axisLine={{ stroke: LINE_2 }}
             label={{
               value: 'Heel (°)',
               position: 'insideRight',
               offset: -10,
               fill: INK_3,
-              fontSize: 10,
+              fontSize: 11,
             }}
           />
           <YAxis
             type="number"
-            tick={{ fill: INK_3, fontSize: 10 }}
+            tick={{ fill: INK_3, fontSize: 11 }}
             axisLine={{ stroke: LINE_2 }}
             label={{
               value: 'GZ (mm)',
@@ -168,7 +168,7 @@ export default function GzChart({
               position: 'insideLeft',
               offset: 10,
               fill: INK_3,
-              fontSize: 10,
+              fontSize: 11,
             }}
           />
           <Tooltip
@@ -181,7 +181,6 @@ export default function GzChart({
             formatter={(value, name) => [value != null ? `${fmt(Number(value))} mm` : '—', name]}
           />
           <Line
-            type="monotone"
             dataKey="GZ"
             stroke={ACCENT}
             strokeWidth={2}

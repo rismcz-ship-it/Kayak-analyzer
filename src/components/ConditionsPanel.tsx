@@ -79,7 +79,7 @@ function Note({
   const color = tone === 'warn' ? 'text-warn' : tone === 'bad' ? 'text-bad' : 'text-ink-3'
   return (
     <p className={`mt-2 flex items-start gap-2 text-[11px] leading-snug ${color}`}>
-      <i className="mt-[5px] h-1.5 w-1.5 flex-none rounded-full bg-current" />
+      <i className="mt-1 h-1.5 w-1.5 flex-none rounded-full bg-current" />
       <span>{children}</span>
     </p>
   )

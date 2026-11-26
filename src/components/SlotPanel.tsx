@@ -2,23 +2,22 @@ import { useCallback, useRef, useState } from 'react'
 import {
   displayedModelHash,
   displayedName,
-  exportRunRecord,
   liveAnswerIsCurrent,
   poseIsForeign,
   type RunRecord,
-  recordFromSolve,
   type SlotInputs,
   slotConditions,
 } from '../lib/compare'
 import { DEFAULT_KG_MM } from '../lib/hydrostatics'
 import { HEEL_MAX, HEEL_MIN, type NumericInputs, parseInputs, scaleNotice } from '../lib/inputs'
 import type { SlotState } from './CompareView'
+import Switch from './Switch'
 import Upload, { type LoadedMesh, rescaleMesh, type UploadHandle } from './Upload'
 import { SLOT_COLORS } from './Viewer3D'
 
 /**
  * One Compare slot's controls: the conditions it solves at, its solve status,
- * and the re-pick / export pair.
+ * and its re-pick path.
  *
  * The panel owns the four fields as RAW STRINGS the way App owns its form
  * (`lib/inputs.ts` — `Number('')` is 0, the historic bug), and reuses
@@ -35,19 +34,12 @@ import { SLOT_COLORS } from './Viewer3D'
  * the slot it fills.
  *
  * A slot with NO record takes a fresh STL directly: the hull solves live at
- * the panel's own conditions and its Export writes a run record from that
- * live solve - there is no saved run behind it, so Export waits for one.
- * That is the Compare tab's "add a model" path, separate from the roster.
+ * the panel's own conditions. That is the Compare tab's "add a model" path,
+ * separate from the roster.
  *
- * Two store-picked details:
- *
- *  - A record's numbers are FROZEN (`compare.ts`), so the slot's editable
- *    inputs live in CompareView and arrive here as `slot.inputs`.
- *  - Export captures what the slot DISPLAYS - the result AND the conditions
- *    that pair was produced at (`slot.live` with `slot.liveInputs`, else the
- *    record's own). Pairing the record's results with the slot's edited
- *    targets would write a document asserting a solve at conditions that
- *    never ran.
+ * One store-picked detail: a record's numbers are FROZEN (`compare.ts`), so
+ * the slot's editable inputs live in CompareView and arrive here as
+ * `slot.inputs`.
  */
 interface SlotPanelProps {
   /** Which slot this is: the badge, its overlay colour, and its input ids. */
@@ -64,6 +56,8 @@ interface SlotPanelProps {
    * re-pick - the panel returns to asking for the file.
    */
   onClearMesh: () => void
+  /** Empty the slot completely: its record, its STL and its answer all go. */
+  onClearSlot: () => void
 }
 
 function fieldStrings(record: RunRecord | null): NumericInputs {
@@ -74,6 +68,79 @@ function fieldStrings(record: RunRecord | null): NumericInputs {
   }
 }
 
+/**
+ * One condition: a label, the value, and its unit inside the field.
+ *
+ * The label sits BESIDE the field, not above it: the card is half a panel wide,
+ * and three stacked fields cost 180 px - more than the whole comparison the
+ * panel exists to show.
+ */
+function Field({
+  id,
+  label,
+  unit,
+  value,
+  error,
+  onChange,
+}: {
+  id: string
+  label: string
+  unit: string
+  value: string
+  error?: string | null
+  onChange: (value: string) => void
+}) {
+  return (
+    <div>
+      <div className="flex items-center gap-2">
+        <label htmlFor={id} className="w-[64px] flex-none truncate text-[11px] text-ink-2">
+          {label}
+        </label>
+        <div
+          className={`flex h-7 min-w-0 flex-1 items-center gap-1 rounded-md border bg-panel-2 px-2 transition-colors ${
+            error
+              ? 'border-bad'
+              : 'border-line-2 focus-within:border-accent-500 focus-within:ring-2 focus-within:ring-accent-500/15'
+          }`}
+        >
+          <input
+            id={id}
+            type="text"
+            inputMode="decimal"
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            aria-invalid={error ? true : undefined}
+            aria-describedby={error ? `${id}-error` : undefined}
+            className="w-full min-w-0 bg-transparent p-0 font-mono text-[12px] tabular-nums text-ink outline-none"
+          />
+          <span className="flex-none text-[11px] text-ink-3">{unit}</span>
+        </div>
+      </div>
+      {error && (
+        <p id={`${id}-error`} className="mt-1 text-[11px] leading-snug text-bad" role="alert">
+          {error}
+        </p>
+      )}
+    </div>
+  )
+}
+
+function Note({
+  tone = 'muted',
+  children,
+}: {
+  tone?: 'muted' | 'warn' | 'bad'
+  children: React.ReactNode
+}) {
+  const color = tone === 'warn' ? 'text-warn' : tone === 'bad' ? 'text-bad' : 'text-ink-3'
+  return (
+    <p className={`mt-2 flex items-start gap-2 text-[11px] leading-snug ${color}`}>
+      <i className="mt-1 h-1.5 w-1.5 flex-none rounded-full bg-current" />
+      <span>{children}</span>
+    </p>
+  )
+}
+
 export default function SlotPanel({
   label,
   slot,
@@ -81,6 +148,7 @@ export default function SlotPanel({
   onInputs,
   onMesh,
   onClearMesh,
+  onClearSlot,
 }: SlotPanelProps) {
   const colorIndex = label === 'A' ? 0 : 1
   const [numeric, setNumeric] = useState<NumericInputs>(() => fieldStrings(record))
@@ -93,7 +161,6 @@ export default function SlotPanel({
   const [showHeel, setShowHeel] = useState(() => (record?.inputs.heelDeg ?? 0) !== 0)
   // The STL that does not hash to this record's, awaiting an explicit choice.
   const [mismatch, setMismatch] = useState<LoadedMesh | null>(null)
-  const [exportError, setExportError] = useState<string | null>(null)
   /**
    * What the HIDDEN picker is doing.
    *
@@ -112,7 +179,6 @@ export default function SlotPanel({
   const uploadRef = useRef<UploadHandle | null>(null)
 
   const parsed = parseInputs(numeric)
-  const allValid = parsed.weightKg !== null && parsed.lcgPercent !== null && parsed.kgMm !== null
   /**
    * The conditions the panel is showing RIGHT NOW: the typed numbers (or the
    * slot's own last valid triple while a field is momentarily invalid) and the
@@ -167,11 +233,11 @@ export default function SlotPanel({
    */
   const emitConditions = (showHeelNow: boolean, heelNow: number) => {
     const p = parseInputs(numeric)
-    const parsed =
+    const parsedTriple =
       p.weightKg !== null && p.lcgPercent !== null && p.kgMm !== null
         ? { weightKg: p.weightKg, lcgPctLwl: p.lcgPercent, kgMm: p.kgMm }
         : slot.inputs
-    onInputs(slotConditions(parsed, showHeelNow, heelNow))
+    onInputs(slotConditions(parsedTriple, showHeelNow, heelNow))
   }
 
   /**
@@ -203,7 +269,6 @@ export default function SlotPanel({
    * posing the wrong geometry on a record's numbers is a silent lie.
    */
   const handleRepick = (loaded: LoadedMesh) => {
-    setExportError(null)
     // With no record picked there is no expected hash to check against, so
     // whatever arrives simply becomes this slot's own mesh.
     if (record === null || loaded.sha256Hex === record.modelHash) {
@@ -226,73 +291,6 @@ export default function SlotPanel({
     onMesh(rescaleMesh(slot.mesh, advice.factor))
   }
 
-  const onExport = () => {
-    setExportError(null)
-    // What the slot DISPLAYS. The name and the hash must come from the SAME
-    // source as the numbers: a live result was solved from the slot's own
-    // re-picked STL, so it carries the mesh's identity; the record's snapshot
-    // came from the record's hull, so it must keep the record's name and hash
-    // even while a foreign STL waits for its own solve. Mixing the two stamps
-    // the document with a model its numbers never came from, and the re-import
-    // would then ask for an STL that is not the one that produced them.
-    //
-    // The conditions travel WITH the result for the same reason: the live
-    // solve's own while it has one, the record's own when its snapshot is what
-    // is on screen. Pairing the displayed results with the slot's EDITED
-    // targets instead would write a document whose reproduction inputs never
-    // produced its numbers (`exportRunRecord` copies `record.inputs` into
-    // `targets` verbatim) - and a slot whose STL is not in memory has no live
-    // solve at all, so that was the default state of every imported record.
-    const own = slot.mesh
-    // Captured in a local const before anything branches on it: narrowing the
-    // `slot.live` property through a boolean alias does not survive to the
-    // uses below, so the value itself is what gets compared.
-    const liveSolve = slot.live
-    const displayed = liveSolve ?? record?.result ?? null
-    // A live solve from a mesh the page could not hash names no model at all:
-    // `recordFromSolve` would refuse it with a developer-only message, so the
-    // panel says it in plain language instead. Checked BEFORE the
-    // nothing-to-export gate below: with no hash, modelHash IS '' here, so
-    // that gate would return first and leave an enabled Export click with no
-    // answer at all.
-    if (liveSolve !== null && own && own.sha256Hex === '') {
-      setExportError(
-        'This page cannot hash STLs (no secure context), so this hull cannot be exported as a run record.',
-      )
-      return
-    }
-    const conditions =
-      liveSolve !== null ? (slot.liveInputs ?? slot.inputs) : (record?.inputs ?? slot.inputs)
-    // The same captions the header shows: a live answer names its own mesh, so
-    // an exported document cannot call itself after a record it outlived.
-    const name = displayedName(slot, record) ?? ''
-    const modelHash = displayedModelHash(slot, record) ?? ''
-    // A fresh slot exports only its own live solve of its own mesh - there is
-    // no saved run to fall back to. The button is disabled before then; this
-    // is the same gate in code.
-    if (displayed === null || name === '' || modelHash === '') return
-    try {
-      const doc = exportRunRecord(recordFromSolve(name, modelHash, conditions, displayed))
-      const url = URL.createObjectURL(
-        new Blob([JSON.stringify(doc, null, 2)], { type: 'application/json' }),
-      )
-      // `kayak.stl` downloads as `kayak.run.json`, not `kayak.stl.run.json`.
-      const base = name.replace(/\.stl$/i, '')
-      const link = document.createElement('a')
-      link.href = url
-      link.download = `${base}.run.json`
-      // Appended, clicked, removed: Chromium downloads a detached link, other
-      // engines do not. The URL is revoked on the next task rather than in
-      // this tick, which some browsers read as cancelling the download.
-      document.body.appendChild(link)
-      link.click()
-      link.remove()
-      setTimeout(() => URL.revokeObjectURL(url), 0)
-    } catch (err) {
-      setExportError(err instanceof Error ? err.message : 'The export failed.')
-    }
-  }
-
   const maxDim = slot.mesh
     ? Math.max(
         slot.mesh.stats.bounds.size.x,
@@ -313,156 +311,113 @@ export default function SlotPanel({
   )
 
   // Named by what is on screen, not by what is merely picked: the same rule
-  // the columns and the export use (`displayedName`).
+  // the columns use (`displayedName`).
   const shownName = displayedName(slot, record) ?? 'empty slot'
   const shownHash = displayedModelHash(slot, record)
+  const colour = `#${SLOT_COLORS[colorIndex].toString(16).padStart(6, '0')}`
 
   return (
-    <section className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-4">
-      <div className="mb-2 flex items-center gap-2 border-b border-zinc-800 pb-2">
+    <section className="rounded-lg border border-line bg-panel p-3">
+      <div className="mb-2 flex items-center gap-2">
         <span
-          className="rounded px-1.5 py-0.5 text-xs font-bold text-zinc-950"
-          style={{ backgroundColor: `#${SLOT_COLORS[colorIndex].toString(16).padStart(6, '0')}` }}
+          className="rounded px-2 py-1 text-[11px] font-bold text-accent-ink"
+          style={{ backgroundColor: colour }}
         >
           {label}
         </span>
         <span
-          className="min-w-0 flex-1 truncate text-sm text-zinc-200"
+          className="min-w-0 flex-1 truncate text-[12px] text-ink"
           title={shownHash !== null ? `${shownName} · ${shownHash}` : undefined}
         >
           {shownName}
         </span>
         <button
           type="button"
-          onClick={onExport}
-          disabled={!allValid || (record === null && (slot.live === null || slot.mesh === null))}
-          title={
-            record === null && (slot.live === null || slot.mesh === null)
-              ? 'Load an STL and let its solve finish first.'
-              : !allValid
-                ? 'Fix the highlighted conditions first.'
-                : 'Download this run as a .run.json'
-          }
-          className="rounded border border-zinc-700 px-2 py-1 text-xs text-zinc-300 hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50"
+          onClick={onClearSlot}
+          title={`Clear slot ${label} — its hull, its record and its numbers`}
+          aria-label={`Clear slot ${label}`}
+          className="flex-none rounded px-1 text-[12px] text-ink-3 transition-colors hover:text-bad active:scale-[0.98]"
         >
-          Export
+          ✕
         </button>
       </div>
 
-      <div className="grid grid-cols-2 gap-2">
-        <div>
-          <label htmlFor={`${label}-weight`} className="mb-1 block text-xs text-zinc-400">
-            Weight (kg)
-          </label>
-          <input
-            id={`${label}-weight`}
-            type="text"
-            inputMode="decimal"
-            value={numeric.weightInput}
-            onChange={(e) => commitNumeric({ weightInput: e.target.value })}
-            className="w-full rounded border border-zinc-700 bg-zinc-800 p-1.5 text-sm text-white"
-          />
-          {parsed.weightError && (
-            <p className="mt-1 text-xs text-rose-300" role="alert">
-              {parsed.weightError}
-            </p>
-          )}
-        </div>
-        <div>
-          <label htmlFor={`${label}-lcg`} className="mb-1 block text-xs text-zinc-400">
-            LCG from bow (%)
-          </label>
-          <input
-            id={`${label}-lcg`}
-            type="text"
-            inputMode="decimal"
-            value={numeric.lcgInput}
-            onChange={(e) => commitNumeric({ lcgInput: e.target.value })}
-            className="w-full rounded border border-zinc-700 bg-zinc-800 p-1.5 text-sm text-white"
-          />
-          {parsed.lcgError && (
-            <p className="mt-1 text-xs text-rose-300" role="alert">
-              {parsed.lcgError}
-            </p>
-          )}
-        </div>
-        <div>
-          <label htmlFor={`${label}-kg`} className="mb-1 block text-xs text-zinc-400">
-            KG above keel (mm)
-          </label>
-          <input
-            id={`${label}-kg`}
-            type="text"
-            inputMode="decimal"
-            value={numeric.kgInput}
-            onChange={(e) => commitNumeric({ kgInput: e.target.value })}
-            className="w-full rounded border border-zinc-700 bg-zinc-800 p-1.5 text-sm text-white"
-          />
-          {parsed.kgError && (
-            <p className="mt-1 text-xs text-rose-300" role="alert">
-              {parsed.kgError}
-            </p>
-          )}
-        </div>
-        <div>
-          {/* The Analyze tab's fixed-heel toggle: heel is an APPLIED angle,
-              so off means this slot solves at 0 and the slider stays out of
-              the way until it is asked for. */}
-          <label className="mb-1 flex cursor-pointer items-center gap-2 group">
-            <input
-              type="checkbox"
-              className="peer sr-only"
-              checked={showHeel}
-              onChange={(e) => toggleHeel(e.target.checked)}
-            />
-            <div
-              className={`w-8 h-4 rounded-full border border-zinc-700 transition-colors peer-focus-visible:ring-2 peer-focus-visible:ring-sky-400 peer-focus-visible:ring-offset-2 peer-focus-visible:ring-offset-zinc-900 ${showHeel ? 'border-sky-400 bg-sky-600' : 'bg-zinc-800'}`}
-            >
-              <div
-                className={`h-3 w-3 m-0.5 rounded-full bg-white transition-transform ${showHeel ? 'translate-x-4' : 'translate-x-0'}`}
-              />
-            </div>
-            <span className="text-xs text-zinc-400 group-hover:text-zinc-300">
-              Set fixed heel angle
-            </span>
-          </label>
-          {showHeel && (
-            <>
-              <label htmlFor={`${label}-heel`} className="mb-1 block text-xs text-zinc-400">
-                Heel (°) — + = −Y side down
-              </label>
-              <div className="flex items-center gap-2">
-                <input
-                  id={`${label}-heel`}
-                  type="range"
-                  min={HEEL_MIN}
-                  max={HEEL_MAX}
-                  step={1}
-                  value={heelDeg}
-                  onChange={(e) => commitHeel(Number(e.target.value))}
-                  className="h-1.5 flex-1 appearance-none rounded-lg bg-zinc-700 accent-sky-500"
-                />
-                <span className="w-8 text-right font-mono text-xs text-zinc-300">{heelDeg}°</span>
-              </div>
-            </>
-          )}
-          {/* The leftover is kept while the toggle is off, so it is SAYING so
-              too: the slider is out of sight, and a hidden angle that silently
-              comes back when the toggle is switched on is a trap. */}
-          {!showHeel && heelDeg !== 0 && (
-            <p className="mt-1 text-xs text-zinc-500">
-              Heel {heelDeg}° is kept as a leftover — this slot solves upright until the toggle is
-              switched on.
-            </p>
-          )}
-        </div>
+      <div className="grid gap-2">
+        <Field
+          id={`${label}-weight`}
+          label="Weight"
+          unit="kg"
+          value={numeric.weightInput}
+          error={parsed.weightError}
+          onChange={(weightInput) => commitNumeric({ weightInput })}
+        />
+        <Field
+          id={`${label}-lcg`}
+          label="LCG from bow"
+          unit="%"
+          value={numeric.lcgInput}
+          error={parsed.lcgError}
+          onChange={(lcgInput) => commitNumeric({ lcgInput })}
+        />
+        <Field
+          id={`${label}-kg`}
+          label="KG above keel"
+          unit="mm"
+          value={numeric.kgInput}
+          error={parsed.kgError}
+          onChange={(kgInput) => commitNumeric({ kgInput })}
+        />
       </div>
 
+      <div className="mt-2 flex items-center gap-2">
+        <button
+          type="button"
+          role="switch"
+          aria-checked={showHeel}
+          onClick={() => toggleHeel(!showHeel)}
+          className="flex items-center gap-2 text-[12px] text-ink-2 transition-colors hover:text-ink active:scale-[0.98]"
+        >
+          <Switch checked={showHeel} />
+          <span>Fixed heel</span>
+        </button>
+      </div>
+
+      {showHeel && (
+        <div className="mt-2 flex items-center gap-2">
+          <input
+            id={`${label}-heel`}
+            type="range"
+            min={HEEL_MIN}
+            max={HEEL_MAX}
+            step={1}
+            value={heelDeg}
+            onChange={(e) => commitHeel(Number(e.target.value))}
+            aria-label="Fixed heel angle in degrees"
+            className="h-4 flex-1 accent-accent-500"
+          />
+          <output
+            htmlFor={`${label}-heel`}
+            className="min-w-8 text-right font-mono text-[12px] tabular-nums text-ink-2"
+            title="+ = the −Y side goes down"
+          >
+            {heelDeg > 0 ? `+${heelDeg}` : heelDeg}°
+          </output>
+        </div>
+      )}
+      {/* The leftover is kept while the toggle is off, so it is SAYING so
+          too: the slider is out of sight, and a hidden angle that silently
+          comes back when the toggle is switched on is a trap. */}
+      {!showHeel && heelDeg !== 0 && (
+        <Note>
+          Heel {heelDeg}° is kept as a leftover — this slot solves upright until the toggle is on.
+        </Note>
+      )}
+
       {slot.solving && (
-        <div className="mt-3">
-          <div className="h-1.5 w-full overflow-hidden rounded-full bg-zinc-800">
+        <div className="mt-2">
+          <div className="h-1.5 w-full overflow-hidden rounded-full bg-panel-2">
             <div
-              className="h-full rounded-full bg-sky-500 transition-[width] duration-150"
+              className="h-full rounded-full bg-accent-500 transition-[width] duration-150"
               style={{
                 width:
                   slot.progress && slot.progress.total > 0
@@ -471,7 +426,7 @@ export default function SlotPanel({
               }}
             />
           </div>
-          <p className="mt-1 text-xs text-zinc-400" role="status" aria-live="polite">
+          <p className="mt-1 text-[11px] text-ink-2" role="status" aria-live="polite">
             {slot.progress
               ? `Solving… angle ${slot.progress.done}/${slot.progress.total}`
               : 'Starting solver…'}
@@ -480,7 +435,7 @@ export default function SlotPanel({
       )}
       {slot.error && (
         <p
-          className="mt-3 rounded border border-rose-900 bg-rose-950/50 p-2 text-xs text-rose-300"
+          className="mt-2 rounded-md border border-bad/40 bg-bad/10 px-2 py-1 text-[11px] text-bad"
           role="alert"
         >
           {slot.error}
@@ -498,7 +453,12 @@ export default function SlotPanel({
         !parsed.weightError &&
         !parsed.lcgError &&
         !parsed.kgError && (
-          <p className="mt-3 text-xs text-emerald-400">Live — solved at the conditions above.</p>
+          <span
+            className="mt-2 block text-[11px] leading-snug text-ink-3"
+            title="These numbers are a live solve at the conditions above."
+          >
+            Live — solved above.
+          </span>
         )}
       {/* With a mesh in memory the slot's solve effect re-runs on every edit, so
           "edit a condition" really does re-solve. With no mesh it returns at the
@@ -506,82 +466,61 @@ export default function SlotPanel({
           conditions only take effect once an STL is loaded - the old wording
           promised a re-solve that could not happen. */}
       {!slot.solving && !slot.error && !slot.live && record !== null && (
-        <p className="mt-3 text-xs text-zinc-500">
+        <Note>
           {slot.mesh
             ? 'Showing the saved run — edit a condition to re-solve.'
             : 'Showing the saved run — no STL is loaded, so the conditions above are solved when you load one.'}
-        </p>
+        </Note>
       )}
       {foreignGeometry && (
-        <p className="mt-1 text-xs text-amber-400" role="note">
+        <Note tone="warn">
           The STL in memory is not known to be the hull this record was solved on — the numbers
           above are that record's, posed on the file below.
-        </p>
+        </Note>
       )}
 
       {slot.mesh ? (
-        <div className="mt-3">
-          <div className="flex items-center gap-2">
-            <p
-              className="min-w-0 flex-1 truncate text-xs text-emerald-400"
-              title={slot.mesh.orientNote}
-            >
-              STL in memory - {slot.mesh.fileName}
-            </p>
+        <div className="mt-2">
+          <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
               onClick={() => uploadRef.current?.open()}
-              title="Choose another STL for this slot - the picker opens right here, and cancelling leaves the loaded hull in place."
-              className="shrink-0 rounded border border-zinc-700 px-2 py-0.5 text-xs text-zinc-300 hover:bg-zinc-800"
+              title={`Choose another STL for this slot (${slot.mesh.fileName}) - the picker opens right here, and cancelling leaves the loaded hull in place.`}
+              className="rounded-md border border-line-2 px-2 py-1 text-[11px] text-ink-2 transition-colors hover:bg-panel-2 active:scale-[0.98]"
             >
               Replace STL
             </button>
             <button
               type="button"
               onClick={() => {
-                // Both describe the mesh that is leaving: a pending mismatch
-                // gate for a file that was never adopted, and an export error
-                // from a hull that is gone.
                 setMismatch(null)
-                setExportError(null)
                 onClearMesh()
               }}
               title="Unload this slot's STL and its live answer — the record and the typed conditions stay."
-              className="shrink-0 rounded border border-zinc-700 px-2 py-0.5 text-xs text-zinc-300 hover:bg-zinc-800"
+              className="rounded-md border border-line-2 px-2 py-1 text-[11px] text-ink-2 transition-colors hover:bg-panel-2 active:scale-[0.98]"
             >
               Clear model
             </button>
           </div>
           {!slot.mesh.stats.watertight.watertight && (
-            <p className="mt-1 text-xs text-amber-400" role="note">
+            <Note tone="warn">
               {slot.mesh.stats.watertight.openEdgeCount} open edges — the solver needs a closed
               hull, so this slot is not solved.
-            </p>
+            </Note>
           )}
           {slot.mesh.scaleAdvice && (
-            <p className="mt-1 text-xs text-amber-400" role="note">
+            <Note tone="warn">
               {scaleNotice(slot.mesh.scaleAdvice, maxDim)}
               {slot.mesh.scaleAdvice.kind === 'metres' && (
                 <button
                   type="button"
                   onClick={applyScale}
-                  className="ml-2 rounded border border-amber-600/60 px-2 py-0.5 text-xs text-amber-300 hover:bg-amber-950/40"
+                  className="ml-2 rounded border border-warn/60 px-2 py-1 text-[11px] text-warn transition-colors hover:bg-warn/10 active:scale-[0.98]"
                 >
                   Apply ×1000
                 </button>
               )}
-            </p>
-          )}
-          {/* The page could not hash the file (no secure context), so this hull
-              has no model identity: it cannot be exported as a run record.
-              Said HERE, as soon as the file is loaded — the Export click used
-              to be the only place the user found out, and the click produced
-              no file at all. */}
-          {slot.mesh.sha256Hex === '' && (
-            <p className="mt-1 text-xs text-amber-400" role="note">
-              This page cannot hash STLs (no secure context), so this hull cannot be exported as a
-              run record.
-            </p>
+            </Note>
           )}
           {/* The picker behind "Replace STL": hidden, because the button above
               is this state's whole loading affordance. Mounted here so
@@ -593,31 +532,23 @@ export default function SlotPanel({
           <div className="hidden">
             <Upload ref={uploadRef} onLoaded={handleRepick} compact onStatus={reportPickStatus} />
           </div>
-          {pickStatus?.busy && (
-            <p className="mt-1 text-xs text-zinc-400" role="status">
-              Parsing the picked file…
-            </p>
-          )}
+          {pickStatus?.busy && <Note>Parsing the picked file…</Note>}
           {pickStatus?.error && (
-            <p className="mt-1 text-xs text-rose-300" role="alert">
+            <p className="mt-2 text-[11px] text-bad" role="alert">
               {pickStatus.error}
             </p>
           )}
         </div>
       ) : record !== null ? (
-        <div className="mt-3">
-          <p className="mb-2 text-xs text-zinc-500">
-            This record's STL is not in memory — load it to see the hull in the overlay.
+        <div className="mt-2">
+          <p className="mb-2 text-[11px] text-ink-3">
+            This record's STL is not in memory — load it to see the hull on the stage.
           </p>
           <Upload ref={uploadRef} onLoaded={handleRepick} compact />
         </div>
       ) : (
-        <div className="mt-3">
-          <p className="mb-2 text-xs text-zinc-500">
-            Drop an STL here to solve it fresh — its numbers stay live in this slot, and its Export
-            writes a run record once the solve lands.
-          </p>
-          <Upload ref={uploadRef} onLoaded={handleRepick} compact prompt="Drop an STL hull here" />
+        <div className="mt-2">
+          <Upload ref={uploadRef} onLoaded={handleRepick} compact prompt="Drop a hull here" />
         </div>
       )}
       {/* The re-pick gate's answer, whichever state the pick happened in: a
@@ -626,7 +557,7 @@ export default function SlotPanel({
           record's own empty drop zone. */}
       {mismatch && record !== null && (
         <div
-          className="mt-2 rounded border border-amber-800 bg-amber-950/50 p-2 text-xs text-amber-300"
+          className="mt-2 rounded-md border border-warn/40 bg-warn/10 p-2 text-[11px] text-warn"
           role="note"
         >
           <p className="mb-2">
@@ -648,27 +579,19 @@ export default function SlotPanel({
                 onMesh(mismatch)
                 setMismatch(null)
               }}
-              className="rounded border border-amber-600/60 px-2 py-0.5 text-amber-200 hover:bg-amber-950/40"
+              className="rounded border border-warn/60 px-2 py-1 text-[11px] text-warn transition-colors hover:bg-warn/10 active:scale-[0.98]"
             >
               Use anyway
             </button>
             <button
               type="button"
               onClick={() => setMismatch(null)}
-              className="rounded border border-zinc-700 px-2 py-0.5 text-zinc-300 hover:bg-zinc-800"
+              className="rounded border border-line-2 px-2 py-1 text-[11px] text-ink-2 transition-colors hover:bg-panel-2 active:scale-[0.98]"
             >
               Cancel
             </button>
           </div>
         </div>
-      )}
-      {exportError && (
-        <p
-          className="mt-2 rounded border border-rose-900 bg-rose-950/50 p-2 text-xs text-rose-300"
-          role="alert"
-        >
-          {exportError}
-        </p>
       )}
     </section>
   )

@@ -1,5 +1,4 @@
 import type { ReactNode } from 'react'
-import HullMark from './HullMark'
 
 export type TabKey = 'analyze' | 'compare'
 
@@ -53,7 +52,11 @@ export default function Rail({ tab, onTab }: RailProps) {
       aria-label="Main"
       className="flex w-16 shrink-0 flex-col items-center border-r border-line bg-rail py-4"
     >
-      <HullMark className="mb-4 h-[21px] w-[34px] text-ink" />
+      {/* The app icon: the great-wave print, cropped square and shipped at
+          96 px — more than twice the 44 px slot, so a hidpi screen still gets
+          the full artwork instead of an upscaled 44. It carries its own navy
+          frame, so it needs no border on the rail. */}
+      <img src="/logo/wave-icon-96.png" alt="" className="mb-4 h-11 w-11" />
 
       <NavButton
         label="Analyze"

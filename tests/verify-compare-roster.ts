@@ -59,8 +59,6 @@ import {
   conditionsDiffer,
   deleteRecord,
   encodeRoster,
-  exportRunRecord,
-  parseRunRecordImport,
   ROSTER_LIMIT,
   type RunRecord,
   readRoster,
@@ -111,9 +109,9 @@ function deepEqual(a: unknown, b: unknown): boolean {
 }
 
 // --- a complete, table-rendering result -------------------------------------
-// Every numeric field the table, the delta column and the export round-trip
-// need, built by hand so the suite runs without a solve. The required set is
-// the module's contract; this sample satisfies all of it.
+// Every numeric field the table and the delta column need, built by hand so
+// the suite runs without a solve. The required set is the module's contract;
+// this sample satisfies all of it.
 
 const sampleInputs: SlotInputs = { weightKg: 75, lcgPctLwl: 52, kgMm: 280, heelDeg: 0 }
 
@@ -702,9 +700,9 @@ check(
 console.log('\n=== roster de-dup ===')
 
 // A record's id is minted per creation, so the SAME run arriving twice gets
-// two ids: importing the same .run.json twice, or solving the same hull at
-// the same conditions twice, would otherwise fill the roster with copies of
-// one run. The run's CONTENT is what identifies it.
+// two ids: solving the same hull at the same conditions twice would otherwise
+// fill the roster with copies of one run. The run's CONTENT is what
+// identifies it.
 const runA = recordFromSolve('Hull', 'a'.repeat(64), sampleInputs, sampleResult)
 const runACopy = recordFromSolve('Hull', 'a'.repeat(64), sampleInputs, sampleResult)
 check(
@@ -747,28 +745,6 @@ check(
   recordFingerprint(runA) !== recordFingerprint(heavier),
   'different conditions are a different fingerprint',
 )
-
-// The export/import round trip is the case that matters: the document's
-// volume passes through liters on the way out and back, and that trip can
-// move the last bit of the number. The same run must still be the same run.
-const exported = exportRunRecord(runA)
-const reimported = parseRunRecordImport(JSON.stringify(exported))
-check(reimported.ok, 'the exported document re-imports', reimported.ok ? '' : reimported.error)
-if (reimported.ok) {
-  check(
-    recordFingerprint(reimported.record) === recordFingerprint(runA),
-    'an imported copy of a run has the same fingerprint as the live one',
-  )
-  check(
-    addRosterRecord([runA], reimported.record).length === 1,
-    're-importing the same run does not duplicate the roster entry',
-    `got ${addRosterRecord([runA], reimported.record).length}`,
-  )
-  check(
-    canonicalRecord([runA], reimported.record).id === runA.id,
-    'the canonical record of a re-imported run is the one already stored',
-  )
-}
 
 // The roster functions hand back new containers and never their input.
 const rosterInput = [runA]
