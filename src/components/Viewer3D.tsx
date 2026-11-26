@@ -668,36 +668,15 @@ export default function Viewer3D({
           still solved and correct.
         </p>
       )}
-      <div className="pointer-events-none absolute left-2 top-2 rounded bg-zinc-950/70 px-2 py-1 font-mono text-[10px] uppercase tracking-wide text-zinc-400">
-        Z&thinsp;↑ up · X&thinsp;→ forward (LOA) · Y side (BOA)
-      </div>
-      {waterlineZ !== null && Number.isFinite(waterlineZ) && (
-        <div className="pointer-events-none absolute right-2 top-2 rounded bg-sky-950/80 px-2 py-1 font-mono text-[10px] tracking-wide text-sky-300">
-          waterline Z = {waterlineZ.toFixed(1)} mm
-        </div>
-      )}
-      {Math.abs(trimDeg) > 1e-6 && (
-        <div className="pointer-events-none absolute right-2 top-20 rounded bg-amber-950/80 px-2 py-1 font-mono text-[10px] tracking-wide text-amber-300">
-          trim = {trimDeg >= 0 ? '+' : ''}
-          {trimDeg.toFixed(2)}°
-        </div>
-      )}
-      {Math.abs(heelDeg) > 1e-6 && (
-        <div className="pointer-events-none absolute right-2 top-40 rounded bg-violet-950/80 px-2 py-1 font-mono text-[10px] tracking-wide text-violet-300">
-          heel = {heelDeg >= 0 ? '+' : ''}
-          {heelDeg.toFixed(2)}°
-        </div>
-      )}
-      {lcg && lcb && (
-        <div className="pointer-events-none absolute right-2 bottom-2 rounded bg-zinc-950/70 px-2 py-1 font-mono text-[10px] tracking-wide text-zinc-300">
-          <div className="text-[#ef4444]">
-            ● LCG: ({lcg.x.toFixed(1)}, {lcg.y.toFixed(1)}, {lcg.z.toFixed(1)})
-          </div>
-          <div className="text-[#22c55e]">
-            ● LCB: ({lcb.x.toFixed(1)}, {lcb.y.toFixed(1)}, {lcb.z.toFixed(1)})
-          </div>
-        </div>
-      )}
+      {/*
+        The overlay badges that used to sit on the canvas are gone: the axes
+        legend ("Z up · X forward"), the waterline-Z and trim readouts, and the
+        LCG/LCB coordinate block. Each one restated a number the results panel
+        already owns, and together they crowded the hull they were describing.
+        The scene itself still carries the information — the waterline plane, the
+        heel angle and the LCG/LCB markers in 3D — so nothing is lost from the
+        picture, only the redundant captions.
+      */}
     </div>
   )
 }

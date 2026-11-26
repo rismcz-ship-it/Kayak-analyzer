@@ -11,9 +11,7 @@
 // - `solveTrim`       — full solve: trim sweep, form coefficients, stability, GZ curve.
 // - `solveDraftLcb`   — the search half of `findDraft0Trim` (waterline + LCB only).
 // - `endTipImmersionHeelDeg` — the heel at which a stem tip immerses, from a
-//   curve's samples. Exported for the run-record import, which recomputes
-//   the angle from the freeboards the format carries instead of asserting
-//   "never immerses" for every foreign record.
+//   curve's samples.
 
 import {
   applyPitchY,

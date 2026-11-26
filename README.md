@@ -49,7 +49,6 @@ Calculation**.
 - Two slots, each with its own solver worker, so editing one never cancels the other
 - One shared waterline: whichever hull is deeper floats lower
 - A roster of saved runs that survives a reload (stored in this browser)
-- Run-record export/import: a saved run leaves the browser as a `.run.json` document
 
 ## Coordinates and units
 
@@ -100,8 +99,8 @@ LF in the repo and worktree (`.gitattributes`), which keeps the Biome line-endin
   waterplane planes. It is correct, not fast.
 - Hulls must be watertight with a closed deck. Open or partial sections cannot float and the
   solver rejects them.
-- `references/*.json` describes target event formats. The Compare tab's export/import emits and
-  reads `kayak_analyzer_solver.json`; the other four still have no producer.
+- `references/*.json` describes target event formats. None of them has a producer in the app
+  yet.
 
 ## Layout
 
@@ -112,7 +111,7 @@ src/lib/viewer-conventions.ts  solver -> Three.js sign translation (trim, heel)
 src/lib/inputs.ts          the input layer: parsing, bounds, validation, localStorage restore/persist, scale notices
 src/components/          App, Upload, Viewer3D, GzChart, ResultsPanel, CompareView, SlotPanel, CompareTable
 tests/                   assertion suites + diagnostic scripts + the test mesh
-references/              target schemas for saved runs — the Compare run-record export/import emits and reads kayak_analyzer_solver.json
+references/              target schemas for saved runs — no producer in the app yet
 .opencode/skills/        vendored third-party agent skill packs — not part of the app
 ```
 

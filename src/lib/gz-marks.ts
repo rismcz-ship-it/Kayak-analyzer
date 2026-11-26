@@ -9,9 +9,8 @@ import type { GZPoint } from './hydrostatics'
  * The curve this reads is sampled in ASCENDING heel order: the peak scan walks
  * it forward, and the angle-of-vanishing-stability interpolation reads the two
  * samples either side of the crossing. That ordering is a contract, not luck -
- * the run-record reader enforces it on import (`readGzCurve`) and the roster
- * validator enforces it on restore (`isSolveResultLike`), so no undocumented
- * curve reaches here.
+ * the roster validator enforces it on restore (`isSolveResultLike`), so no
+ * undocumented curve reaches here.
  */
 export interface GzMarks {
   /**

@@ -1,0 +1,674 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Analyze — Kayak Analyzer</title>
+<style>
+  :root {
+    --sky: #0b1317;
+    --sea-1: #0e2027;
+    --sea-2: #060e12;
+    --deck: #070d10;
+    --ink: #e3ecef;
+    --ink-2: #93a9b2;
+    --ink-3: #57707a;
+    --rule: #142329;
+    --rule-2: #1d3138;
+    --accent: #ff7a45;
+    --mono: ui-monospace, "Cascadia Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+    --sans: ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body { height: 100%; margin: 0; }
+
+  body {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: var(--sky);
+    color: var(--ink);
+    font: 12px/1.4 var(--sans);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .lbl {
+    font-size: 9px;
+    letter-spacing: 0.24em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+
+  /* ---------- header ---------- */
+
+  header {
+    flex: none;
+    height: 54px;
+    display: flex;
+    align-items: center;
+    gap: 36px;
+    padding: 0 34px;
+  }
+
+  .wordmark { display: flex; align-items: baseline; gap: 8px; font-size: 13px; font-weight: 600; }
+
+  .wordmark i {
+    font-style: normal;
+    font-size: 9px;
+    font-weight: 400;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+
+  nav.tabs { display: flex; gap: 24px; height: 100%; }
+
+  nav.tabs a {
+    display: flex;
+    align-items: center;
+    font-size: 10px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    text-decoration: none;
+    color: var(--ink-3);
+    border-bottom: 1px solid transparent;
+  }
+
+  nav.tabs a[aria-current="page"] { color: var(--accent); border-bottom-color: var(--accent); }
+  nav.tabs a:hover { color: var(--ink-2); }
+
+  header .right {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    font-size: 9.5px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+
+  header .right .f { font-family: var(--mono); letter-spacing: 0; text-transform: none; color: var(--ink-2); }
+
+  /* ---------- viewer ---------- */
+
+  .viewer {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .viewer > svg {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
+
+  .float {
+    position: absolute;
+    pointer-events: none;
+  }
+
+  .float .v {
+    font-family: var(--mono);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.02em;
+  }
+
+  .caption { top: 22px; left: 34px; }
+  .caption .v { margin-top: 7px; font-size: 15px; color: var(--ink-2); }
+  .caption .s { margin-top: 5px; font-family: var(--mono); font-size: 10.5px; color: var(--ink-3); }
+
+  .trimbox { top: 22px; right: 34px; text-align: right; }
+  .trimbox .v { margin-top: 6px; font-size: 30px; line-height: 1; }
+  .trimbox .v em {
+    font-style: normal;
+    font-size: 9px;
+    letter-spacing: 0.18em;
+    color: var(--ink-3);
+    margin-left: 8px;
+    vertical-align: 3px;
+  }
+  .trimbox .s { margin-top: 8px; font-family: var(--mono); font-size: 10.5px; color: var(--ink-2); }
+
+  /* ---------- rail ---------- */
+
+  .rail {
+    flex: none;
+    height: 124px;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    align-items: center;
+    border-top: 1px solid var(--rule-2);
+    background: var(--deck);
+  }
+
+  .cell { padding: 0 34px; border-right: 1px solid var(--rule); }
+  .cell:last-child { border-right: 0; }
+
+  .cell .v {
+    display: flex;
+    align-items: baseline;
+    gap: 9px;
+    margin-top: 7px;
+    font-family: var(--mono);
+    font-variant-numeric: tabular-nums;
+    font-size: 46px;
+    line-height: 0.95;
+    letter-spacing: -0.045em;
+  }
+
+  .cell .v small { font-size: 12px; letter-spacing: 0.02em; color: var(--ink-3); }
+  .cell.hero .v { color: var(--accent); }
+  .cell .s { margin-top: 8px; font-family: var(--mono); font-size: 10.5px; color: var(--ink-3); }
+
+  /* ---------- conditions ---------- */
+
+  .cond {
+    flex: none;
+    height: 96px;
+    display: flex;
+    align-items: center;
+    gap: 34px;
+    padding: 0 34px;
+    border-top: 1px solid var(--rule);
+  }
+
+  .fields { display: flex; gap: 34px; }
+
+  .f { display: flex; flex-direction: column; gap: 4px; }
+
+  .f label {
+    font-size: 8.5px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+
+  .f .row {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    border-bottom: 1px solid var(--rule-2);
+    padding-bottom: 3px;
+    min-width: 118px;
+  }
+
+  .f input {
+    width: 100%;
+    border: 0;
+    background: transparent;
+    color: var(--ink);
+    font: 15px var(--mono);
+    font-variant-numeric: tabular-nums;
+    padding: 0;
+  }
+
+  .f input:focus { outline: none; border-bottom: 1px solid var(--accent); }
+  .f .u { font-size: 9px; color: var(--ink-3); }
+
+  .spacer { margin-left: auto; }
+
+  .actions { display: flex; align-items: center; gap: 14px; }
+
+  .solve {
+    height: 38px;
+    padding: 0 22px;
+    border: 1px solid var(--accent);
+    background: var(--accent);
+    color: #12100e;
+    font: 10px var(--sans);
+    font-weight: 600;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    cursor: pointer;
+  }
+
+  .solve:hover { filter: brightness(1.08); }
+
+  .all {
+    height: 38px;
+    padding: 0 18px;
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    border: 1px solid var(--rule-2);
+    background: transparent;
+    color: var(--ink-2);
+    font: 10px var(--sans);
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    cursor: pointer;
+  }
+
+  .all:hover { color: var(--ink); border-color: var(--ink-3); }
+  .all b { font-weight: 400; color: var(--ink-3); }
+
+  /* ---------- footer ---------- */
+
+  .foot {
+    flex: none;
+    height: 34px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 34px;
+    border-top: 1px solid var(--rule);
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--ink-3);
+  }
+
+  /* ---------- detail sheet ---------- */
+
+  .sheet {
+    position: fixed;
+    inset: 0;
+    z-index: 10;
+    display: flex;
+    flex-direction: column;
+    background: #050b0e;
+    padding: 28px 34px 22px;
+  }
+
+  .sheet[hidden] { display: none; }
+
+  .sheet-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--rule-2);
+  }
+
+  .sheet-head h2 { margin: 0; font-size: 13px; font-weight: 600; letter-spacing: 0.01em; }
+  .sheet-head .r { display: flex; align-items: baseline; gap: 22px; }
+
+  .sheet-head .r span { font-family: var(--mono); font-size: 10.5px; color: var(--ink-3); }
+
+  .sheet-head button {
+    border: 0;
+    background: none;
+    padding: 2px 0;
+    color: var(--ink-3);
+    font: 10px var(--sans);
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    cursor: pointer;
+  }
+
+  .sheet-head button:hover { color: var(--ink); }
+
+  .sheet-body {
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: 1fr 1fr 1.15fr 1.35fr;
+    gap: 0 34px;
+    padding-top: 18px;
+  }
+
+  .col h3 {
+    margin: 0 0 8px;
+    padding-bottom: 5px;
+    border-bottom: 1px solid var(--rule-2);
+    font-size: 9px;
+    font-weight: 400;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+
+  .col dl { margin: 0; display: grid; grid-template-columns: 1fr auto; column-gap: 14px; }
+
+  .col dt {
+    padding: 5px 0;
+    border-bottom: 1px solid var(--rule);
+    font-size: 11px;
+    color: var(--ink-2);
+  }
+
+  .col dd {
+    margin: 0;
+    padding: 5px 0;
+    border-bottom: 1px solid var(--rule);
+    text-align: right;
+    font-family: var(--mono);
+    font-variant-numeric: tabular-nums;
+    font-size: 11.5px;
+  }
+
+  .col dd.hi { color: var(--accent); }
+
+  .curve svg { display: block; width: 100%; height: auto; margin-top: 4px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wordmark">kayak-analyzer <i>analyze</i></div>
+  <nav class="tabs" aria-label="Workspace">
+    <a href="#analyze" aria-current="page">Analyze</a>
+    <a href="#compare">Compare</a>
+  </nav>
+  <div class="right">
+    <span>kayak.stl</span>
+    <span class="f">watertight</span>
+    <span>sweep ±4.5° / 0.1°</span>
+  </div>
+</header>
+
+<section class="viewer" aria-label="Hull render on the waterline">
+
+  <svg viewBox="0 0 1280 560" preserveAspectRatio="none" aria-hidden="true">
+    <defs>
+      <linearGradient id="sea" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#0f2730"/>
+        <stop offset="1" stop-color="#060e12"/>
+      </linearGradient>
+      <linearGradient id="deckTop" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#2a5060"/>
+        <stop offset="1" stop-color="#1b3b48"/>
+      </linearGradient>
+      <linearGradient id="side" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#18333d"/>
+        <stop offset="1" stop-color="#0a1a20"/>
+      </linearGradient>
+      <clipPath id="hullClip">
+        <path d="M 800 190 C 620 194 440 206 260 224 C 200 230 140 237 100 244 L 100 250
+                 C 160 268 320 276 450 276 C 580 276 700 262 762 244
+                 C 788 236 799 212 800 190 Z"/>
+      </clipPath>
+      <marker id="dim" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6"
+              orient="auto-start-reverse">
+        <path d="M0 1 L10 5 L0 9 z" fill="#ff7a45"/>
+      </marker>
+    </defs>
+
+    <!-- sky / sea -->
+    <rect x="0" y="0" width="1280" height="352" fill="#0b1317"/>
+    <rect x="0" y="352" width="1280" height="208" fill="url(#sea)"/>
+
+    <!-- sea texture -->
+    <g stroke="#12252c" stroke-width="1">
+      <line x1="0" y1="412" x2="1280" y2="412"/>
+      <line x1="0" y1="470" x2="1280" y2="470"/>
+      <line x1="0" y1="528" x2="1280" y2="528"/>
+    </g>
+
+    <!-- station grid -->
+    <g stroke="#16282f" stroke-width="1">
+      <line x1="150" y1="238" x2="150" y2="392"/>
+      <line x1="272" y1="238" x2="272" y2="392"/>
+      <line x1="394" y1="238" x2="394" y2="392"/>
+      <line x1="516" y1="238" x2="516" y2="392"/>
+      <line x1="638" y1="238" x2="638" y2="392"/>
+      <line x1="760" y1="238" x2="760" y2="392"/>
+      <line x1="882" y1="238" x2="882" y2="392"/>
+      <line x1="1004" y1="238" x2="1004" y2="392"/>
+      <line x1="1130" y1="238" x2="1130" y2="392"/>
+    </g>
+
+    <!-- hull -->
+    <g transform="translate(10,-60) scale(1.4)">
+      <path d="M 800 190 C 620 194 440 206 260 224 C 200 230 140 237 100 244 L 100 250
+               C 160 268 320 276 450 276 C 580 276 700 262 762 244
+               C 788 236 799 212 800 190 Z"
+            fill="url(#side)" stroke="#7ba6b4" stroke-width="1"/>
+      <g clip-path="url(#hullClip)">
+        <rect x="90" y="250" width="720" height="40" fill="#040d11" opacity="0.72"/>
+      </g>
+      <!-- deck -->
+      <path d="M 800 190
+               C 620 194 440 206 260 224
+               C 200 230 140 237 100 244
+               C 140 232 200 208 260 200
+               C 440 138 620 130 800 190 Z"
+            fill="url(#deckTop)" stroke="#8fb9c6" stroke-width="0.9"/>
+      <!-- cockpit well -->
+      <ellipse cx="432" cy="181" rx="90" ry="16" transform="rotate(-4.2 432 181)"
+               fill="#0a1a20" stroke="#3f6774" stroke-width="1"/>
+      <ellipse cx="432" cy="180" rx="82" ry="11" transform="rotate(-4.2 432 180)"
+               fill="none" stroke="#2b4d59" stroke-width="1"/>
+      <!-- aft hatch -->
+      <ellipse cx="268" cy="212" rx="34" ry="7" transform="rotate(-4.2 268 212)"
+               fill="none" stroke="#3f6774" stroke-width="1"/>
+    </g>
+
+    <!-- waterline -->
+    <line x1="0" y1="352" x2="1280" y2="352" stroke="#ff7a45" stroke-width="1" opacity="0.9"/>
+    <line x1="0" y1="360" x2="1280" y2="360" stroke="#ff7a45" stroke-width="0.6" opacity="0.22"/>
+
+    <!-- dimension chain, bow -->
+    <g stroke="#ff7a45" stroke-width="0.8">
+      <line x1="1130" y1="206" x2="1192" y2="206"/>
+      <line x1="1130" y1="352" x2="1192" y2="352"/>
+      <line x1="1130" y1="410" x2="1192" y2="410"/>
+      <line x1="1199" y1="206" x2="1199" y2="352" marker-start="url(#dim)" marker-end="url(#dim)"/>
+      <line x1="1199" y1="352" x2="1199" y2="410" marker-start="url(#dim)" marker-end="url(#dim)"/>
+    </g>
+    <g font-family="ui-monospace, monospace">
+      <text x="1210" y="276" font-size="11" fill="#ff7a45">222.2</text>
+      <text x="1210" y="286" font-size="7" fill="#8a6a5c">BOW FB</text>
+      <text x="1210" y="384" font-size="11" fill="#ff7a45">94.0</text>
+      <text x="1210" y="394" font-size="7" fill="#8a6a5c">DRAFT</text>
+    </g>
+
+    <!-- stern freeboard leader -->
+    <path d="M 154 344 L 120 316 L 64 316" fill="none" stroke="#ff7a45" stroke-width="0.8"/>
+    <circle cx="154" cy="344" r="1.4" fill="#ff7a45"/>
+    <text x="60" y="312" font-family="ui-monospace, monospace" font-size="9" fill="#ff7a45" text-anchor="end">22.3</text>
+    <text x="60" y="322" font-family="ui-monospace, monospace" font-size="7" fill="#8a6a5c" text-anchor="end">STERN FB</text>
+
+    <text x="34" y="344" font-family="ui-monospace, monospace" font-size="9" fill="#57707a">STERN</text>
+    <text x="1246" y="344" font-family="ui-monospace, monospace" font-size="9" fill="#57707a" text-anchor="end">BOW</text>
+  </svg>
+
+  <div class="float caption">
+    <span class="lbl">Hull render · waterline section</span>
+    <div class="v">kayak.stl</div>
+    <div class="s">2 714.4 × 613.1 × 325.1 mm</div>
+  </div>
+
+  <div class="float trimbox">
+    <span class="lbl">Trim</span>
+    <div class="v">+3.60°<em>BOW UP</em></div>
+    <div class="s">LCB–LCG 1.68 mm</div>
+  </div>
+
+</section>
+
+<div class="rail">
+  <div class="cell hero">
+    <span class="lbl">Draft</span>
+    <div class="v">94.0<small>mm</small></div>
+    <div class="s">LWL 2 384 · BWL 489 mm</div>
+  </div>
+  <div class="cell">
+    <span class="lbl">Trim</span>
+    <div class="v">+3.60<small>°</small></div>
+    <div class="s">bow freeboard 222.2 · stern 22.3 mm</div>
+  </div>
+  <div class="cell">
+    <span class="lbl">Metacentric height</span>
+    <div class="v">+122<small>mm</small></div>
+    <div class="s">KM 402 · KG 280 mm</div>
+  </div>
+  <div class="cell">
+    <span class="lbl">LCB–LCG</span>
+    <div class="v">1.68<small>mm</small></div>
+    <div class="s">displacement 75.0 kg</div>
+  </div>
+</div>
+
+<div class="cond">
+  <div class="fields">
+    <div class="f">
+      <label for="g-mass">Weight</label>
+      <div class="row"><input id="g-mass" type="text" value="75.0" inputmode="decimal"><span class="u">kg</span></div>
+    </div>
+    <div class="f">
+      <label for="g-lcg">LCG from bow</label>
+      <div class="row"><input id="g-lcg" type="text" value="52.0" inputmode="decimal"><span class="u">%</span></div>
+    </div>
+    <div class="f">
+      <label for="g-kg">KG above keel</label>
+      <div class="row"><input id="g-kg" type="text" value="280" inputmode="decimal"><span class="u">mm</span></div>
+    </div>
+    <div class="f">
+      <label for="g-heel">Heel</label>
+      <div class="row"><input id="g-heel" type="text" value="0.0" inputmode="decimal"><span class="u">°</span></div>
+    </div>
+  </div>
+
+  <div class="spacer"></div>
+
+  <div class="actions">
+    <button class="all" type="button" id="all">All numbers <b>→</b></button>
+    <button class="solve" type="button">Solve</button>
+  </div>
+</div>
+
+<div class="foot">
+  <span>30 planes · coarse ±4.5° · fine 0.1° · converged</span>
+  <span>KB 58 · BM 344 · KM 402 mm</span>
+</div>
+
+<section class="sheet" id="sheet" hidden aria-label="All numbers">
+  <div class="sheet-head">
+    <h2>All numbers</h2>
+    <div class="r">
+      <span>kayak.stl · watertight</span>
+      <button type="button" id="close">Close ✕</button>
+    </div>
+  </div>
+
+  <div class="sheet-body">
+    <div class="col">
+      <h3>Flotation</h3>
+      <dl>
+        <dt>Draft</dt><dd>94.0 mm</dd>
+        <dt>LWL</dt><dd>2 384 mm</dd>
+        <dt>BWL</dt><dd>489 mm</dd>
+        <dt>Waterplane area</dt><dd>0.412 m²</dd>
+        <dt>TPC</dt><dd>0.0042</dd>
+        <dt>Wetted surface</dt><dd>1.842e6 mm²</dd>
+        <dt>Displacement</dt><dd>75.0 kg</dd>
+      </dl>
+    </div>
+
+    <div class="col">
+      <h3>Form coefficients</h3>
+      <dl>
+        <dt>Cb</dt><dd>0.4721</dd>
+        <dt>Cp</dt><dd>0.5813</dd>
+        <dt>Cm</dt><dd>0.8120</dd>
+        <dt>Cwp</dt><dd>0.6394</dd>
+      </dl>
+      <h3 style="margin-top:18px">Vessel</h3>
+      <dl>
+        <dt>LOA</dt><dd>2 714.4 mm</dd>
+        <dt>Beam</dt><dd>613.1 mm</dd>
+        <dt>Depth</dt><dd>325.1 mm</dd>
+        <dt>Shell</dt><dd>watertight</dd>
+      </dl>
+    </div>
+
+    <div class="col">
+      <h3>Stability</h3>
+      <dl>
+        <dt>KB</dt><dd>58 mm</dd>
+        <dt>BM</dt><dd>344 mm</dd>
+        <dt>KM</dt><dd>402 mm</dd>
+        <dt>KG</dt><dd>280 mm</dd>
+        <dt>GM</dt><dd class="hi">+122 mm</dd>
+        <dt>LCB–LCG</dt><dd>1.68 mm</dd>
+      </dl>
+      <h3 style="margin-top:18px">Attitude</h3>
+      <dl>
+        <dt>Trim</dt><dd>+3.60°</dd>
+        <dt>Bow freeboard</dt><dd>222.2 mm</dd>
+        <dt>Stern freeboard</dt><dd>22.3 mm</dd>
+        <dt>Heel</dt><dd>0.0°</dd>
+      </dl>
+    </div>
+
+    <div class="col curve">
+      <h3>Righting arm</h3>
+      <svg viewBox="0 0 420 190" role="img"
+           aria-label="GZ curve rising to 61 millimetres at 38 degrees, zero at 62 degrees">
+        <g stroke="#142329" stroke-width="1">
+          <line x1="38" y1="34" x2="404" y2="34"/>
+          <line x1="38" y1="62" x2="404" y2="62"/>
+          <line x1="38" y1="90" x2="404" y2="90"/>
+        </g>
+        <line x1="38" y1="118" x2="404" y2="118" stroke="#24393f" stroke-width="1"/>
+
+        <g font-family="ui-monospace, monospace" font-size="9" fill="#57707a" text-anchor="end">
+          <text x="32" y="121">0</text>
+          <text x="32" y="93">20</text>
+          <text x="32" y="65">40</text>
+          <text x="32" y="37">60</text>
+        </g>
+
+        <path d="M38 118 L76 92 L114 66 L152 45 L186 37 L212 41 L238 60 L262 83 L278 118 Z"
+              fill="#ff7a45" opacity="0.08"/>
+        <path d="M38 118 L76 92 L114 66 L152 45 L186 37 L212 41 L238 60 L262 83 L278 118 L310 137 L352 154"
+              fill="none" stroke="#ff7a45" stroke-width="1.6" stroke-linejoin="round"/>
+
+        <circle cx="186" cy="37" r="2.6" fill="#ff7a45"/>
+        <text x="195" y="32" font-family="ui-monospace, monospace" font-size="9" fill="#ff7a45">61 @ 38°</text>
+        <circle cx="278" cy="118" r="2.6" fill="none" stroke="#ff7a45" stroke-width="1.2"/>
+        <text x="278" y="111" font-family="ui-monospace, monospace" font-size="9" fill="#ff7a45"
+              text-anchor="middle">AVS 62°</text>
+
+        <g font-family="ui-monospace, monospace" font-size="9" fill="#57707a" text-anchor="middle">
+          <text x="38" y="172">0°</text>
+          <text x="160" y="172">30°</text>
+          <text x="282" y="172">60°</text>
+          <text x="404" y="172">90°</text>
+        </g>
+      </svg>
+
+      <dl style="margin-top:10px">
+        <dt>GZ max</dt><dd>61 mm</dd>
+        <dt>at heel</dt><dd>38.0°</dd>
+        <dt>AVS</dt><dd>62.0°</dd>
+        <dt>End-tip immersion</dt><dd>41.0°</dd>
+      </dl>
+    </div>
+  </div>
+</section>
+
+<script>
+  (function () {
+    var sheet = document.getElementById('sheet')
+    var open = document.getElementById('all')
+    var close = document.getElementById('close')
+
+    open.addEventListener('click', function () {
+      sheet.hidden = false
+      close.focus()
+    })
+
+    close.addEventListener('click', function () {
+      sheet.hidden = true
+      open.focus()
+    })
+
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && !sheet.hidden) {
+        sheet.hidden = true
+        open.focus()
+      }
+    })
+  })()
+</script>
+
+</body>
+</html>

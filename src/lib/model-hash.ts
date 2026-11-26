@@ -1,7 +1,6 @@
 /**
  * SHA-256 of a file's raw bytes, as lowercase hex — the identity an uploaded
- * mesh carries everywhere: roster record keys, the re-pick hash check, and the
- * `model_hash` of an exported run record.
+ * mesh carries everywhere: roster record keys and the re-pick hash check.
  *
  * Over the RAW bytes, never the parsed geometry: the ×1000 "Apply" path
  * rewrites every vertex of a metre-authored STL into its millimetre spelling,
@@ -22,10 +21,10 @@ export const SECURE_CONTEXT_ERROR =
 
 /**
  * The shape every hash this module issues has: 64 lowercase hex characters
- * (`toString(16)` never emits uppercase, and SHA-256 is 32 bytes). The
- * run-record import judges an incoming `model_hash` by this same pattern, so
- * the identity a document claims is checked against the one definition of a
- * hash rather than a second copy free to drift from the first.
+ * (`toString(16)` never emits uppercase, and SHA-256 is 32 bytes). The roster
+ * restore judges a stored record's `modelHash` by this same pattern, so a
+ * restored identity is checked against the one definition of a hash rather
+ * than a second copy free to drift from the first.
  */
 export const SHA256_HEX_PATTERN = /^[0-9a-f]{64}$/
 

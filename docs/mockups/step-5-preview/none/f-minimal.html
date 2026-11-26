@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>f · Minimal — kayak-analyzer</title>
+<style>
+  :root {
+    --mono: ui-monospace, "Cascadia Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+    --sans: ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif;
+    --paper: #fafaf8;
+    --ink: #111110;
+    --ink-2: #3d3d3a;
+    --ink-3: #8b8b85;
+    --rule: #dcdcd6;
+    --rule-2: #ececE6;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; overflow: hidden; }
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-variant-numeric: tabular-nums;
+    font-size: 13px;
+    line-height: 1.5;
+  }
+  .shell { width: 1280px; height: 800px; display: flex; flex-direction: column; padding: 40px 64px 28px; }
+  .top { flex: none; display: flex; justify-content: space-between; align-items: baseline; font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--ink-3); }
+  .top b { color: var(--ink); font-weight: 500; }
+  .hero { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(3, 1fr); align-items: center; }
+  .hero > div { padding: 0 44px; border-left: 1px solid var(--rule); }
+  .hero > div:first-child { border-left: 0; padding-left: 0; }
+  .hero .k { display: block; font-size: 10px; letter-spacing: 0.26em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 14px; }
+  .hero .v { font-family: var(--mono); font-size: 92px; line-height: 0.95; letter-spacing: -0.04em; display: block; }
+  .hero .v small { font-size: 26px; letter-spacing: -0.01em; color: var(--ink-3); margin-left: 6px; }
+  .hero .n { display: block; margin-top: 14px; font-size: 11px; color: var(--ink-3); }
+  .curve { flex: none; height: 148px; border-top: 1px solid var(--ink); position: relative; }
+  .curve .cap { position: absolute; top: 8px; left: 0; font-size: 9px; letter-spacing: 0.24em; text-transform: uppercase; color: var(--ink-3); }
+  .curve .capr { position: absolute; top: 8px; right: 0; font-size: 9px; letter-spacing: 0.24em; text-transform: uppercase; color: var(--ink-3); }
+  .curve svg { position: absolute; inset: 26px 0 18px; }
+  .ondemand { flex: none; border-top: 1px solid var(--ink); padding-top: 10px; }
+  .ondemand .h { display: flex; align-items: baseline; justify-content: space-between; font-size: 9px; letter-spacing: 0.24em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 8px; }
+  .ondemand .cols { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0 28px; }
+  .ondemand .grp { font-size: 10.5px; color: var(--ink-3); }
+  .ondemand .grp b { display: block; font-size: 9px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--ink-2); font-weight: 500; margin-bottom: 4px; }
+  .ondemand .grp span { font-family: var(--mono); display: block; white-space: nowrap; }
+  .ondemand .grp span i { font-style: normal; color: var(--ink-3); }
+  .foot { flex: none; display: flex; justify-content: space-between; padding-top: 12px; font-size: 9px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--ink-3); }
+</style>
+</head>
+<body>
+<div class="shell">
+<div class="top">
+    <span><b>kayak.stl</b> · watertight · 2 714.4 × 613.1 × 325.1 mm</span>
+    <span>75.0 kg · LCG 52.0 % · KG 280 mm · heel 0°</span>
+  </div>
+
+  <div class="hero">
+    <div>
+      <span class="k">Draft</span>
+      <span class="v num">94.0<small>mm</small></span>
+      <span class="n">keel at 0 · waterline +94.0 mm</span>
+    </div>
+    <div>
+      <span class="k">Trim</span>
+      <span class="v num">+3.60<small>°</small></span>
+      <span class="n">bow up · marine convention</span>
+    </div>
+    <div>
+      <span class="k">GM</span>
+      <span class="v num">+122<small>mm</small></span>
+      <span class="n">KG 280 mm under KM 402 mm</span>
+    </div>
+  </div>
+
+  <div class="curve">
+    <span class="cap">Righting arm GZ</span>
+    <span class="capr">peak 61 mm @ 38° · AVS 62°</span>
+    <svg viewBox="0 0 1150 100" preserveAspectRatio="none" aria-label="GZ righting arm curve">
+      <line x1="0" y1="52" x2="1150" y2="52" stroke="#dcdcd6" stroke-width="1"/>
+      <line x1="828" y1="0" x2="828" y2="100" stroke="#8b8b85" stroke-width="0.75" stroke-dasharray="3 4"/>
+      <text x="834" y="12" font-family="ui-monospace,monospace" font-size="10" fill="#8b8b85">AVS 62°</text>
+      <path d="M0 52 L120 42 L240 32 L360 24 L450 18 L560 14 L650 18 L760 26 L840 40 L900 52 L1000 70 L1150 92"
+            fill="none" stroke="#111110" stroke-width="1.5" stroke-linejoin="round"/>
+      <circle cx="560" cy="14" r="3.5" fill="#111110"/>
+      <text x="560" y="8" font-family="ui-monospace,monospace" font-size="10" fill="#111110" text-anchor="middle">61 mm @ 38°</text>
+    </svg>
+  </div>
+<div class="ondemand">
+    <div class="h"><span>Everything else — on demand</span><span>+ expand</span></div>
+    <div class="cols">
+      <div class="grp">
+        <b>Conditions</b>
+        <span>weight <i>75.0 kg</i></span>
+        <span>LCG <i>52.0 %</i></span>
+        <span>KG <i>280 mm</i></span>
+        <span>heel <i>0°</i></span>
+        <span>displacement <i>75.0 kg</i></span>
+        <span>trim sweep <i>±4.5°</i></span>
+        <span>fine step <i>0.1°</i></span>
+      </div>
+      <div class="grp">
+        <b>Flotation</b>
+        <span>draft <i>94.0 mm</i></span>
+        <span>LWL <i>2 384 mm</i></span>
+        <span>BWL <i>489 mm</i></span>
+        <span>waterplane <i>0.412 m²</i></span>
+        <span>TPC <i>0.0042</i></span>
+        <span>wetted <i>1.842e6 mm²</i></span>
+        <span>bow freeboard <i>222.2 mm</i></span>
+        <span>stern freeboard <i>22.3 mm</i></span>
+        <span>LCB–LCG <i>1.68 mm</i></span>
+      </div>
+      <div class="grp">
+        <b>Form coefficients</b>
+        <span>Cb <i>0.4721</i></span>
+        <span>Cp <i>0.5813</i></span>
+        <span>Cm <i>0.8120</i></span>
+        <span>Cwp <i>0.6394</i></span>
+      </div>
+      <div class="grp">
+        <b>Stability</b>
+        <span>KB <i>58 mm</i></span>
+        <span>BM <i>344 mm</i></span>
+        <span>KM <i>402 mm</i></span>
+        <span>KG <i>280 mm</i></span>
+        <span>GM <i>+122 mm</i></span>
+        <span>GZ max <i>61 mm @ 38°</i></span>
+        <span>AVS <i>62°</i></span>
+        <span>end-tip <i>41°</i></span>
+      </div>
+    </div>
+  </div>
+
+  <div class="foot">
+    <span>kayak-analyzer · analyze</span>
+    <span>three numbers · the rest when you ask</span>
+    <span>f · minimal</span>
+  </div>
+</div>
+</body>
+</html>

@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>i · Terminal — kayak-analyzer</title>
+<style>
+:root{
+  --bg:#0a0f0a; --ink:#c9e8b0; --dim:#5f7a52; --bright:#8dff9e; --amber:#ffd479; --bar:#1c2b1a;
+  --mono:ui-monospace,"Cascadia Mono","SFMono-Regular",Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{width:1280px;height:800px;overflow:hidden}
+body{background:var(--bg);color:var(--ink);font:13px/1.5 var(--mono);-webkit-font-smoothing:antialiased}
+.screen{width:1280px;height:800px;display:flex;flex-direction:column;padding:0}
+.bar{flex:none;background:var(--bar);color:var(--bright);padding:5px 14px;font-size:12px;letter-spacing:.08em;display:flex;justify-content:space-between}
+.bar .r{color:var(--dim)}
+.prompt{flex:none;padding:12px 16px 4px;color:var(--bright)}
+.prompt .dollar{color:var(--dim)}
+.out{flex:none;padding:0 16px;color:var(--dim)}
+.out b{color:var(--ink);font-weight:400}
+.cols{flex:1;min-height:0;display:flex;gap:28px;padding:10px 16px 8px;overflow:hidden}
+pre{font:13px/1.5 var(--mono);white-space:pre;color:var(--ink);font-variant-numeric:tabular-nums}
+pre .h{color:var(--amber)}
+pre .d{color:var(--dim)}
+pre .b{color:var(--bright)}
+.keys{flex:none;background:var(--bar);color:var(--dim);padding:5px 14px;font-size:11px;display:flex;gap:22px}
+.keys b{color:var(--bright);font-weight:400}
+.cursor{display:inline-block;width:8px;height:15px;background:var(--bright);vertical-align:-2px;animation:blink 1.1s steps(1) infinite}
+@keyframes blink{50%{opacity:0}}
+</style>
+</head>
+<body>
+<div class="screen">
+  <div class="bar"><span>Kayak-analyzer TUI v0.1.0 — analyze</span><span class="r">tty1 · 1280x800</span></div>
+  <div class="prompt"><span class="dollar">$</span> ka analyze kayak.stl --weight 75.0 --lcg 52.0 --kg 280 --heel 0</div>
+  <div class="out">
+    <div>model  <b>kayak.stl</b>  watertight  <b>2 714.4 x 613.1 x 325.1 mm</b></div>
+    <div>load   <b>75.0 kg · LCG 52.0 % from bow · KG 280 mm · heel 0°</b></div>
+    <div>solve  sweep <b>±4.5°</b> · fine step <b>0.1°</b> · converged</div>
+  </div>
+  <div class="cols">
+<pre><span class="h">+-- ANSWERS ------------------------------+</span>
+<span class="h">|</span>  draft          <span class="b">94.0 mm</span>                <span class="h">|</span>
+<span class="h">|</span>  trim           <span class="b">+3.60° bow-up</span>         <span class="h">|</span>
+<span class="h">|</span>  GM             <span class="b">+122 mm</span>               <span class="h">|</span>
+<span class="h">|</span>  LCB-LCG offset <span class="b">1.68 mm</span>               <span class="h">|</span>
+<span class="h">+-----------------------------------------+</span>
+
+<span class="h">+-- GZ (mm) vs heel (deg) -----------------+</span>
+<span class="d"> 60 |</span>               *********                 <span class="d">peak 61 mm @ 38°</span>
+<span class="d"> 50 |</span>           ****         **               
+<span class="d"> 40 |</span>        ***               **              
+<span class="d"> 30 |</span>      **                    **            
+<span class="d"> 20 |</span>    **                                   
+<span class="d"> 10 |</span> ***                          *          
+<span class="d">  0 +</span>*------------------------------*<---------<span class="d">AVS 62°</span>
+<span class="d"> -10 |</span>                                *        
+<span class="d"> -20 |</span>                                 **       
+<span class="d"> -30 |</span>                                   **     
+<span class="d"> -40 |</span>                                     **   
+<span class="d"> -50 |</span>                                       ** <span class="d">end-tip 41° near peak</span>
+<span class="d">    +</span>0         20        40        60        80  <span class="d">heel deg</span>
+<span class="h">+-----------------------------------------+</span>
+<span class="d"># scroll ↑/↓ · tab panels · q quit</span> <span class="cursor"></span></pre>
+<pre><span class="h">FLOTATION</span>
+  LWL .............. <span class="b">2 384 mm</span>
+  BWL .............. <span class="b">489 mm</span>
+  waterplane area .. <span class="b">0.412 m2</span>
+  TPC .............. <span class="b">0.0042</span>
+  wetted surface ... <span class="b">1.842e6 mm2</span>
+  displacement ..... <span class="b">75.0 kg</span>
+  bow freeboard .... <span class="b">222.2 mm</span>
+  stern freeboard .. <span class="b">22.3 mm</span>
+
+<span class="h">FORM COEFFICIENTS</span>
+  Cb <span class="b">0.4721</span>  Cp <span class="b">0.5813</span>
+  Cm <span class="b">0.8120</span>  Cwp <span class="b">0.6394</span>
+
+<span class="h">STABILITY</span>
+  KB <span class="b">58 mm</span>   BM <span class="b">344 mm</span>  KM <span class="b">402 mm</span>
+  KG <span class="b">280 mm</span>  GM <span class="b">+122 mm</span>
+  GZ max <span class="b">61 mm at 38 deg</span>
+  AVS <span class="b">62 deg</span> · end-tip immersion <span class="b">41 deg</span>
+
+<span class="d">axes: Z-up, bow +X · +trim = bow up</span></pre>
+  </div>
+  <div class="keys"><span><b>↑/↓</b> scroll</span><span><b>tab</b> cycle panel</span><span><b>/</b> search</span><span><b>?</b> help</span><span><b>q</b> quit</span><span style="margin-left:auto">kayak-analyzer · 2026-11-23</span></div>
+</div>
+</body>
+</html>

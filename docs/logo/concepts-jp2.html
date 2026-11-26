@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>kayak-analyzer — the great wave, in detail</title>
+<style>
+  :root { --ink:#12181F; --paper:#EEF2F5; --accent:#0FA3B5; --accent-dark:#2EC4D6; }
+  * { box-sizing:border-box; margin:0; }
+  body { font-family:"Segoe UI","Helvetica Neue",Arial,sans-serif; background:#E9EBEE; color:var(--ink); padding:40px; max-width:1180px; }
+  h1 { font-size:20px; font-weight:600; letter-spacing:-0.4px; margin-bottom:4px; }
+  .sub { font-size:13px; opacity:.65; margin-bottom:26px; line-height:1.5; max-width:900px; }
+  h2 { font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:1.2px; opacity:.55; margin:30px 0 12px; }
+  .strip { display:flex; flex-wrap:wrap; gap:12px; align-items:flex-end; background:#fff; border-radius:14px; padding:16px; }
+  .tile { display:flex; flex-direction:column; align-items:center; gap:6px; }
+  .tile .box { background:#fff; border:1px solid #e3e6ea; border-radius:8px; display:flex; align-items:center; justify-content:center; padding:6px; }
+  .cap { font-size:10px; opacity:.55; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(520px,1fr)); gap:14px; }
+  .card { background:#fff; border-radius:14px; padding:18px; display:flex; gap:18px; }
+  .renders { display:flex; flex-direction:column; gap:8px; align-items:center; }
+  .panel { border-radius:10px; display:flex; align-items:center; justify-content:center; padding:14px; }
+  .light { background:#F4F6F8; }
+  .dark  { background:var(--ink); }
+  .meta { flex:1; }
+  .meta h3 { font-size:14px; font-weight:600; margin-bottom:4px; }
+  .meta .why { font-size:12px; line-height:1.45; opacity:.8; margin-bottom:8px; }
+  .meta .risk { font-size:11px; line-height:1.4; opacity:.55; }
+  .meta b { font-weight:600; opacity:.8; }
+  .note { font-size:12px; opacity:.65; margin-top:18px; line-height:1.5; }
+</style>
+</head>
+<body>
+<h1>kayak-analyzer — the great wave, in detail</h1>
+<p class="sub">Redrawn at <b>240&times;240</b> instead of 120, because the print is made of detail: clawed foam, foam built from <b>repeated spiral-tipped discs</b>, engraved parallel hatching that follows every curve, and four overlapping wave layers with the big empty quadrant up top-right. Same approved palette (ink / paper / teal). The 16-px strip at the bottom is still the honest test — a mark this detailed is a <i>master</i>, and its favicon would be a derivative.</p>
+
+<h2>Context: the four layers, as the print stacks them</h2>
+<div class="strip" id="strip"></div>
+
+<h2>Directions</h2>
+<div class="grid" id="grid"></div>
+
+<p class="note">Next: you shortlist 2&ndash;3, we stress them (busy ground, print, mono, embroidery-ish scenarios) and refine the winners on the grid — the way the report's protocol does it.</p>
+
+<script>
+const INK="#12181F", PAPER="#EEF2F5", TEAL="#0FA3B5", TEALD="#2EC4D6";
+
+function svg(inner, vb, colors, size, id) {
+  const [vx, vy, vw, vh] = vb.split(" ").map(Number);
+  return `<svg width="${size}" height="${Math.round(size*vh/vw)}" viewBox="${vb}" fill="none" xmlns="http://www.w3.org/2000/svg">${inner(colors, id)}</svg>`;
+}
+
+// foam: a cream disc with a dark ring and the spiral hook inside it — the print's tell
+function foam(c, cx, cy, r) {
+  const ring = `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${c.PAPER}" stroke="${c.INK}" stroke-width="${(r*0.22).toFixed(2)}"/>`;
+  const k = (r*0.42).toFixed(2);
+  const hook = `<path d="M ${cx-k} ${cy-(r*0.16).toFixed(2)} A ${k} ${k} 0 1 1 ${(cx+k*0.25).toFixed(2)} ${(cy+k*0.8).toFixed(2)}" fill="none" stroke="${c.INK}" stroke-width="${(r*0.16).toFixed(2)}" stroke-linecap="round"/>`;
+  return ring + hook;
+}
+// a tapering foam claw
+function claw(c, d) {
+  return `<path d="${d}" fill="${c.PAPER}" stroke="${c.INK}" stroke-width="2.2" stroke-linejoin="round"/>`;
+}
+// engraved hatching
+function hatch(c, d, w, op) {
+  return `<path d="${d}" fill="none" stroke="${c.INK}" stroke-width="${w}" opacity="${op}" stroke-linecap="round"/>`;
+}
+
+const MAIN = "M 34 240 L 34 200 C 36 166 46 128 66 100 C 80 82 92 62 104 56 C 122 48 142 50 158 58 C 178 68 196 84 210 104 C 222 120 228 140 224 158 C 220 174 206 182 190 180 C 160 178 126 190 100 208 C 78 220 60 230 48 240 Z M 170 104 A 18 28 -18 1 0 170 160 A 18 28 -18 1 0 170 104 Z";
+
+// foam discs sitting on the crest + the throwing lip
+const CREST = [[106,50,8],[124,45,7],[140,49,9],[155,60,9],[170,72,10],[184,86,11],[197,102,12],[209,120,11],[218,138,9],[223,154,7]];
+
+function waveBody(c, bodyFill, keyline) {
+  return `<path d="${MAIN}" fill="${bodyFill}" fill-rule="evenodd" stroke="${keyline}" stroke-width="2.6"/>`;
+}
+function crestFoam(c) {
+  return CREST.map(([x,y,r]) => foam(c,x,y,r)).join("");
+}
+function claws(c) {
+  return claw(c,"M 176 64 C 186 68 194 80 198 94 C 190 82 182 72 174 68 Z")
+       + claw(c,"M 196 84 C 206 88 214 100 218 114 C 210 102 202 92 194 88 Z")
+       + claw(c,"M 212 110 C 220 114 226 124 228 136 C 222 124 214 116 208 112 Z");
+}
+function engraving(c, col) {
+  return hatch(c,"M 44 198 C 52 170 62 142 78 118",1.8,0.45)
+       + hatch(c,"M 56 208 C 64 178 76 150 94 126",1.8,0.45)
+       + hatch(c,"M 70 216 C 80 188 94 160 112 136",1.8,0.45)
+       + hatch(c,"M 122 104 C 134 92 148 84 162 80",1.6,0.4)
+       + hatch(c,"M 132 132 C 144 118 158 110 172 106",1.6,0.4);
+}
+function foreWater(c) {
+  return `<path d="M0 214 H240 V240 H0 Z" fill="${c.TEAL}"/>`
+       + hatch(c,"M 10 222 C 40 218 70 220 100 226",1.6,0.5)
+       + hatch(c,"M 120 224 C 150 220 180 222 214 228",1.6,0.5);
+}
+function rearCrest(c) {
+  return `<path d="M 8 216 C 8 200 14 184 28 174 C 40 166 54 166 62 174 C 70 182 68 194 58 200 C 44 208 30 212 18 216 Z" fill="${c.TEAL}" stroke="${c.INK}" stroke-width="2.2"/>`
+       + foam(c,30,166,8) + foam(c,48,160,6) + foam(c,62,170,5);
+}
+function rightSwell(c) {
+  return `<path d="M 240 240 L 240 204 C 222 200 202 194 184 186 C 172 180 164 174 162 166 C 160 158 170 154 178 160 C 192 170 212 180 232 188 C 238 191 242 196 240 204 Z" fill="${c.TEAL}" stroke="${c.INK}" stroke-width="2.2"/>`
+       + foam(c,166,162,7) + foam(c,184,168,6) + foam(c,204,176,5) + foam(c,222,184,4.5);
+}
+function scrollBand(c) {
+  let s = "";
+  const d = [[74,206,11],[92,212,12],[112,214,11],[132,212,10],[150,208,12],[168,204,11],[186,200,10],[202,196,9],[66,198,9]];
+  for (const [x,y,r] of d) s += foam(c,x,y,r);
+  return s;
+}
+
+const marks = {
+
+  K1: { name:"K1 — Aizuri-e: the print, in the app's colours",
+    why:"The most faithful translation: flat teal water, dark keyline around every shape, cream foam built from spiral-tipped discs, and the four layers stacked exactly as the print stacks them — rear crest, the great wave with its hollow, the scroll-foam band, the right swell, foreground water with engraved lines.",
+    risk:"The most complex mark here by far; the favicon would need a separate simplified derivative.",
+    draw:(c,id)=>`
+      ${foreWater(c)}
+      ${rearCrest(c)}
+      ${scrollBand(c)}
+      ${rightSwell(c)}
+      ${waveBody(c, c.TEAL, c.INK)}
+      ${engraving(c)}
+      ${crestFoam(c)}
+      ${claws(c)}
+      ${foam(c,96,54,6)} ${foam(c,84,64,5)} ${foam(c,72,76,4)}` },
+
+  K2: { name:"K2 — Seigaiha, four bands deep",
+    why:"The wave <i>pattern</i> at full density: two offset rows of overlapping fans, four concentric bands per fan, ink keylines between every band, sitting over a teal waterline with its own engraving. Not a picture of a wave — the lattice itself.",
+    risk:"Reads &lsquo;scales / roofing&rsquo;; the two rows fight each other at small sizes.",
+    draw:(c,id)=>`
+      <defs><clipPath id="k2a-cp-${id}"><path d="M0 0 H240 V150 H0 Z"/></clipPath>
+           <clipPath id="k2b-cp-${id}"><path d="M0 0 H240 V104 H0 Z"/></clipPath></defs>
+      <g clip-path="url(#k2a-cp-${id})">
+        ${[60,120,180].map(cx => foamFan(c,cx,150,[44,32,20,8])).join("")}
+      </g>
+      <g clip-path="url(#k2b-cp-${id})">
+        ${[0,120,240].map(cx => foamFan(c,cx,104,[44,32,20,8])).join("")}
+      </g>
+      ${foreWater(c)}
+      ${hatch(c,"M 20 224 C 60 220 110 222 160 228",1.6,0.5)}` },
+
+  K3: { name:"K3 — Keyblock: the wave at maximum contrast",
+    why:"The same silhouette with the colour pulled out: the wave in solid ink, the foam and the hollow cut out of it, teal only in the water. The woodblock key-block reading — boldest at any size, and the version that survives print and embroidery.",
+    risk:"Loses the aizuri blueness that makes the reference read as Japanese.",
+    draw:(c,id)=>`
+      ${foreWater(c)}
+      ${rearCrest(c).replace(new RegExp(c.TEAL,"g"), c.INK).replace(new RegExp(c.INK,"g"), c.INK)}
+      ${scrollBand(c)}
+      ${rightSwell(c)}
+      ${waveBody(c, c.INK, c.INK)}
+      ${engraving(c).replace(new RegExp(c.INK,"g"), c.PAPER)}
+      ${claws(c)}` },
+
+  K4: { name:"K4 — The enso holds the wave",
+    why:"The zen circle, open at the lower right, filled with teal water — and the whole great wave breaking across it, claws, foam discs, hollow, engraving and all. Two forms that mean opposite things, one holding the other.",
+    risk:"Circle + wave drifts toward a generic app icon if the detail is dropped at small sizes.",
+    draw:(c,id)=>`
+      <circle cx="120" cy="120" r="112" fill="${c.TEAL}"/>
+      <path d="M 34 236 A 112 112 0 1 0 218 66" fill="none" stroke="${c.INK}" stroke-width="10" stroke-linecap="round"/>
+      <g transform="translate(24 18) scale(0.72)">
+        ${waveBody(c, c.INK, c.INK)}
+        ${engraving(c).replace(new RegExp(c.INK,"g"), c.PAPER)}
+        ${crestFoam(c).replace(new RegExp(c.PAPER,"g"), c.PAPER)}
+        ${claws(c)}
+      </g>
+      ${foam(c,196,44,9)} ${foam(c,214,64,7)}` }
+};
+
+function foamFan(c, cx, base, radii) {
+  return radii.map(r => `<circle cx="${cx}" cy="${base}" r="${r}" fill="none" stroke="${c.TEAL}" stroke-width="7" stroke-linecap="round"/>`).join("")
+       + `<circle cx="${cx}" cy="${base}" r="${radii[0]}" fill="none" stroke="${c.INK}" stroke-width="2" opacity="0.5"/>`;
+}
+
+const strip = document.getElementById("strip");
+const grid = document.getElementById("grid");
+
+for (const [k, m] of Object.entries(marks)) {
+  const lightC = {INK, PAPER, TEAL}, darkC = {INK:PAPER, PAPER:INK, TEAL:TEALD};
+  strip.insertAdjacentHTML("beforeend", `<div class="tile"><div class="box">${svg(m.draw,"0 0 240 240",lightC,16,k)}</div><span class="cap">${k} @16px</span></div>`);
+  grid.insertAdjacentHTML("beforeend", `
+    <div class="card">
+      <div class="renders">
+        <div class="panel light">${svg(m.draw,"0 0 240 240",lightC,200,k+"l")}</div>
+        <div class="panel dark">${svg(m.draw,"0 0 240 240",darkC,200,k+"d")}</div>
+        <div class="panel light">${svg(m.draw,"0 0 240 240",{INK:INK,PAPER:PAPER,TEAL:INK},200,k+"m")}</div>
+      </div>
+      <div class="meta">
+        <h3>${m.name}</h3>
+        <p class="why">${m.why}</p>
+        <p class="risk"><b>Watch out:</b> ${m.risk}</p>
+        <p class="cap" style="margin-top:8px">light &middot; dark &middot; one-colour</p>
+      </div>
+    </div>`);
+}
+</script>
+</body>
+</html>

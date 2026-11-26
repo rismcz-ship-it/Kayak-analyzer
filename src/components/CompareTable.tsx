@@ -1,4 +1,4 @@
-import { avsCellText, conditionsDiffer, type SlotInputs } from '../lib/compare'
+import { avsCellText, type SlotInputs } from '../lib/compare'
 import { fmt, signed } from '../lib/format'
 import { type GzMarks, gzMarks } from '../lib/gz-marks'
 import type { TrimSolveResult } from '../lib/hydrostatics'
@@ -61,12 +61,10 @@ interface Section {
  * equilibrium, form, stability.
  *
  * Deliberately NOT every row of that panel. Five diagnostics (waterplane area,
- * midship area, wetted surface, waterplane second moment, loop count) are
- * fields an IMPORTED record fills with neutral zeros — the run-record format
- * does not carry them — so a row for one would show a live hull's real number
- * beside an imported record's 0 and call that a difference. Every row here sits
- * inside the set the format carries, which is the rule
- * `parseRunRecordImport` documents.
+ * midship area, wetted surface, waterplane second moment, loop count) are not
+ * shown: they are derived quantities the comparison does not need, and leaving
+ * them out keeps one row set that fits on a phone-width screen without
+ * collapsing the table into a scroll.
  *
  * `LCG X` and `LCB X` are IN, and `Waterline Z` stays out: both meshes are
  * centred on their own bounding box at upload (`Upload.tsx`), so each X is
@@ -115,8 +113,7 @@ function buildSections(
 
   // A non-converged sweep's numbers are a best estimate. The row marks them
   // as such instead of letting them sit beside a settled run's in every other
-  // row and in the delta. Both fields are carried by the run-record format, so
-  // an imported record shows its own answer, not a live hull's.
+  // row and in the delta.
   const convergedCell = (r: TrimSolveResult | null): string =>
     r === null
       ? EMPTY
@@ -165,7 +162,7 @@ function buildSections(
         metric('BM (Metacentric radius)', (r) => r.BM, ' mm'),
         metric('KM (Keel→Metacenter)', (r) => r.KM, ' mm'),
         metric('KG (Keel→Gravity)', (r) => r.kgMm, ' mm'),
-        metric('GM (Metacentric height)', (r) => r.GM, ' mm'),
+        metric('Initial stability (GM)', (r) => r.GM, ' mm'),
         gzRow,
         avsRow,
       ],
@@ -178,93 +175,75 @@ const columnStyle = (index: 0 | 1) => ({
   color: `#${SLOT_COLORS[index].toString(16).padStart(6, '0')}`,
 })
 
+/**
+ * The full table - every metric the format carries, behind the panel's footer.
+ *
+ * The Compare tab LEADS with the six metrics that decide a comparison; this is
+ * the receipt behind "All metrics", and it is here rather than in the lead
+ * because a 23-row table read as the page's headline makes the comparison
+ * unreadable.
+ */
 export default function CompareTable({ a, b }: CompareTableProps) {
   const aMarks = a.result ? gzMarks(a.result.gzCurve) : null
   const bMarks = b.result ? gzMarks(b.result.gzCurve) : null
-  const both = a.result !== null && b.result !== null && aMarks !== null && bMarks !== null
-  // A loaded slot solves itself (the Compare solve is automatic), so a single
-  // run is worth reading on its own: the empty column and every delta wait for
-  // the second hull. With neither run there is no number to show at all.
   const any = a.result !== null || b.result !== null
   const sections = any ? buildSections(a.result, b.result, aMarks, bMarks) : []
 
-  // A visible note, not an error: the two runs may legitimately be at
-  // different conditions (that is often WHY they are being compared), but the
-  // numbers then describe different loadings, not one comparison. It reads the
-  // conditions the DISPLAYED results were produced at, so an edit that has not
-  // re-solved yet raises no false difference - and two columns really were
-  // solved differently says so.
-  const conditions = a.inputs && b.inputs ? conditionsDiffer(a.inputs, b.inputs) : []
-
   return (
-    <section className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-4">
-      <h2 className="mb-3 text-sm font-semibold text-zinc-200">Comparison</h2>
-      {!any && (
-        <p className="mb-2 text-xs text-zinc-500">Both slots need a run with numbers to compare.</p>
-      )}
-      {any && !both && (
-        <p className="mb-2 text-xs text-zinc-500">
-          Only one slot has a run — its numbers are below, and the other column and the deltas fill
-          in once the second hull solves.
-        </p>
-      )}
-      {conditions.length > 0 && (
-        <p
-          className="mb-3 rounded border border-zinc-700 bg-zinc-800/50 p-2 text-xs text-zinc-400"
-          role="note"
-        >
-          Different conditions: {conditions.join(', ')} — the runs are not directly comparable.
-        </p>
-      )}
-      <table className="w-full text-sm">
-        <thead>
-          <tr className="text-xs text-zinc-400">
-            <th scope="col" className="py-1 text-left font-medium">
-              Metric
-            </th>
-            <th scope="col" className="py-1 text-right font-medium" style={columnStyle(0)}>
-              A ·{' '}
-              <span className="font-normal text-zinc-400">
-                {a.name ?? 'empty'}
-                {a.stale ? ' (re-solving)' : ''}
-              </span>
-            </th>
-            <th scope="col" className="py-1 text-right font-medium" style={columnStyle(1)}>
-              B ·{' '}
-              <span className="font-normal text-zinc-400">
-                {b.name ?? 'empty'}
-                {b.stale ? ' (re-solving)' : ''}
-              </span>
-            </th>
-            <th scope="col" className="py-1 text-right font-medium text-zinc-400">
-              Δ (A − B)
+    <table className="w-full border-collapse">
+      <thead>
+        <tr className="text-[11px] text-ink-3">
+          <th scope="col" className="pb-1 text-left font-medium">
+            Metric
+          </th>
+          <th scope="col" className="pb-1 text-right font-medium" style={columnStyle(0)}>
+            A ·{' '}
+            <span className="font-normal text-ink-3">
+              {a.name ?? 'empty'}
+              {a.stale ? ' (re-solving)' : ''}
+            </span>
+          </th>
+          <th scope="col" className="pb-1 text-right font-medium" style={columnStyle(1)}>
+            B ·{' '}
+            <span className="font-normal text-ink-3">
+              {b.name ?? 'empty'}
+              {b.stale ? ' (re-solving)' : ''}
+            </span>
+          </th>
+          <th scope="col" className="pb-1 text-right font-medium text-ink-3">
+            Δ (A − B)
+          </th>
+        </tr>
+      </thead>
+      {sections.map((section) => (
+        <tbody key={section.title}>
+          <tr>
+            <th
+              scope="colgroup"
+              colSpan={4}
+              className="pt-3 pb-1 text-left text-[11px] font-semibold tracking-[0.08em] text-ink-3 uppercase"
+            >
+              {section.title}
             </th>
           </tr>
-        </thead>
-        {sections.map((section) => (
-          <tbody key={section.title}>
-            <tr>
-              <th
-                scope="colgroup"
-                colSpan={4}
-                className="pt-3 pb-1 text-left text-xs font-semibold uppercase tracking-wider text-zinc-300"
-              >
-                {section.title}
+          {section.rows.map((row) => (
+            <tr key={row.label} className="border-t border-line">
+              <th scope="row" className="py-1 pr-2 text-left text-[11px] font-normal text-ink-2">
+                {row.label}
               </th>
+              <td className="py-1 text-right font-mono text-[11px] tabular-nums text-ink">
+                {row.a}
+              </td>
+              <td className="py-1 text-right font-mono text-[11px] tabular-nums text-ink">
+                {row.b}
+              </td>
+              <td className="py-1 text-right font-mono text-[11px] tabular-nums text-accent-300">
+                {row.delta ?? '—'}
+              </td>
             </tr>
-            {section.rows.map((row) => (
-              <tr key={row.label} className="border-t border-zinc-800/60">
-                <th scope="row" className="py-1 pr-2 text-left font-normal text-zinc-400">
-                  {row.label}
-                </th>
-                <td className="py-1 text-right font-mono text-zinc-100">{row.a}</td>
-                <td className="py-1 text-right font-mono text-zinc-100">{row.b}</td>
-                <td className="py-1 text-right font-mono text-sky-300">{row.delta ?? '—'}</td>
-              </tr>
-            ))}
-          </tbody>
-        ))}
-      </table>
-    </section>
+          ))}
+        </tbody>
+      ))}
+    </table>
   )
 }

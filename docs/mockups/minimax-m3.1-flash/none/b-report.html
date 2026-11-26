@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Hydrostatic survey · kayak.stl</title>
+<style>
+  :root{
+    --paper:#f6f6f2; --paper2:#ffffff; --paper3:#eceeea;
+    --ink:#15181b; --ink2:#3f464c; --muted:#7a8087; --rule:#d4d6d1; --rule2:#e4e6e1;
+    --navy:#1f3a5f; --rust:#9c3b2e;
+    --sea-a:#e7ecee; --sea-b:#dbe3e7;
+    --deck-a:#ffffff; --deck-b:#e8e6df; --deck-c:#c2c4bd;
+    --side-a:#b9bcb6; --side-b:#7e847f; --under-a:#8f948e; --under-b:#5c615d;
+    --waterline:#1f6f9c; --hull-edge:rgba(30,40,45,.3); --hull-seam:rgba(30,40,45,.16);
+    --hull-label:#2b3236; --cockpit-rim:#6e736e; --cockpit-hole:#2f3330;
+    --marker-lcg:#9c3b2e; --marker-lcb:#1f6f9c; --leader:#1f3a5f; --dim:#9c3b2e;
+    --ax-z:#5b6164; --ax-x:#1f3a5f; --ax-y:#9aa0a3; --ax-t:#7a8087;
+    --serif:Georgia,"Iowan Old Style","Times New Roman",Times,serif;
+    --sans:"Inter","Segoe UI",system-ui,-apple-system,sans-serif;
+    --mono:ui-monospace,"Cascadia Mono",Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{background:#dedfda;color:var(--ink);font-family:var(--serif);font-size:14px;line-height:1.5;
+    font-variant-numeric:tabular-nums;overflow:hidden;-webkit-font-smoothing:antialiased}
+  .app{height:100vh;max-height:800px;width:100vw;max-width:1280px;margin:0 auto;background:var(--paper);
+    display:flex;flex-direction:column;overflow:hidden;position:relative}
+  .vh{position:absolute;opacity:0;width:0;height:0;pointer-events:none}
+
+  .masthead{height:76px;flex:0 0 76px;display:flex;align-items:flex-end;gap:24px;padding:0 40px 12px;
+    border-bottom:1px solid var(--ink)}
+  .masthead .t{font-size:26px;letter-spacing:-.01em;line-height:1}
+  .masthead .s{font-family:var(--sans);font-size:11px;color:var(--muted);padding-bottom:2px}
+  .masthead .sp{flex:1}
+  .sheet{font-family:var(--sans);font-size:11px;color:var(--muted)}
+  .sheet b{color:var(--ink2);font-weight:500}
+  .tabs{display:flex;gap:18px;font-family:var(--sans);font-size:12px}
+  .tabs label{color:var(--muted);cursor:pointer;border-bottom:2px solid transparent;padding-bottom:2px}
+  #scr-hull:checked ~ .masthead .tabs label[for="scr-hull"],
+  #scr-hydro:checked ~ .masthead .tabs label[for="scr-hydro"]{color:var(--ink);border-bottom-color:var(--ink)}
+
+  .strip{height:34px;flex:0 0 34px;display:flex;align-items:center;gap:0;padding:0 40px;
+    border-bottom:1px solid var(--rule);background:var(--paper3);font-family:var(--sans);font-size:11.5px}
+  .strip .lab{color:var(--muted);margin-right:18px}
+  .strip .cell{padding:0 16px;border-left:1px solid var(--rule);color:var(--ink2)}
+  .strip .cell:first-of-type{border-left:0;padding-left:0}
+  .strip b{font-weight:500;color:var(--ink)}
+
+  .stage{position:relative;flex:1;min-height:0}
+  .pane{position:absolute;inset:0;display:none;flex-direction:column}
+
+  /* hull sheet */
+  .sheetbody{flex:1;min-height:0;display:grid;grid-template-columns:1fr 344px}
+  .figcol{padding:20px 24px 18px 40px;display:flex;flex-direction:column;min-height:0;border-right:1px solid var(--rule)}
+  .plate{flex:1;min-height:0;position:relative;border:1px solid var(--rule);background:var(--paper2);overflow:hidden}
+  .plate .cap{position:absolute;left:0;right:0;bottom:0;padding:8px 14px;font-family:var(--sans);font-size:11px;
+    color:var(--muted);background:rgba(255,255,255,.86);border-top:1px solid var(--rule2)}
+  .plate .cap b{color:var(--ink2);font-weight:500}
+  .hullview{position:absolute;inset:0 0 28px 0;width:100%;height:calc(100% - 28px)}
+  .vp-tag{position:absolute;top:10px;left:14px;font-family:var(--sans);font-size:10.5px;color:var(--muted);z-index:2}
+  .vp-tag.r{left:auto;right:14px}
+
+  .hull-under{fill:url(#underG)} .hull-side{fill:url(#sideG)}
+  .hull-deck{fill:url(#deckG);stroke:var(--hull-edge);stroke-width:.9}
+  .submerged{fill:#8fc3dd;opacity:.62}
+  .waterline{fill:none;stroke:var(--waterline);stroke-width:1.8}
+  .seam{fill:none;stroke:var(--hull-seam);stroke-width:.9}
+  .cockpit-rim{fill:none;stroke:var(--cockpit-rim);stroke-width:3}
+  .cockpit-hole{fill:var(--cockpit-hole)}
+  .marker-lcg{fill:var(--marker-lcg)} .marker-lcb{fill:none;stroke:var(--marker-lcb);stroke-width:2}
+  .leader{stroke:var(--leader);stroke-width:1;fill:none}
+  .dim{stroke:var(--dim);stroke-width:1}
+  .hull-label{fill:var(--hull-label);font-size:11px;font-family:var(--sans)}
+  .ax{stroke-width:1.6} .ax-z{stroke:var(--ax-z)} .ax-x{stroke:var(--ax-x)} .ax-y{stroke:var(--ax-y)}
+  .ax-t{fill:var(--ax-t);font-size:11px;font-family:var(--sans)}
+
+  .figure2{flex:0 0 268px;display:flex;gap:28px;padding-top:16px}
+  .figure2 .chart{flex:0 0 auto;height:100%;display:flex;align-items:center}
+  .gzchart{height:100%;width:auto;display:block}
+  .figure2 .txt{flex:1;min-width:0;display:flex;flex-direction:column;justify-content:flex-end;gap:14px}
+  .figure2 .txt p{font-size:13px;color:var(--ink2);line-height:1.55}
+  .figure2 .txt .capline{font-family:var(--sans);font-size:11px;color:var(--muted)}
+  .grid path{stroke:var(--rule2);stroke-width:1}
+  .zero{stroke:var(--muted);stroke-dasharray:4 4;opacity:.6}
+  .axis{stroke:var(--ink2)}
+  .tick-y text,.tick-x text{fill:var(--muted);font-size:11px;font-family:var(--sans)}
+  .cur{fill:none;stroke:var(--navy);stroke-width:2.2;stroke-linejoin:round}
+  .cur-fill{fill:#dfe4e8}
+  .marker-max{fill:var(--navy)} .marker-max-ring{fill:none;stroke:var(--navy);opacity:.3}
+  .marker-avs{fill:var(--paper2);stroke:var(--ink2);stroke-width:1.4}
+  .marker-endtip{stroke:var(--rust);stroke-dasharray:3 4}
+  .marker-endtip-dot{fill:var(--rust)}
+  .ann{fill:var(--ink);font-size:12px;font-family:var(--sans)}
+  .ann-d{fill:var(--muted);font-size:11px;font-family:var(--sans)}
+  .ann-d.endtip{fill:var(--rust)}
+  .axis-label{fill:var(--ink2);font-size:11px;font-family:var(--sans)}
+
+  /* summary column */
+  .summary{padding:20px 40px 20px 28px;display:flex;flex-direction:column}
+  .summary h2{font-family:var(--sans);font-size:10.5px;letter-spacing:.18em;text-transform:uppercase;
+    color:var(--muted);font-weight:500;padding-bottom:8px;border-bottom:1px solid var(--ink)}
+  .sum{padding:14px 0;border-bottom:1px solid var(--rule2)}
+  .sum .k{font-family:var(--sans);font-size:11.5px;color:var(--muted)}
+  .sum .v{font-size:32px;line-height:1.05;margin-top:3px;letter-spacing:-.02em}
+  .sum .v u{text-decoration:none;font-size:14px;color:var(--ink2);margin-left:5px}
+  .sum .n{font-size:12px;color:var(--muted);margin-top:4px;font-style:italic}
+  .sumlist{margin-top:auto;border-top:1px solid var(--ink);padding-top:10px}
+  .sumlist .row{display:flex;justify-content:space-between;align-items:baseline;padding:6px 0;
+    border-bottom:1px solid var(--rule2)}
+  .sumlist .row:last-child{border-bottom:0}
+  .sumlist .k{font-family:var(--sans);font-size:11.5px;color:var(--muted)}
+  .sumlist .v{font-family:var(--mono);font-size:12px}
+  .sumlist .v.warn{color:var(--rust)}
+  .footnote{margin-top:14px;font-size:12px;color:var(--muted);line-height:1.5;font-style:italic}
+
+  /* hydrostatics sheet */
+  .doc{flex:1;min-height:0;padding:24px 40px 0;overflow:hidden}
+  .doc h1{font-size:30px;line-height:1.1;letter-spacing:-.015em;font-weight:400}
+  .doc .lede{font-size:14.5px;color:var(--ink2);font-style:italic;margin-top:8px;max-width:70ch}
+  .rulepair{border-top:2px solid var(--ink);border-bottom:1px solid var(--rule);height:4px;margin:18px 0 20px}
+  .doccols{display:grid;grid-template-columns:1fr 1fr;gap:0 56px}
+  section{margin-bottom:18px}
+  section h3{font-family:var(--sans);font-size:10.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--muted);
+    font-weight:500;padding-bottom:7px;border-bottom:1px solid var(--ink);margin-bottom:9px;display:flex;gap:9px}
+  section h3 .no{font-family:var(--serif);font-size:13px;color:var(--navy);letter-spacing:0}
+  table{width:100%;border-collapse:collapse}
+  th{text-align:left;font-weight:400;font-family:var(--sans);font-size:11px;color:var(--muted);padding:8px 0;
+    border-bottom:1px solid var(--rule2)}
+  td{text-align:right;font-family:var(--mono);font-size:12.5px;padding:8px 0;border-bottom:1px solid var(--rule2);white-space:nowrap}
+  td u{text-decoration:none;color:var(--muted);font-size:10.5px;margin-left:5px;font-family:var(--sans)}
+  td.acc{color:var(--navy);font-weight:600}
+  td.warn{color:var(--rust)}
+  .sechead{font-family:var(--sans);font-size:10.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--muted)}
+</style>
+</head>
+<body>
+<div class="app">
+  <input type="radio" name="scr" id="scr-hull" class="vh" checked>
+  <input type="radio" name="scr" id="scr-hydro" class="vh">
+
+  <div class="masthead">
+    <div class="t">Hydrostatic survey</div>
+    <div class="s">kayak.stl</div>
+    <div class="sp"></div>
+    <div class="sheet">Sheet <b>1</b> of 2 · <b>2 714.4 × 613.1 × 325.1 mm</b> · watertight</div>
+    <div class="tabs">
+      <label for="scr-hull">Hull</label>
+      <label for="scr-hydro">Hydrostatics</label>
+    </div>
+  </div>
+
+  <div class="strip">
+    <span class="lab">Loading condition</span>
+    <span class="cell">Mass <b>75.0 kg</b></span>
+    <span class="cell">LCG <b>52.0 % from bow</b></span>
+    <span class="cell">KG <b>280 mm</b></span>
+    <span class="cell">Heel <b>0 deg</b></span>
+    <span class="cell">Trim sweep <b>±4.5 deg</b>, fine step <b>0.1 deg</b></span>
+  </div>
+
+  <div class="stage">
+
+    <!-- ===== SHEET 1 ===== -->
+    <section class="pane pane-hull">
+      <div class="sheetbody">
+        <div class="figcol">
+          <div class="plate">
+            <div class="vp-tag">Figure 1 — three-quarter view, bow to the right</div>
+            <div class="vp-tag r">Solved waterline</div>
+            {{HULL}}
+            <div class="cap"><b>Figure 1.</b> kayak.stl floating upright on the solved waterline. The hull is trimmed 3.60 deg bow up; the waterline follows the plane the solver clipped the mesh against.</div>
+          </div>
+          <div class="figure2">
+            <div class="chart">{{GZ}}</div>
+            <div class="txt">
+              <p>The righting arm reaches 61 mm at 38 deg of heel and vanishes at 62 deg. Before that, at 41 deg, one end of the hull is already under water.</p>
+              <div class="capline"><b>Figure 2.</b> Righting arm GZ against heel angle.</div>
+            </div>
+          </div>
+        </div>
+
+        <aside class="summary">
+          <h2>Principal results</h2>
+          <div class="sum">
+            <div class="k">Draft</div>
+            <div class="v">94.0<u>mm</u></div>
+            <div class="n">keel to waterline, in the hull's own frame</div>
+          </div>
+          <div class="sum">
+            <div class="k">Trim</div>
+            <div class="v">+3.60<u>deg</u></div>
+            <div class="n">bow up, marine convention</div>
+          </div>
+          <div class="sum">
+            <div class="k">Metacentric height</div>
+            <div class="v">+122<u>mm</u></div>
+            <div class="n">KM 402 mm less KG 280 mm</div>
+          </div>
+          <div class="sum">
+            <div class="k">LCB–LCG offset</div>
+            <div class="v">1.68<u>mm</u></div>
+            <div class="n">buoyancy ahead of gravity</div>
+          </div>
+          <div class="sumlist">
+            <div class="row"><span class="k">GZ maximum</span><span class="v">61 mm at 38 deg</span></div>
+            <div class="row"><span class="k">AVS</span><span class="v">62 deg</span></div>
+            <div class="row"><span class="k">End-tip immersion</span><span class="v warn">41 deg</span></div>
+          </div>
+          <p class="footnote">Coefficients, wetted surface and stability heights are on sheet 2.</p>
+        </aside>
+      </div>
+    </section>
+
+    <!-- ===== SHEET 2 ===== -->
+    <section class="pane pane-hydro">
+      <div class="doc">
+        <h1>Hydrostatics of kayak.stl</h1>
+        <p class="lede">A 2 714.4 mm hull with a 613.1 mm beam and 325.1 mm of depth, carrying 75.0 kg with the centre of gravity 52.0 % from the bow and 280 mm above the keel, upright at 0 deg of heel.</p>
+        <div class="rulepair"></div>
+        <div class="doccols">
+          <div>
+            <section>
+              <h3><span class="no">1</span>Flotation</h3>
+              <table>
+                <tr><th>LWL</th><td>2 384 <u>mm</u></td></tr>
+                <tr><th>BWL</th><td>489 <u>mm</u></td></tr>
+                <tr><th>Waterplane area</th><td>0.412 <u>m²</u></td></tr>
+                <tr><th>TPC</th><td>0.0042</td></tr>
+                <tr><th>Wetted surface</th><td>1.842e6 <u>mm²</u></td></tr>
+                <tr><th>Displacement</th><td class="acc">75.0 <u>kg</u></td></tr>
+              </table>
+            </section>
+            <section>
+              <h3><span class="no">2</span>Form coefficients</h3>
+              <table>
+                <tr><th>Cb — block</th><td>0.4721</td></tr>
+                <tr><th>Cp — prismatic</th><td>0.5813</td></tr>
+                <tr><th>Cm — midship</th><td>0.8120</td></tr>
+                <tr><th>Cwp — waterplane</th><td>0.6394</td></tr>
+              </table>
+            </section>
+          </div>
+          <div>
+            <section>
+              <h3><span class="no">3</span>Stability</h3>
+              <table>
+                <tr><th>KB</th><td>58 <u>mm</u></td></tr>
+                <tr><th>BM</th><td>344 <u>mm</u></td></tr>
+                <tr><th>KM</th><td>402 <u>mm</u></td></tr>
+                <tr><th>KG</th><td>280 <u>mm</u></td></tr>
+                <tr><th>GM</th><td class="acc">+122 <u>mm</u></td></tr>
+              </table>
+            </section>
+            <section>
+              <h3><span class="no">4</span>Trim and freeboard</h3>
+              <table>
+                <tr><th>Trim</th><td>+3.60 <u>deg, bow up</u></td></tr>
+                <tr><th>Bow freeboard</th><td>222.2 <u>mm</u></td></tr>
+                <tr><th>Stern freeboard</th><td>22.3 <u>mm</u></td></tr>
+                <tr><th>LCB–LCG offset</th><td>1.68 <u>mm</u></td></tr>
+                <tr><th>Draft</th><td>94.0 <u>mm</u></td></tr>
+              </table>
+            </section>
+            <section>
+              <h3><span class="no">5</span>Method</h3>
+              <p style="font-size:13px;color:var(--ink2);line-height:1.55">Trim was solved by a coarse sweep at 0.5 deg across ±4.5 deg, then a fine sweep at 0.1 deg around the winner. Heights are measured from the keel in the hull's own frame, and freeboards at each end's own station.</p>
+            </section>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </div>
+</div>
+</body>
+</html>

@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>kayak-analyzer · hydrostatics</title>
+<style>
+  :root{
+    --bg:#0a0b0c; --panel:#101214; --line:rgba(150,160,170,.22); --line2:rgba(150,160,170,.38);
+    --text:#c8d0d8; --dim:#727b85; --dim2:#4d545b;
+    --accent:#79b8ff; --warn:#f0a45c; --ok:#7fc99a;
+    --sea-a:#171a1d; --sea-b:#0b0d0e;
+    --deck-a:#d9dde1; --deck-b:#a9afb5; --deck-c:#757b81;
+    --side-a:#767c82; --side-b:#3a4046; --under-a:#4f555a; --under-b:#24292d;
+    --waterline:#79b8ff; --hull-edge:rgba(10,11,12,.7); --hull-seam:rgba(10,11,12,.45);
+    --hull-label:#b6bec6; --cockpit-rim:#31363a; --cockpit-hole:#08090a;
+    --marker-lcg:#f0a45c; --marker-lcb:#79b8ff; --leader:#79b8ff; --dim:#f0a45c;
+    --ax-z:#c8d0d8; --ax-x:#79b8ff; --ax-y:#616a73; --ax-t:#616a73;
+    --mono:ui-monospace,"Cascadia Mono","SF Mono",Menlo,Consolas,"Courier New",monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{background:var(--bg);color:var(--text);font-family:var(--mono);font-size:12.5px;line-height:1.5;
+    font-variant-numeric:tabular-nums;overflow:hidden;-webkit-font-smoothing:antialiased}
+  .app{height:100vh;max-height:800px;width:100vw;max-width:1280px;margin:0 auto;display:flex;flex-direction:column;overflow:hidden;position:relative}
+  .vh{position:absolute;opacity:0;width:0;height:0;pointer-events:none}
+
+  .tbar{height:30px;flex:0 0 30px;display:flex;align-items:center;gap:14px;padding:0 12px;
+    border-bottom:1px solid var(--line);font-size:11.5px;color:var(--dim);white-space:nowrap;overflow:hidden}
+  .tbar .name{color:var(--text)}
+  .tbar .sp{flex:1}
+  .tbar .keys{color:var(--dim2)}
+  .tbar kbd{border:1px solid var(--line2);border-radius:3px;padding:0 4px;color:var(--dim);font:inherit;font-size:10.5px}
+
+  .stage{position:relative;flex:1;min-height:0}
+  .pane{position:absolute;inset:0;display:none;flex-direction:column}
+  .cols{flex:1;min-height:0;display:flex;gap:0;padding:10px 12px 8px}
+
+  .plot{flex:1;min-width:0;border:1px solid var(--line);position:relative;display:flex;flex-direction:column;background:var(--sea-b)}
+  .plot .ptitle{border-bottom:1px solid var(--line);padding:5px 10px;font-size:11px;color:var(--dim);
+    display:flex;justify-content:space-between;background:#0d0f10}
+  .plot .pbody{flex:1;min-height:0;position:relative;overflow:hidden;
+    background-image:linear-gradient(rgba(150,160,170,.06) 1px,transparent 1px),linear-gradient(90deg,rgba(150,160,170,.06) 1px,transparent 1px);
+    background-size:32px 32px}
+  .hullview{position:absolute;inset:4px;width:calc(100% - 8px);height:calc(100% - 8px)}
+  .hull-under{fill:url(#underG)} .hull-side{fill:url(#sideG)}
+  .hull-deck{fill:url(#deckG);stroke:var(--hull-edge);stroke-width:1}
+  .submerged{fill:#2c5f80;opacity:.55}
+  .waterline{fill:none;stroke:var(--waterline);stroke-width:1.5}
+  .seam{fill:none;stroke:var(--hull-seam);stroke-width:.9}
+  .cockpit-rim{fill:none;stroke:var(--cockpit-rim);stroke-width:3}
+  .cockpit-hole{fill:var(--cockpit-hole)}
+  .marker-lcg{fill:var(--marker-lcg)} .marker-lcb{fill:none;stroke:var(--marker-lcb);stroke-width:2}
+  .leader{stroke:var(--leader);stroke-width:1;fill:none}
+  .dim{stroke:var(--dim);stroke-width:1}
+  .hull-label{fill:var(--hull-label);font-size:11px;font-family:var(--mono)}
+  .ax{stroke-width:1.5} .ax-z{stroke:var(--ax-z)} .ax-x{stroke:var(--ax-x)} .ax-y{stroke:var(--ax-y)}
+  .ax-t{fill:var(--ax-t);font-size:11px;font-family:var(--mono)}
+  .plot .status{position:absolute;left:10px;bottom:8px;font-size:11px;color:var(--dim);z-index:2}
+  .plot .status b{color:var(--accent);font-weight:400}
+
+  .side{flex:0 0 400px;border:1px solid var(--line);border-left:0;display:flex;flex-direction:column;background:#0d0f10;min-height:0}
+  .side .stitle{border-bottom:1px solid var(--line);padding:5px 10px;font-size:11px;color:var(--dim);display:flex;justify-content:space-between}
+  .side .sbody{flex:1;min-height:0;overflow:hidden;padding:10px 12px}
+  .row{display:flex;justify-content:space-between;align-items:baseline;gap:10px;padding:3px 0;font-size:12.5px}
+  .row .k{color:var(--dim)}
+  .row .v{color:var(--text)}
+  .row .v u{text-decoration:none;color:var(--dim);font-size:11px;margin-left:4px}
+  .row .v.hi{color:var(--accent)}
+  .row .v.warn{color:var(--warn)}
+  .sep{border-top:1px dashed var(--line);margin:9px 0}
+  .hdr{color:var(--dim2);font-size:11px;letter-spacing:.08em;margin-bottom:5px}
+  .gzchart{width:100%;height:auto;display:block}
+  .grid path{stroke:rgba(150,160,170,.08);stroke-width:1}
+  .zero{stroke:rgba(150,160,170,.28);stroke-dasharray:3 3}
+  .axis{stroke:rgba(150,160,170,.4)}
+  .tick-y text,.tick-x text{fill:var(--dim2);font-size:10px;font-family:var(--mono)}
+  .cur{fill:none;stroke:var(--accent);stroke-width:1.9;stroke-linejoin:round}
+  .cur-fill{fill:rgba(121,184,255,.12)}
+  .marker-max{fill:var(--accent)} .marker-max-ring{fill:none;stroke:var(--accent);opacity:.35}
+  .marker-avs{fill:#0d0f10;stroke:var(--dim);stroke-width:1.3}
+  .marker-endtip{stroke:var(--warn);stroke-dasharray:3 4}
+  .marker-endtip-dot{fill:var(--warn)}
+  .ann{fill:var(--text);font-size:10.5px;font-family:var(--mono)}
+  .ann-d{fill:var(--dim);font-size:10px;font-family:var(--mono)}
+  .ann-d.endtip{fill:var(--warn)}
+  .axis-label{fill:var(--dim2);font-size:10px;font-family:var(--mono)}
+  .tabs{display:flex;gap:2px;margin-left:auto}
+  .tabs label{font-size:11px;color:var(--dim);padding:2px 8px;border:1px solid transparent;cursor:pointer}
+  #scr-hull:checked ~ .tbar .tabs label[for="scr-hull"],
+  #scr-hydro:checked ~ .tbar .tabs label[for="scr-hydro"]{color:var(--accent);border-color:var(--line2)}
+
+  .cmd{height:44px;flex:0 0 44px;border-top:1px solid var(--line);display:flex;align-items:center;
+    padding:0 12px;gap:10px;font-size:12.5px;background:#0d0f10}
+  .cmd .ps1{color:var(--ok)}
+  .cmd .txt{color:var(--text)}
+  .cmd .txt em{font-style:normal;color:var(--accent)}
+  .cmd .cursor{display:inline-block;width:7px;height:15px;background:var(--text);vertical-align:-2px}
+  .cmd .sp{flex:1}
+
+  .out{flex:1;min-height:0;overflow:hidden;padding:14px 16px;display:grid;grid-template-columns:repeat(3,1fr);
+    gap:0 26px;align-content:start}
+  .blk{border:1px solid var(--line);margin-bottom:14px}
+  .blk .bh{border-bottom:1px solid var(--line);padding:4px 10px;font-size:11px;color:var(--dim);background:#0d0f10}
+  .blk table{width:100%;border-collapse:collapse}
+  .blk th{text-align:left;font-weight:400;color:var(--dim);font-size:11px;padding:4px 10px;border-bottom:1px solid rgba(150,160,170,.12)}
+  .blk td{text-align:right;padding:4px 10px;border-bottom:1px solid rgba(150,160,170,.12);font-size:12.5px;white-space:nowrap}
+  .blk td u{text-decoration:none;color:var(--dim);font-size:11px;margin-left:4px}
+  .blk td.hi{color:var(--accent)} .blk td.warn{color:var(--warn)}
+  .logline{font-size:11.5px;color:var(--dim2);padding:3px 0}
+  .logline b{color:var(--ok);font-weight:400}
+</style>
+</head>
+<body>
+<div class="app">
+  <input type="radio" name="scr" id="scr-hull" class="vh" checked>
+  <input type="radio" name="scr" id="scr-hydro" class="vh">
+
+  <div class="tbar">
+    <span class="name">kayak-analyzer</span>
+    <span>— hydrostatics</span>
+    <span>— kayak.stl (watertight, 2 714.4 × 613.1 × 325.1 mm)</span>
+    <span class="sp"></span>
+    <span class="keys"><kbd>h</kbd> hull</span>
+    <span class="keys"><kbd>f</kbd> figures</span>
+    <span class="keys"><kbd>s</kbd> re-solve</span>
+    <div class="tabs">
+      <label for="scr-hull">[h] hull</label>
+      <label for="scr-hydro">[f] figures</label>
+    </div>
+  </div>
+
+  <div class="stage">
+
+    <section class="pane pane-hull">
+      <div class="cols">
+        <div class="plot">
+          <div class="ptitle"><span>viewport: hull, 3/4 view, bow +X</span><span>units mm · kg · deg</span></div>
+          <div class="pbody">
+            {{HULL}}
+            <div class="status">solved · waterline from clip plane · <b>trim +3.60 deg</b> bow up</div>
+          </div>
+        </div>
+
+        <div class="side">
+          <div class="stitle"><span>result</span><span>solve #1</span></div>
+          <div class="sbody">
+            <div class="hdr">principal</div>
+            <div class="row"><span class="k">draft</span><span class="v">94.0<u>mm</u></span></div>
+            <div class="row"><span class="k">trim</span><span class="v hi">+3.60<u>deg</u></span></div>
+            <div class="row"><span class="k">gm</span><span class="v hi">+122<u>mm</u></span></div>
+            <div class="row"><span class="k">lcb-lcg offset</span><span class="v">1.68<u>mm</u></span></div>
+            <div class="row"><span class="k">displacement</span><span class="v">75.0<u>kg</u></span></div>
+            <div class="sep"></div>
+            <div class="hdr">condition</div>
+            <div class="row"><span class="k">mass</span><span class="v">75.0<u>kg</u></span></div>
+            <div class="row"><span class="k">lcg</span><span class="v">52.0<u>% from bow</u></span></div>
+            <div class="row"><span class="k">kg</span><span class="v">280<u>mm</u></span></div>
+            <div class="row"><span class="k">heel</span><span class="v">0<u>deg</u></span></div>
+            <div class="row"><span class="k">sweep</span><span class="v">±4.5<u>deg, fine 0.1 deg</u></span></div>
+            <div class="sep"></div>
+            <div class="hdr">righting arm</div>
+            {{GZ}}
+            <div class="row" style="margin-top:6px"><span class="k">gz max</span><span class="v hi">61<u>mm at 38 deg</u></span></div>
+            <div class="row"><span class="k">avs</span><span class="v">62<u>deg</u></span></div>
+            <div class="row"><span class="k">end-tip immersion</span><span class="v warn">41<u>deg</u></span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="cmd">
+        <span class="ps1">$</span>
+        <span class="txt">solve <em>--mass 75.0</em> <em>--lcg 52.0</em> <em>--kg 280</em> <em>--heel 0</em> <em>--sweep 4.5</em></span>
+        <span class="cursor"></span>
+        <span class="sp"></span>
+        <span style="color:var(--dim2)">converged in 30 evaluations</span>
+      </div>
+    </section>
+
+    <section class="pane pane-hydro">
+      <div class="out">
+        <div>
+          <div class="blk">
+            <div class="bh">flotation</div>
+            <table>
+              <tr><th>lwl</th><td>2 384 <u>mm</u></td></tr>
+              <tr><th>bwl</th><td>489 <u>mm</u></td></tr>
+              <tr><th>waterplane area</th><td>0.412 <u>m²</u></td></tr>
+              <tr><th>tpc</th><td>0.0042</td></tr>
+              <tr><th>wetted surface</th><td>1.842e6 <u>mm²</u></td></tr>
+              <tr><th>displacement</th><td class="hi">75.0 <u>kg</u></td></tr>
+            </table>
+          </div>
+          <div class="blk">
+            <div class="bh">form coefficients</div>
+            <table>
+              <tr><th>cb</th><td>0.4721</td></tr>
+              <tr><th>cp</th><td>0.5813</td></tr>
+              <tr><th>cm</th><td>0.8120</td></tr>
+              <tr><th>cwp</th><td>0.6394</td></tr>
+            </table>
+          </div>
+          <div class="blk">
+            <div class="bh">log</div>
+            <div style="padding:6px 10px">
+              <div class="logline"><b>ok</b> mesh watertight, 2 714.4 × 613.1 × 325.1 mm</div>
+              <div class="logline"><b>ok</b> coarse sweep 19 planes, ±4.5 deg at 0.5 deg</div>
+              <div class="logline"><b>ok</b> fine sweep 11 planes, 0.1 deg, winner +3.60 deg</div>
+            </div>
+          </div>
+        </div>
+        <div>
+          <div class="blk">
+            <div class="bh">stability</div>
+            <table>
+              <tr><th>kb</th><td>58 <u>mm</u></td></tr>
+              <tr><th>bm</th><td>344 <u>mm</u></td></tr>
+              <tr><th>km</th><td>402 <u>mm</u></td></tr>
+              <tr><th>kg</th><td>280 <u>mm</u></td></tr>
+              <tr><th>gm</th><td class="hi">+122 <u>mm</u></td></tr>
+              <tr><th>gz max</th><td>61 <u>mm at 38 deg</u></td></tr>
+              <tr><th>avs</th><td>62 <u>deg</u></td></tr>
+              <tr><th>end-tip immersion</th><td class="warn">41 <u>deg</u></td></tr>
+            </table>
+          </div>
+        </div>
+        <div>
+          <div class="blk">
+            <div class="bh">trim and freeboard</div>
+            <table>
+              <tr><th>trim</th><td>+3.60 <u>deg, bow up</u></td></tr>
+              <tr><th>bow freeboard</th><td>222.2 <u>mm</u></td></tr>
+              <tr><th>stern freeboard</th><td>22.3 <u>mm</u></td></tr>
+              <tr><th>lcb-lcg offset</th><td>1.68 <u>mm</u></td></tr>
+              <tr><th>draft</th><td>94.0 <u>mm</u></td></tr>
+            </table>
+          </div>
+          <div class="blk">
+            <div class="bh">model</div>
+            <table>
+              <tr><th>file</th><td>kayak.stl</td></tr>
+              <tr><th>overall</th><td>2 714.4 × 613.1 × 325.1 <u>mm</u></td></tr>
+              <tr><th>mesh</th><td>watertight</td></tr>
+              <tr><th>water</th><td>fresh, 1000 <u>kg/m³</u></td></tr>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </div>
+</div>
+</body>
+</html>

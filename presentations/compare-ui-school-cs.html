@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="cs">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Porovnávání kajaků — školní prezentace</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --ink: #eef4f7;
+      --muted: #a9bac3;
+      --sea: #42c4d8;
+      --orange: #ffad66;
+      --bg: #0b1720;
+      --line: #29404c;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; width: 100%; height: 100%; background: var(--bg); color: var(--ink); }
+    body { font-family: Aptos, "Segoe UI", sans-serif; }
+    .deck { height: 100%; }
+    .slide {
+      display: none;
+      position: relative;
+      width: 100vw;
+      height: 100vh;
+      min-height: 600px;
+      padding: 7vh 8vw 8vh;
+      overflow: hidden;
+      background: radial-gradient(ellipse at 88% 10%, #14303c 0, transparent 38%), var(--bg);
+    }
+    .slide.active { display: flex; flex-direction: column; }
+    .slide::after {
+      content: "";
+      position: absolute;
+      left: 0; right: 0; bottom: 0;
+      height: 7px;
+      background: linear-gradient(90deg, var(--sea) 0 52%, var(--orange) 52% 100%);
+    }
+    .eyebrow { color: var(--sea); text-transform: uppercase; letter-spacing: .16em; font-weight: 700; font-size: 16px; }
+    h1, h2, p { margin: 0; }
+    h1 { font-size: clamp(48px, 6vw, 82px); line-height: 1.04; max-width: 1000px; margin-top: 7vh; letter-spacing: -.035em; }
+    h2 { font-size: clamp(38px, 4.3vw, 58px); line-height: 1.08; letter-spacing: -.025em; max-width: 1040px; margin-top: 22px; }
+    .lead { color: var(--muted); font-size: clamp(24px, 2.6vw, 34px); line-height: 1.35; max-width: 850px; margin-top: 28px; }
+    .body { color: var(--muted); font-size: clamp(21px, 2vw, 27px); line-height: 1.4; }
+    .bottom { margin-top: auto; display: flex; justify-content: space-between; align-items: end; color: #8298a3; font-size: 15px; }
+    .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 7vw; margin-top: 9vh; }
+    .col h3 { font-size: 29px; margin-bottom: 18px; }
+    .col p { max-width: 470px; }
+    .accent-a { color: var(--sea); }
+    .accent-b { color: var(--orange); }
+    .sequence { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0; margin-top: 11vh; border-top: 1px solid var(--line); }
+    .step { padding: 24px 22px 0 0; border-top: 4px solid var(--sea); margin-top: -2px; }
+    .step:nth-child(even) { border-top-color: var(--orange); }
+    .step b { display: block; font-size: 24px; margin-bottom: 14px; }
+    .step span { display: block; color: var(--muted); font-size: 19px; line-height: 1.35; max-width: 220px; }
+    table { border-collapse: collapse; width: 100%; margin-top: 6vh; font-size: clamp(17px, 1.5vw, 21px); }
+    th, td { text-align: left; padding: 17px 18px; border-bottom: 1px solid var(--line); }
+    th { color: var(--sea); font-weight: 700; }
+    td:nth-child(2) { color: var(--orange); }
+    td:last-child { color: var(--muted); }
+    .takeaway { margin-top: 8vh; max-width: 940px; font-size: clamp(29px, 3.2vw, 43px); line-height: 1.22; }
+    .controls { position: fixed; right: 28px; bottom: 20px; display: flex; gap: 10px; z-index: 5; align-items: center; color: #91a4ad; font-size: 14px; }
+    button { color: var(--ink); background: #142631; border: 1px solid #35515e; border-radius: 7px; padding: 9px 13px; font: inherit; cursor: pointer; }
+    button:hover, button:focus-visible { border-color: var(--sea); outline: 2px solid transparent; }
+    @media (max-width: 760px) {
+      .slide { padding: 7vh 7vw 10vh; min-height: 500px; }
+      .two-col { gap: 30px; grid-template-columns: 1fr; margin-top: 5vh; }
+      .sequence { grid-template-columns: 1fr 1fr; gap: 26px 16px; margin-top: 5vh; }
+      th, td { padding: 11px 8px; }
+      .controls { right: 12px; bottom: 10px; }
+    }
+    @media print {
+      html, body, .deck { height: auto; background: #0b1720; print-color-adjust: exact; }
+      .slide { display: flex !important; page-break-after: always; height: 100vh; }
+      .controls { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <main class="deck" aria-label="Prezentace o porovnávání kajaků">
+    <section class="slide active" aria-label="Slide 1 z 5">
+      <div class="eyebrow">Školní projekt · Kayak Analyzer</div>
+      <h1>Porovnat dva kajaky.<br><span class="accent-a">Pochopit rozdíl.</span></h1>
+      <p class="lead">Nová funkce Compare a změna rozhraní pro přehlednější analýzu trupů.</p>
+      <div class="bottom"><span>Hydrostatická analýza v prohlížeči</span><span>01 / 05</span></div>
+    </section>
+
+    <section class="slide" aria-label="Slide 2 z 5">
+      <div class="eyebrow">Proč porovnávání</div>
+      <h2>Jedno měření odpoví na jednu otázku</h2>
+      <div class="two-col">
+        <div class="col">
+          <h3 class="accent-a">Analyze</h3>
+          <p class="body">Jak se tento trup ponoří a vyváží při zadané hmotnosti, poloze těžiště a výšce jezdce?</p>
+        </div>
+        <div class="col">
+          <h3 class="accent-b">Compare</h3>
+          <p class="body">Jak se liší dva trupy, nebo jeden trup při dvou různých nastaveních?</p>
+        </div>
+      </div>
+      <div class="bottom"><span>Porovnání pomáhá rozdíly vidět vedle sebe.</span><span>02 / 05</span></div>
+    </section>
+
+    <section class="slide" aria-label="Slide 3 z 5">
+      <div class="eyebrow">Postup práce</div>
+      <h2>Od souboru STL ke srovnání</h2>
+      <div class="sequence">
+        <div class="step"><b>1 · Načíst trup</b><span>Vyberu model kajaku ve formátu STL.</span></div>
+        <div class="step"><b>2 · Spočítat běh</b><span>Solver určí ponor, vyvážení a stabilitu.</span></div>
+        <div class="step"><b>3 · Otevřít Compare</b><span>Vyberu běh pro slot A a běh pro slot B.</span></div>
+        <div class="step"><b>4 · Upravit podmínky</b><span>Každý slot lze přepočítat s vlastním nastavením.</span></div>
+      </div>
+      <p class="body" style="margin-top: 6vh; max-width: 900px">Uložené běhy zůstávají v seznamu i po obnovení stránky. Stejný trup lze porovnat také při různých podmínkách.</p>
+      <div class="bottom"><span>Modely se zpracovávají přímo v prohlížeči.</span><span>03 / 05</span></div>
+    </section>
+
+    <section class="slide" aria-label="Slide 4 z 5">
+      <div class="eyebrow">Nová obrazovka Compare</div>
+      <h2>Dva modely, jedna společná hladina</h2>
+      <table aria-label="Části obrazovky Compare">
+        <thead><tr><th>Část rozhraní</th><th>Co ukazuje</th><th>Proč se hodí</th></tr></thead>
+        <tbody>
+          <tr><td>Slot A a slot B</td><td>Vlastní trup a podmínky</td><td>Každý běh lze upravit samostatně</td></tr>
+          <tr><td>3D pohled</td><td>Oba trupy nad jednou vodní hladinou</td><td>Je vidět rozdíl v poloze a ponoru</td></tr>
+          <tr><td>Tabulka výsledků</td><td>Hodnoty vedle sebe a jejich rozdíl</td><td>Snadno se hledá, co se změnilo</td></tr>
+          <tr><td>Seznam běhů</td><td>Dříve vypočtené modely</td><td>Běh lze znovu vybrat pro porovnání</td></tr>
+        </tbody>
+      </table>
+      <div class="bottom"><span>Barvy A a B pomáhají rozlišit trupy v pohledu.</span><span>04 / 05</span></div>
+    </section>
+
+    <section class="slide" aria-label="Slide 5 z 5">
+      <div class="eyebrow">Co se změnilo</div>
+      <h2>Rozhraní teď podporuje dva způsoby práce</h2>
+      <div class="two-col">
+        <div class="col"><h3 class="accent-a">Analyze</h3><p class="body">Zůstává místem pro nahrání jednoho trupu a jeho samostatnou analýzu.</p></div>
+        <div class="col"><h3 class="accent-b">Compare</h3><p class="body">Přidává dva samostatné sloty, společný 3D pohled, tabulku rozdílů a seznam uložených běhů.</p></div>
+      </div>
+      <p class="takeaway">Když porovnám dva běhy za stejných podmínek, lépe poznám, jaký rozdíl způsobuje tvar trupu.</p>
+      <div class="bottom"><span>Data zůstávají v tomto prohlížeči; běh lze exportovat jako JSON.</span><span>05 / 05</span></div>
+    </section>
+  </main>
+  <nav class="controls" aria-label="Ovládání prezentace">
+    <button type="button" id="prev" aria-label="Předchozí slide">←</button>
+    <span id="counter" aria-live="polite">1 / 5</span>
+    <button type="button" id="next" aria-label="Další slide">→</button>
+    <span>Šipky na klávesnici</span>
+  </nav>
+  <script>
+    const slides = [...document.querySelectorAll('.slide')]
+    const counter = document.querySelector('#counter')
+    let current = 0
+    function show(index) {
+      current = Math.max(0, Math.min(slides.length - 1, index))
+      slides.forEach((slide, i) => slide.classList.toggle('active', i === current))
+      counter.textContent = `${current + 1} / ${slides.length}`
+    }
+    document.querySelector('#prev').addEventListener('click', () => show(current - 1))
+    document.querySelector('#next').addEventListener('click', () => show(current + 1))
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'ArrowRight' || event.key === 'PageDown' || event.key === ' ') show(current + 1)
+      if (event.key === 'ArrowLeft' || event.key === 'PageUp') show(current - 1)
+    })
+  </script>
+</body>
+</html>

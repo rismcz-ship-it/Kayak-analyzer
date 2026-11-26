@@ -1,0 +1,621 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>kayak-analyzer — Analyze (mockup)</title>
+<style>
+  :root {
+    --font-ui: 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
+    --font-mono: 'Cascadia Mono', Consolas, ui-monospace, monospace;
+
+    --bg: #0a0d10;
+    --rail: #0c1014;
+    --surface: #12181e;
+    --surface-2: #161e25;
+    --line: #1e262e;
+    --line-2: #2b353f;
+    --text: #e8edf1;
+    --text-2: #9ba7b2;
+    --text-3: #76828d;
+    --accent: #4d9fe0;
+    --accent-soft: rgba(77, 159, 224, 0.16);
+    --accent-ink: #06121b;
+    --good: #55b489;
+    --warn: #d3a154;
+    --bad: #cd6c70;
+    --water: rgba(77, 159, 224, 0.55);
+    --grid: rgba(255, 255, 255, 0.028);
+    --hull-top: #303a44;
+    --hull-bottom: #171e25;
+    --hull-line: #54626f;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    font-family: var(--font-ui);
+    font-size: 13px;
+    line-height: 1.4;
+    color: var(--text);
+    background: var(--bg);
+    -webkit-font-smoothing: antialiased;
+    overflow: hidden;
+  }
+
+  .num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+
+  button { font-family: inherit; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  .app {
+    height: 100%;
+    display: grid;
+    grid-template-columns: 64px minmax(0, 1fr) 400px;
+  }
+
+  /* ---------------- left rail ---------------- */
+
+  .rail {
+    background: var(--rail);
+    border-right: 1px solid var(--line);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 16px 0;
+  }
+
+  .mark {
+    width: 24px;
+    height: 24px;
+    margin-bottom: 26px;
+    color: var(--accent);
+  }
+
+  .nav {
+    width: 56px;
+    height: 54px;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--text-3);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    cursor: pointer;
+    transition: color 0.12s, background-color 0.12s;
+  }
+  .nav + .nav { margin-top: 4px; }
+  .nav span { font-size: 10.5px; letter-spacing: 0; }
+  .nav svg { width: 18px; height: 18px; }
+  .nav:hover { color: var(--text-2); background: var(--surface); }
+  .nav[aria-current='page'] { color: var(--text); background: var(--surface); }
+  .nav[aria-current='page'] svg { color: var(--accent); }
+
+  .rail-end { margin-top: auto; padding-top: 8px; border-top: 1px solid var(--line); width: 40px; }
+
+  /* ---------------- stage ---------------- */
+
+  .stage-col {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+  }
+
+  .stage {
+    flex: 1;
+    min-height: 0;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-image:
+      linear-gradient(var(--grid) 1px, transparent 1px),
+      linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+    background-size: 32px 32px;
+    background-position: center;
+  }
+
+  .stage svg.hull { width: min(780px, 94%); height: auto; display: block; }
+
+  .foot {
+    flex: none;
+    height: 40px;
+    border-top: 1px solid var(--line);
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 0 16px;
+    font-size: 11px;
+    color: var(--text-3);
+  }
+  .foot .file { font-family: var(--font-mono); color: var(--text-2); }
+  .foot .ok { display: inline-flex; align-items: center; gap: 6px; }
+  .foot .ok i { width: 5px; height: 5px; border-radius: 50%; background: var(--good); }
+  .foot .spacer { flex: 1; }
+
+  .ghost {
+    height: 26px;
+    padding: 0 10px;
+    border-radius: 6px;
+    border: 1px solid var(--line-2);
+    background: transparent;
+    color: var(--text-2);
+    font-size: 11px;
+    cursor: pointer;
+    transition: color 0.12s, border-color 0.12s;
+  }
+  .ghost:hover { color: var(--text); border-color: var(--text-3); }
+
+  /* ---------------- right side ---------------- */
+
+  .side {
+    border-left: 1px solid var(--line);
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 16px 20px 24px;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .label {
+    margin: 0 0 10px;
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--text-3);
+  }
+
+  .rule { height: 1px; background: var(--line); margin: 14px 0; }
+
+  /* conditions */
+
+  .grid3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+  .field label { display: block; font-size: 11px; color: var(--text-2); margin-bottom: 4px; }
+
+  .control {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    height: 30px;
+    padding: 0 8px;
+    background: var(--surface);
+    border: 1px solid var(--line-2);
+    border-radius: 6px;
+  }
+  .control:focus-within { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-soft); }
+  .control input {
+    width: 100%;
+    min-width: 0;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--text);
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    font-size: 13px;
+    outline: none;
+  }
+  .control .unit { font-size: 10px; color: var(--text-3); }
+
+  .cond-foot { display: flex; align-items: center; gap: 12px; margin-top: 12px; }
+
+  .switch-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0;
+    border: 0;
+    background: none;
+    cursor: pointer;
+    color: var(--text-2);
+    font-size: 12px;
+  }
+  .switch-row:hover { color: var(--text); }
+  .switch {
+    width: 28px; height: 16px; border-radius: 999px;
+    background: var(--line-2); position: relative; flex: none;
+    transition: background-color 0.12s;
+  }
+  .switch::after {
+    content: ''; position: absolute; top: 2px; left: 2px;
+    width: 12px; height: 12px; border-radius: 50%;
+    background: #f2f6f9; transition: transform 0.12s;
+  }
+  [data-on='1'] .switch { background: var(--accent); }
+  [data-on='1'] .switch::after { transform: translateX(12px); }
+
+  .btn-primary {
+    margin-left: auto;
+    height: 32px;
+    padding: 0 16px;
+    border: 0;
+    border-radius: 6px;
+    background: var(--accent);
+    color: var(--accent-ink);
+    font-size: 12.5px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: filter 0.12s;
+  }
+  .btn-primary:hover { filter: brightness(1.06); }
+
+  .heel { margin-top: 10px; display: none; }
+  .side[data-heel='1'] .heel { display: block; }
+  .heel .row { display: flex; align-items: center; gap: 10px; }
+  .heel input[type='range'] { flex: 1; accent-color: var(--accent); height: 16px; }
+  .heel output { font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-size: 12px; color: var(--text-2); min-width: 30px; text-align: right; }
+
+  /* readout */
+
+  .readout {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    padding: 11px 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .readout .k { font-size: 12.5px; color: var(--text-2); }
+  .readout .v {
+    margin-left: auto;
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    font-size: 26px;
+    line-height: 1;
+    font-weight: 500;
+    letter-spacing: -0.02em;
+  }
+  .readout .u { font-size: 11px; color: var(--text-3); }
+  .readout .note { font-size: 11px; color: var(--text-3); }
+
+  .readout .v.good { color: var(--good); }
+
+  .free { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; padding: 11px 0; }
+  .free em { display: block; font-style: normal; font-size: 10.5px; color: var(--text-3); margin-bottom: 2px; }
+  .free b {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    font-size: 14px;
+    font-weight: 500;
+  }
+  .free small { font-size: 10px; color: var(--text-3); margin-left: 2px; }
+
+  /* chart */
+
+  .chart-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 4px; }
+  .chart-head .label { margin: 0; }
+  .chart-head .stats { margin-left: auto; font-size: 10.5px; color: var(--text-3); font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+  .chart svg { display: block; width: 100%; height: auto; }
+
+  /* all values */
+
+  .all-row {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 12px;
+    padding: 12px 0 0;
+    border: 0;
+    border-top: 1px solid var(--line);
+    border-radius: 0;
+    background: none;
+    text-align: left;
+    cursor: pointer;
+    font-size: 12px;
+    color: var(--text-2);
+    user-select: none;
+  }
+  .all-row:hover { color: var(--text); }
+  .all-row .switch { margin-left: auto; }
+
+  .more { display: none; }
+  .side[data-all='1'] .more { display: block; }
+
+  .group { margin-top: 14px; }
+  .group .label { margin-bottom: 6px; }
+  .kv { display: grid; gap: 5px; margin: 0; }
+  .kv div { display: flex; align-items: baseline; gap: 12px; font-size: 12px; }
+  .kv dt { color: var(--text-2); }
+  .kv dd {
+    margin: 0 0 0 auto;
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    color: var(--text);
+  }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- ========== navigation ========== -->
+  <nav class="rail" aria-label="Main">
+    <svg class="mark" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M2.5 14.5c3.5 3 15.5 3 19 0" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" />
+      <path d="M5 9.5h14" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" opacity=".55" />
+    </svg>
+
+    <button type="button" class="nav" aria-current="page">
+      <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <path d="M3 18h18M5 18c1.6-7 5.1-11 7-11s5.4 4 7 11" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+      </svg>
+      <span>Analyze</span>
+    </button>
+    <button type="button" class="nav">
+      <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <rect x="4" y="8" width="7" height="11" rx="1.2" stroke="currentColor" stroke-width="1.5" />
+        <rect x="13" y="5" width="7" height="11" rx="1.2" stroke="currentColor" stroke-width="1.5" />
+      </svg>
+      <span>Compare</span>
+    </button>
+
+    <div class="rail-end">
+      <button type="button" class="nav">
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+          <circle cx="9" cy="7" r="2" fill="var(--rail)" stroke="currentColor" stroke-width="1.5" />
+          <circle cx="15" cy="12" r="2" fill="var(--rail)" stroke="currentColor" stroke-width="1.5" />
+          <circle cx="9" cy="17" r="2" fill="var(--rail)" stroke="currentColor" stroke-width="1.5" />
+        </svg>
+        <span>Settings</span>
+      </button>
+    </div>
+  </nav>
+
+  <!-- ========== 3D stage ========== -->
+  <div class="stage-col">
+    <div class="stage">
+      <svg class="hull" viewBox="0 0 760 340" role="img" aria-label="Hull at 94 mm draft, trimmed 3.60 degrees bow up, with the 62 degree righting limit marked">
+        <defs>
+          <linearGradient id="hullFill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="var(--hull-top)" />
+            <stop offset="1" stop-color="var(--hull-bottom)" />
+          </linearGradient>
+          <clipPath id="submerged">
+            <rect x="0" y="190" width="760" height="150" />
+          </clipPath>
+        </defs>
+
+        <!-- waterline -->
+        <line x1="0" y1="190" x2="760" y2="190" stroke="var(--water)" stroke-width="1" />
+        <text x="6" y="184" fill="var(--text-3)" font-size="9" font-family="var(--font-mono)">WL</text>
+
+        <!-- hull -->
+        <path id="hullPath"
+              d="M700 112 C712 158 702 200 652 212 C600 228 500 233 380 233
+                 C262 233 158 228 110 214 C74 203 58 192 54 176
+                 C82 166 140 158 240 150 C340 143 470 137 566 131
+                 C632 126 678 121 700 112 Z"
+              fill="url(#hullFill)" stroke="var(--hull-line)" stroke-width="1.2" stroke-linejoin="round" />
+        <!-- submerged tint -->
+        <path d="M700 112 C712 158 702 200 652 212 C600 228 500 233 380 233
+                 C262 233 158 228 110 214 C74 203 58 192 54 176
+                 C82 166 140 158 240 150 C340 143 470 137 566 131
+                 C632 126 678 121 700 112 Z"
+              fill="var(--accent)" opacity="0.10" clip-path="url(#submerged)" />
+        <!-- deck edge -->
+        <path d="M54 176 C82 166 140 158 240 150 C340 143 470 137 566 131 C632 126 678 121 700 112"
+              fill="none" stroke="var(--text-3)" stroke-width="1" opacity=".75" />
+
+        <!-- LCB / LCG leaders -->
+        <line x1="384" y1="148" x2="384" y2="233" stroke="var(--good)" stroke-width="1" opacity=".8" />
+        <circle cx="384" cy="148" r="3.2" fill="var(--good)" />
+        <line x1="396" y1="148" x2="396" y2="233" stroke="var(--bad)" stroke-width="1" opacity=".8" />
+        <circle cx="396" cy="148" r="3.2" fill="var(--bad)" />
+
+        <!-- draft -->
+        <line x1="560" y1="190" x2="560" y2="228" stroke="var(--text-3)" stroke-width="1" />
+        <line x1="554" y1="190" x2="566" y2="190" stroke="var(--text-3)" stroke-width="1" />
+        <line x1="554" y1="228" x2="566" y2="228" stroke="var(--text-3)" stroke-width="1" />
+        <text x="572" y="214" fill="var(--text-2)" font-size="10" font-family="var(--font-mono)">94 mm</text>
+
+        <!-- bow freeboard -->
+        <line x1="688" y1="121" x2="688" y2="190" stroke="var(--text-3)" stroke-width="0.8" stroke-dasharray="2 3" />
+        <text x="694" y="152" fill="var(--text-2)" font-size="10" font-family="var(--font-mono)">222 mm</text>
+
+        <!-- stern freeboard -->
+        <line x1="66" y1="174" x2="66" y2="190" stroke="var(--text-3)" stroke-width="0.8" stroke-dasharray="2 3" />
+        <text x="58" y="206" fill="var(--text-2)" font-size="10" font-family="var(--font-mono)" text-anchor="end">22 mm</text>
+
+        <!-- ends -->
+        <text x="716" y="110" fill="var(--text-3)" font-size="9">bow</text>
+        <text x="42" y="168" fill="var(--text-3)" font-size="9" text-anchor="end">stern</text>
+      </svg>
+    </div>
+
+    <div class="foot">
+      <span class="file">kayak.stl</span>
+      <span>2714.4 × 613.1 × 325.1 mm</span>
+      <span class="ok"><i></i>watertight</span>
+      <span class="spacer"></span>
+      <button type="button" class="ghost">Replace STL</button>
+    </div>
+  </div>
+
+  <!-- ========== results / conditions ========== -->
+  <aside class="side" id="side" data-heel="0" data-all="0" aria-label="Conditions and results">
+
+    <p class="label">Conditions</p>
+    <div class="grid3">
+      <div class="field">
+        <label for="w">Weight</label>
+        <div class="control"><input id="w" value="75" inputmode="decimal" /><span class="unit">kg</span></div>
+      </div>
+      <div class="field">
+        <label for="l">LCG</label>
+        <div class="control"><input id="l" value="52" inputmode="decimal" /><span class="unit">%</span></div>
+      </div>
+      <div class="field">
+        <label for="k">KG above keel</label>
+        <div class="control"><input id="k" value="280" inputmode="decimal" /><span class="unit">mm</span></div>
+      </div>
+    </div>
+
+    <div class="cond-foot">
+      <button type="button" class="switch-row" id="heelBtn" aria-pressed="false">
+        <span class="switch"></span>
+        <span>Fixed heel</span>
+      </button>
+      <button type="button" class="btn-primary">Calculate</button>
+    </div>
+
+    <div class="heel">
+      <div class="row">
+        <input type="range" min="-30" max="30" step="1" value="0" aria-label="Heel angle" />
+        <output>0°</output>
+      </div>
+    </div>
+
+    <div class="rule"></div>
+
+    <p class="label">Results</p>
+
+    <div class="readout">
+      <span class="k">Draft</span>
+      <span class="v">94.0</span><span class="u">mm</span>
+    </div>
+    <div class="readout">
+      <span class="k">Trim</span>
+      <span class="note">bow up</span>
+      <span class="v">+3.60</span><span class="u">°</span>
+    </div>
+    <div class="readout">
+      <span class="k">GM</span>
+      <span class="note" style="color:var(--good)">stable</span>
+      <span class="v">+122</span><span class="u">mm</span>
+    </div>
+
+    <div class="free">
+      <span><em>Bow freeboard</em><b>222.2</b><small>mm</small></span>
+      <span><em>Stern freeboard</em><b>22.3</b><small>mm</small></span>
+    </div>
+
+    <div class="rule"></div>
+
+    <div class="chart-head">
+      <p class="label">Righting arm</p>
+    </div>
+    <div class="chart">
+      <svg viewBox="0 0 360 176" role="img" aria-label="GZ curve, peak 61 mm at 38 degrees, vanishing at 62 degrees">
+        <!-- grid -->
+        <g stroke="var(--line)" stroke-width="1">
+          <line x1="26" y1="146" x2="352" y2="146" />
+          <line x1="26" y1="110" x2="352" y2="110" opacity=".6" />
+          <line x1="26" y1="74" x2="352" y2="74" opacity=".6" />
+          <line x1="26" y1="38" x2="352" y2="38" opacity=".6" />
+          <line x1="107" y1="28" x2="107" y2="146" opacity=".45" />
+          <line x1="189" y1="28" x2="189" y2="146" opacity=".45" />
+          <line x1="270" y1="28" x2="270" y2="146" opacity=".45" />
+        </g>
+
+        <!-- reserved: beyond AVS -->
+        <rect x="278.6" y="28" width="73.4" height="118" fill="var(--bad)" opacity=".08" />
+
+        <!-- area -->
+        <path d="M26 146 C36 136 40 130 46.4 124.4 C54 117 59 110 66.8 101 C74 92 81 85 87 79.4
+                 C96 71 100 67 107.5 63.2 C116 59 121 54 127.9 50.6 C136 46 141 43 148.3 41.6
+                 C160 38.5 170 36.8 180.9 36.2 C188 36 193 37.5 197.2 39.8 C205 44 211 46 217.5 48.8
+                 C226 53 232 58 237.9 63.2 C244 69 249 75 254.2 84.8 C259 94 263 103 266.4 113.6
+                 C270 124 274 135 278.6 146 L26 146 Z"
+              fill="var(--accent)" opacity=".12" />
+        <!-- curve -->
+        <path d="M26 146 C36 136 40 130 46.4 124.4 C54 117 59 110 66.8 101 C74 92 81 85 87 79.4
+                 C96 71 100 67 107.5 63.2 C116 59 121 54 127.9 50.6 C136 46 141 43 148.3 41.6
+                 C160 38.5 170 36.8 180.9 36.2 C188 36 193 37.5 197.2 39.8 C205 44 211 46 217.5 48.8
+                 C226 53 232 58 237.9 63.2 C244 69 249 75 254.2 84.8 C259 94 263 103 266.4 113.6
+                 C270 124 274 135 278.6 146"
+              fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" />
+
+        <!-- peak -->
+        <circle cx="180.9" cy="36.2" r="3" fill="var(--accent)" />
+        <text x="180.9" y="26" fill="var(--text-2)" font-size="9.5" font-family="var(--font-mono)" text-anchor="middle">61 at 38°</text>
+
+        <!-- AVS -->
+        <line x1="278.6" y1="28" x2="278.6" y2="146" stroke="var(--bad)" stroke-width="1" stroke-dasharray="3 3" />
+        <text x="273" y="20" fill="var(--bad)" font-size="9.5" font-family="var(--font-mono)" text-anchor="end">AVS 62°</text>
+
+        <!-- axis -->
+        <g fill="var(--text-3)" font-size="9.5" font-family="var(--font-mono)" text-anchor="middle">
+          <text x="26" y="162">0</text>
+          <text x="107" y="162">20</text>
+          <text x="189" y="162">40</text>
+          <text x="270" y="162">60</text>
+          <text x="352" y="162">80°</text>
+        </g>
+        <text x="0" y="34" fill="var(--text-3)" font-size="9.5" font-family="var(--font-mono)">mm</text>
+      </svg>
+    </div>
+
+    <button type="button" class="all-row" id="allBtn" aria-pressed="false">
+      <span>All values</span>
+      <span class="switch"></span>
+    </button>
+
+    <div class="more">
+      <div class="group">
+        <p class="label">Equilibrium</p>
+        <dl class="kv">
+          <div><dt>Waterline Z</dt><dd>94.0 mm</dd></div>
+          <div><dt>Displacement</dt><dd>75.0 kg</dd></div>
+          <div><dt>Waterplane area</dt><dd>0.412 m²</dd></div>
+          <div><dt>LWL</dt><dd>2384 mm</dd></div>
+          <div><dt>BWL</dt><dd>489 mm</dd></div>
+          <div><dt>LCB − LCG</dt><dd>1.68 mm</dd></div>
+          <div><dt>Planes evaluated</dt><dd>30</dd></div>
+        </dl>
+      </div>
+      <div class="group">
+        <p class="label">Form</p>
+        <dl class="kv">
+          <div><dt>Cb</dt><dd>0.4721</dd></div>
+          <div><dt>Cp</dt><dd>0.5813</dd></div>
+          <div><dt>Cm</dt><dd>0.8120</dd></div>
+          <div><dt>Cwp</dt><dd>0.6394</dd></div>
+          <div><dt>Wetted area</dt><dd>1.842e6 mm²</dd></div>
+          <div><dt>TPC</dt><dd>0.0042</dd></div>
+        </dl>
+      </div>
+      <div class="group">
+        <p class="label">Stability</p>
+        <dl class="kv">
+          <div><dt>KB</dt><dd>58 mm</dd></div>
+          <div><dt>BM</dt><dd>344 mm</dd></div>
+          <div><dt>KM</dt><dd>402 mm</dd></div>
+          <div><dt>KG</dt><dd>280 mm</dd></div>
+          <div><dt>GM</dt><dd>122 mm</dd></div>
+          <div><dt>End-tip immersion</dt><dd>41°</dd></div>
+        </dl>
+      </div>
+    </div>
+
+  </aside>
+</div>
+
+<script>
+  const side = document.getElementById('side')
+
+  const heelBtn = document.getElementById('heelBtn')
+  heelBtn.addEventListener('click', () => {
+    const on = side.dataset.heel === '1'
+    side.dataset.heel = on ? '0' : '1'
+    heelBtn.setAttribute('aria-pressed', String(!on))
+  })
+
+  const allBtn = document.getElementById('allBtn')
+  allBtn.addEventListener('click', () => {
+    const on = side.dataset.all === '1'
+    side.dataset.all = on ? '0' : '1'
+    allBtn.setAttribute('aria-pressed', String(!on))
+  })
+
+  const range = document.querySelector('.heel input')
+  const out = document.querySelector('.heel output')
+  range.addEventListener('input', () => {
+    const v = Number(range.value)
+    out.textContent = (v > 0 ? '+' : '') + v + '°'
+  })
+</script>
+</body>
+</html>

@@ -103,7 +103,16 @@ export interface UploadHandle {
 interface UploadProps {
   onLoaded: (mesh: LoadedMesh) => void
   compact?: boolean
-  /** Overrides the compact variant's "Load another hull" wording. */
+  /**
+   * How the picker is presented.
+   *
+   * `stage` is the Analyze tab's empty-state drop card; `compact` is the
+   * Compare slot's small drop target; `hidden` renders only the file input, so
+   * a parent can own the trigger (the Analyze foot bar's "Replace STL") while
+   * this component keeps the parse pipeline and the status report.
+   */
+  variant?: 'stage' | 'compact' | 'hidden'
+  /** Overrides the stage / compact prompt wording. */
   prompt?: string
   ref?: Ref<UploadHandle>
   /**
@@ -154,7 +163,15 @@ export function rememberMesh(cache: Map<string, LoadedMesh>, mesh: LoadedMesh): 
   }
 }
 
-export default function Upload({ onLoaded, compact = false, prompt, ref, onStatus }: UploadProps) {
+export default function Upload({
+  onLoaded,
+  compact = false,
+  variant,
+  prompt,
+  ref,
+  onStatus,
+}: UploadProps) {
+  const mode = variant ?? (compact ? 'compact' : 'stage')
   const inputRef = useRef<HTMLInputElement>(null)
   const [dragging, setDragging] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -286,53 +303,127 @@ export default function Upload({ onLoaded, compact = false, prompt, ref, onStatu
           e.target.value = ''
         }}
       />
-      <button
-        type="button"
-        onDragOver={onDragOver}
-        onDragLeave={onDragLeave}
-        onDrop={onDrop}
-        onClick={openPicker}
-        className={[
-          'group flex w-full cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed text-center transition-colors',
-          dragging
-            ? 'border-sky-400 bg-sky-400/10'
-            : 'border-zinc-700 bg-zinc-900/40 hover:border-zinc-500 hover:bg-zinc-900/70',
-          compact ? 'gap-1 px-4 py-5' : 'gap-2 px-6 py-14',
-        ].join(' ')}
-      >
-        <svg
-          aria-hidden="true"
-          className={compact ? 'h-6 w-6 text-zinc-500' : 'h-10 w-10 text-zinc-500'}
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.5"
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"
-          />
-        </svg>
 
-        {busy ? (
-          <span className="block text-sm text-zinc-300">Parsing…</span>
-        ) : (
-          <>
-            <span className="block text-sm font-medium text-zinc-200">
-              {compact ? (prompt ?? 'Load another hull') : 'Drop an STL hull here'}
+      {mode === 'hidden' ? null : mode === 'stage' ? (
+        // The card is the drop target, but not a button: the Browse control
+        // inside it is the one keyboard path, so a nested button is avoided.
+        // It is a labelled region so the drag handlers have a role to hang on.
+        <section
+          aria-label="Upload an STL file"
+          onDragOver={onDragOver}
+          onDragLeave={onDragLeave}
+          onDrop={onDrop}
+          className={`flex w-[min(480px,90%)] flex-col items-center rounded-2xl border-[1.5px] border-dashed px-8 pb-8 pt-12 text-center backdrop-blur-[4px] transition-colors ${
+            dragging ? 'border-accent-500 bg-accent-500/8' : 'border-line-2 bg-panel/45'
+          }`}
+        >
+          <div className="mb-5 flex h-14 w-14 items-center justify-center rounded-xl border border-line-2 bg-panel text-accent-500">
+            <svg
+              aria-hidden="true"
+              className="h-7 w-7"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.6"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
+              <polyline points="3.27 6.96 12 12.01 20.73 6.96" />
+              <line x1="12" y1="22.08" x2="12" y2="12" />
+            </svg>
+          </div>
+
+          {busy ? (
+            <p className="text-base font-semibold text-ink">Parsing…</p>
+          ) : (
+            <>
+              <h2 className="mb-2 text-base font-semibold tracking-tight text-ink">
+                {prompt ?? 'Drop your kayak STL here'}
+              </h2>
+              <button
+                type="button"
+                onClick={openPicker}
+                className="mt-4 inline-flex h-9 items-center gap-2 rounded-lg bg-accent-500 px-5 text-[13px] font-semibold text-accent-ink transition-colors hover:bg-accent-400 active:scale-[0.98]"
+              >
+                <svg
+                  aria-hidden="true"
+                  className="h-4 w-4"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                  <polyline points="17 8 12 3 7 8" />
+                  <line x1="12" y1="3" x2="12" y2="15" />
+                </svg>
+                Browse files
+              </button>
+            </>
+          )}
+
+          {error && <p className="mt-3 max-w-xs text-[11px] text-bad">{error}</p>}
+
+          <div className="mt-6 flex w-full flex-wrap items-center justify-center gap-x-4 gap-y-1 border-t border-line pt-4 text-[11px] text-ink-3">
+            <span>STL in mm</span>
+            <span aria-hidden="true">·</span>
+            <span>Watertight closed deck</span>
+            <span aria-hidden="true">·</span>
+            <span>≤ 25 MB</span>
+          </div>
+        </section>
+      ) : (
+        <button
+          type="button"
+          onDragOver={onDragOver}
+          onDragLeave={onDragLeave}
+          onDrop={onDrop}
+          onClick={openPicker}
+          className={[
+            'group flex w-full cursor-pointer flex-col items-center justify-center rounded-lg border-2 border-dashed text-center transition-colors',
+            dragging
+              ? 'border-accent-500 bg-accent-500/10'
+              : 'border-line-2 bg-panel/40 hover:border-ink-3 hover:bg-panel',
+            compact ? 'gap-1 px-4 py-5' : 'gap-2 px-6 py-14',
+          ].join(' ')}
+        >
+          <svg
+            aria-hidden="true"
+            className={compact ? 'h-6 w-6 text-ink-3' : 'h-10 w-10 text-ink-3'}
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.5"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"
+            />
+          </svg>
+
+          {busy ? (
+            <span className="block text-sm text-ink-2">Parsing…</span>
+          ) : (
+            <>
+              <span className="block text-sm font-medium text-ink">
+                {compact ? (prompt ?? 'Load another hull') : 'Drop an STL hull here'}
+              </span>
+              <span className="block text-xs text-ink-3">
+                or click to browse · ≤ 25 MB · parsed in memory, nothing is uploaded
+              </span>
+            </>
+          )}
+          {error && (
+            <span className="block max-w-xs text-xs text-bad" title={error}>
+              {error}
             </span>
-            <span className="block text-xs text-zinc-500">
-              or click to browse · ≤ 25 MB · parsed in memory, nothing is uploaded
-            </span>
-          </>
-        )}
-        {error && (
-          <span className="block max-w-xs text-xs text-rose-400" title={error}>
-            {error}
-          </span>
-        )}
-      </button>
+          )}
+        </button>
+      )}
     </>
   )
 }

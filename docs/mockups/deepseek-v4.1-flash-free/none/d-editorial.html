@@ -1,0 +1,467 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Analyze — The reading</title>
+<style>
+  :root {
+    --paper: #fdfcf8;
+    --paper-2: #f6f3ea;
+    --ink: #17150f;
+    --ink-2: #58544a;
+    --ink-3: #918b7c;
+    --rule: #e4dfd2;
+    --rule-2: #cfc8b6;
+    --accent: #a8422a;
+    --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, "Times New Roman", serif;
+    --sans: ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif;
+    --mono: ui-monospace, "Cascadia Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body { height: 100%; margin: 0; }
+
+  body {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: var(--paper);
+    color: var(--ink);
+    font: 15px/1.55 var(--serif);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .num {
+    font-family: var(--mono);
+    font-variant-numeric: tabular-nums;
+    font-size: 0.88em;
+    letter-spacing: -0.01em;
+  }
+
+  .kicker {
+    font-family: var(--sans);
+    font-size: 9px;
+    letter-spacing: 0.24em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+
+  /* ---------- header ---------- */
+
+  header {
+    display: flex;
+    align-items: center;
+    gap: 28px;
+    height: 52px;
+    flex: none;
+    padding: 0 44px;
+    border-bottom: 1px solid var(--rule);
+  }
+
+  .wordmark {
+    font-family: var(--serif);
+    font-size: 15px;
+    letter-spacing: 0.01em;
+  }
+
+  .wordmark b { font-weight: 600; }
+
+  nav.tabs { display: flex; gap: 18px; height: 100%; }
+
+  nav.tabs a {
+    display: flex;
+    align-items: center;
+    font-family: var(--sans);
+    font-size: 10px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    text-decoration: none;
+    color: var(--ink-3);
+    border-bottom: 1px solid transparent;
+  }
+
+  nav.tabs a[aria-current="page"] { color: var(--ink); border-bottom-color: var(--accent); }
+  nav.tabs a:hover { color: var(--ink-2); }
+
+  header .right {
+    margin-left: auto;
+    display: flex;
+    gap: 16px;
+    font-family: var(--sans);
+    font-size: 9.5px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+
+  /* ---------- conditions ---------- */
+
+  .conds {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 26px;
+    height: 42px;
+    padding: 0 44px;
+    border-bottom: 1px solid var(--rule);
+    background: var(--paper-2);
+    font-family: var(--sans);
+  }
+
+  .conds .tag {
+    font-size: 8.5px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    padding-right: 4px;
+    border-right: 1px solid var(--rule-2);
+    align-self: stretch;
+    display: flex;
+    align-items: center;
+  }
+
+  .conds .field {
+    display: flex;
+    align-items: baseline;
+    gap: 5px;
+    font-size: 10px;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+  }
+
+  .conds .field + .field { border-left: 1px solid var(--rule); padding-left: 26px; }
+
+  .conds label { cursor: text; }
+
+  .conds input {
+    width: 52px;
+    padding: 1px 0;
+    border: 0;
+    border-bottom: 1px solid var(--rule-2);
+    background: transparent;
+    color: var(--ink);
+    font: 11px var(--mono);
+    font-variant-numeric: tabular-nums;
+    text-align: right;
+  }
+
+  .conds input:focus { outline: none; border-bottom-color: var(--accent); }
+  .conds .unit { font-size: 9px; letter-spacing: 0.04em; text-transform: none; }
+
+  /* ---------- column ---------- */
+
+  main {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 22px 44px 16px;
+    overflow: hidden;
+  }
+
+  .column {
+    width: 100%;
+    max-width: 1010px;
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  h1 {
+    margin: 10px 0 0;
+    font-family: var(--serif);
+    font-size: 38px;
+    font-weight: 400;
+    line-height: 1.16;
+    letter-spacing: -0.022em;
+    max-width: 39ch;
+  }
+
+  h1 em {
+    font-style: normal;
+    color: var(--accent);
+    white-space: nowrap;
+  }
+
+  .lede {
+    margin: 12px 0 0;
+    max-width: 100ch;
+    font-size: 14.5px;
+    line-height: 1.6;
+    color: var(--ink-2);
+  }
+
+  .lede b { color: var(--ink); font-weight: 400; }
+
+  /* ---------- figures ---------- */
+
+  .figures {
+    display: grid;
+    grid-template-columns: 1.35fr 1fr;
+    gap: 30px;
+    margin-top: 16px;
+    padding-top: 14px;
+    border-top: 1px solid var(--rule-2);
+  }
+
+  figure { margin: 0; display: flex; flex-direction: column; min-width: 0; }
+
+  figure svg { display: block; width: 100%; height: auto; }
+
+  figcaption {
+    display: flex;
+    gap: 8px;
+    margin-top: 6px;
+    font-family: var(--sans);
+    font-size: 9px;
+    line-height: 1.5;
+    letter-spacing: 0.03em;
+    color: var(--ink-3);
+  }
+
+  figcaption b {
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-2);
+    white-space: nowrap;
+  }
+
+  /* ---------- readings ---------- */
+
+  .readings {
+    margin-top: auto;
+    padding: 12px 0 14px;
+    border-top: 1px solid var(--rule-2);
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0 34px;
+  }
+
+  .readings h2 {
+    margin: 0 0 4px;
+    font-family: var(--sans);
+    font-size: 8.5px;
+    font-weight: 400;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    padding-bottom: 3px;
+    border-bottom: 1px solid var(--rule);
+  }
+
+  .readings dl {
+    margin: 0;
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: baseline;
+    column-gap: 6px;
+  }
+
+  .readings dt {
+    font-family: var(--sans);
+    font-size: 9.5px;
+    letter-spacing: 0.06em;
+    color: var(--ink-3);
+    padding: 2px 0;
+    white-space: nowrap;
+  }
+
+  .readings .lead { border-bottom: 1px dotted var(--rule-2); height: 1px; transform: translateY(-3px); }
+
+  .readings dd {
+    margin: 0;
+    padding: 2px 0;
+    text-align: right;
+    font-family: var(--mono);
+    font-variant-numeric: tabular-nums;
+    font-size: 10.5px;
+    white-space: nowrap;
+  }
+
+  .readings dd.hi { color: var(--accent); }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wordmark"><b>Kayak</b> Analyzer</div>
+  <nav class="tabs" aria-label="Workspace">
+    <a href="#analyze" aria-current="page">Analyze</a>
+    <a href="#compare">Compare</a>
+  </nav>
+  <div class="right">
+    <span>kayak.stl</span>
+    <span>watertight</span>
+    <span>23 Nov 2026</span>
+  </div>
+</header>
+
+<div class="conds">
+  <span class="tag">Conditions</span>
+  <div class="field">
+    <label for="e-mass">Weight</label>
+    <input id="e-mass" type="text" value="75.0" inputmode="decimal">
+    <span class="unit">kg</span>
+  </div>
+  <div class="field">
+    <label for="e-lcg">LCG from bow</label>
+    <input id="e-lcg" type="text" value="52.0" inputmode="decimal">
+    <span class="unit">%</span>
+  </div>
+  <div class="field">
+    <label for="e-kg">KG above keel</label>
+    <input id="e-kg" type="text" value="280" inputmode="decimal">
+    <span class="unit">mm</span>
+  </div>
+  <div class="field">
+    <label for="e-heel">Heel</label>
+    <input id="e-heel" type="text" value="0.0" inputmode="decimal">
+    <span class="unit">°</span>
+  </div>
+</div>
+
+<main>
+  <div class="column">
+
+    <span class="kicker">Analyze · single run · 2 714.4 × 613.1 × 325.1 mm</span>
+
+    <h1>
+      She floats <em>94 mm</em> deep, sits <em>3.6°</em> bow-high,
+      and carries <em>122 mm</em> of metacentric height.
+    </h1>
+
+    <p class="lede">
+      Loaded to <b>75 kg</b> at 52 % of the waterline from the bow, the hull draws
+      94 mm over a 2 384 mm waterline. That leaves 222.2 mm of freeboard forward and
+      just 22.3 mm aft — the stern is nearly wet. The centre of buoyancy settles
+      1.68 mm behind the centre of gravity, so the trim is honest rather than
+      propped. Righting arm peaks at 61 mm near 38°, the deck edge goes under at 41°,
+      and the hull finally loses its righting moment at 62°.
+    </p>
+
+    <div class="figures">
+
+      <figure>
+        <svg viewBox="0 0 620 190" role="img" aria-label="Side elevation with the waterline at 94 millimetres and the bow raised">
+          <line x1="0" y1="60" x2="620" y2="60" stroke="#eee9dc" stroke-width="1"/>
+          <line x1="0" y1="120" x2="620" y2="120" stroke="#eee9dc" stroke-width="1"/>
+          <line x1="0" y1="150" x2="620" y2="150" stroke="#e4dfd2" stroke-width="1"/>
+
+          <line x1="30" y1="118" x2="600" y2="118" stroke="#a8422a" stroke-width="1" stroke-dasharray="6 4"/>
+
+          <path d="M 572 74
+                   C 450 78 330 88 210 102
+                   C 160 108 108 112 72 115
+                   L 72 118
+                   C 118 131 220 137 310 137
+                   C 400 137 500 128 546 114
+                   C 564 108 571 92 572 74 Z"
+                fill="#f6f3ea" stroke="#17150f" stroke-width="1.1" stroke-linejoin="round"/>
+
+          <path d="M 572 74 C 450 78 330 88 210 102 C 160 108 108 112 72 115"
+                fill="none" stroke="#918b7c" stroke-width="0.8"/>
+
+          <g stroke="#a8422a" stroke-width="0.9">
+            <line x1="588" y1="74" x2="588" y2="118"/>
+            <line x1="583" y1="74" x2="593" y2="74"/>
+            <line x1="583" y1="118" x2="593" y2="118"/>
+          </g>
+          <text x="598" y="100" font-family="ui-monospace, monospace" font-size="8" fill="#a8422a" text-anchor="end">222.2</text>
+
+          <text x="34" y="112" font-family="ui-monospace, monospace" font-size="8" fill="#58544a">22.3</text>
+          <text x="310" y="152" font-family="ui-monospace, monospace" font-size="8" fill="#58544a" text-anchor="middle">draft 94.0 · LWL 2 384</text>
+
+          <text x="30" y="34" font-family="ui-monospace, monospace" font-size="8" fill="#918b7c">STERN</text>
+          <text x="596" y="34" font-family="ui-monospace, monospace" font-size="8" fill="#918b7c" text-anchor="end">BOW</text>
+        </svg>
+        <figcaption><b>Hull</b><span>Side elevation at the solved trim. Bow at right, +X.</span></figcaption>
+      </figure>
+
+      <figure>
+        <svg viewBox="0 0 460 190" role="img" aria-label="GZ curve, peak 61 millimetres at 38 degrees, vanishing at 62 degrees">
+          <g stroke="#eee9dc" stroke-width="1">
+            <line x1="30" y1="34" x2="446" y2="34"/>
+            <line x1="30" y1="61" x2="446" y2="61"/>
+            <line x1="30" y1="88" x2="446" y2="88"/>
+            <line x1="30" y1="115" x2="446" y2="115"/>
+          </g>
+          <line x1="30" y1="142" x2="446" y2="142" stroke="#cfc8b6" stroke-width="1"/>
+
+          <g font-family="ui-monospace, monospace" font-size="8" fill="#918b7c" text-anchor="end">
+            <text x="24" y="145">0</text>
+            <text x="24" y="118">15</text>
+            <text x="24" y="91">30</text>
+            <text x="24" y="64">45</text>
+            <text x="24" y="37">60</text>
+          </g>
+
+          <path d="M30 142 L74 110 L118 74 L162 45 L197 32 L228 38 L259 63 L285 95 L303 142 L338 167 L382 189 L382 142 Z"
+                fill="#a8422a" opacity="0.07"/>
+          <path d="M30 142 L74 110 L118 74 L162 45 L197 32 L228 38 L259 63 L285 95 L303 142 L338 167 L382 189"
+                fill="none" stroke="#a8422a" stroke-width="1.5" stroke-linejoin="round"/>
+
+          <circle cx="197" cy="32" r="2.6" fill="#a8422a"/>
+          <text x="205" y="29" font-family="ui-monospace, monospace" font-size="8" fill="#a8422a">61</text>
+
+          <circle cx="303" cy="142" r="2.6" fill="none" stroke="#a8422a" stroke-width="1.2"/>
+          <text x="303" y="136" font-family="ui-monospace, monospace" font-size="8" fill="#a8422a" text-anchor="middle">62°</text>
+
+          <g font-family="ui-monospace, monospace" font-size="8" fill="#918b7c" text-anchor="middle">
+            <text x="30" y="160">0°</text>
+            <text x="162" y="160">30°</text>
+            <text x="294" y="160">60°</text>
+            <text x="426" y="160">90°</text>
+          </g>
+        </svg>
+        <figcaption><b>Curve</b><span>Righting arm against heel, upright to 62°.</span></figcaption>
+      </figure>
+
+    </div>
+
+    <section class="readings" aria-label="All readings">
+      <div>
+        <h2>Hull</h2>
+        <dl>
+          <dt>LOA</dt><span class="lead"></span><dd>2 714.4</dd>
+          <dt>Beam</dt><span class="lead"></span><dd>613.1</dd>
+          <dt>Depth</dt><span class="lead"></span><dd>325.1</dd>
+          <dt>Cb</dt><span class="lead"></span><dd>0.4721</dd>
+          <dt>Cp</dt><span class="lead"></span><dd>0.5813</dd>
+          <dt>Cm</dt><span class="lead"></span><dd>0.8120</dd>
+        </dl>
+      </div>
+      <div>
+        <h2>Float</h2>
+        <dl>
+          <dt>LWL</dt><span class="lead"></span><dd>2 384</dd>
+          <dt>BWL</dt><span class="lead"></span><dd>489</dd>
+          <dt>Waterplane</dt><span class="lead"></span><dd>0.412 m²</dd>
+          <dt>Cwp</dt><span class="lead"></span><dd>0.6394</dd>
+          <dt>TPC</dt><span class="lead"></span><dd>0.0042</dd>
+          <dt>Wetted</dt><span class="lead"></span><dd>1.842e6 mm²</dd>
+        </dl>
+      </div>
+      <div>
+        <h2>Stability</h2>
+        <dl>
+          <dt>KB</dt><span class="lead"></span><dd>58</dd>
+          <dt>BM</dt><span class="lead"></span><dd>344</dd>
+          <dt>KM</dt><span class="lead"></span><dd>402</dd>
+          <dt>KG</dt><span class="lead"></span><dd>280</dd>
+          <dt>GM</dt><span class="lead"></span><dd class="hi">+122</dd>
+          <dt>AVS</dt><span class="lead"></span><dd>62.0°</dd>
+        </dl>
+      </div>
+    </section>
+
+  </div>
+</main>
+
+</body>
+</html>

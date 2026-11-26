@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>g · Vibes — kayak-analyzer</title>
+<style>
+  :root {
+    --mono: ui-monospace, "Cascadia Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+    --sans: ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif;
+    --cream: #f3edde;
+    --cream-2: #ede5d0;
+    --ink: #1b1713;
+    --ink-2: #4a4239;
+    --ink-3: #8a7f6e;
+    --verm: #c63b17;
+    --moss: #5c6b3c;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; overflow: hidden; }
+  body {
+    background: var(--cream);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-variant-numeric: tabular-nums;
+    font-size: 13px;
+    line-height: 1.45;
+  }
+  .shell { width: 1280px; height: 800px; display: flex; flex-direction: column; }
+  /* masthead */
+  .mast { flex: none; background: var(--ink); color: var(--cream); padding: 14px 40px 12px; display: flex; align-items: flex-end; justify-content: space-between; }
+  .mast h1 { margin: 0; font-size: 26px; font-weight: 800; letter-spacing: -0.02em; text-transform: uppercase; }
+  .mast h1 span { color: var(--verm); }
+  .mast .sub { font-size: 10px; letter-spacing: 0.24em; text-transform: uppercase; color: #b7ab93; margin-top: 4px; }
+  .mast .r { text-align: right; font-family: var(--mono); font-size: 11px; color: #b7ab93; }
+  .mast .r b { display: block; color: var(--cream); font-size: 13px; font-weight: 500; }
+  /* condition strip */
+  .strip { flex: none; display: flex; border-bottom: 3px solid var(--ink); }
+  .strip > div { flex: 1; padding: 10px 40px 8px; border-left: 1px solid var(--ink-3); }
+  .strip > div:first-child { border-left: 0; padding-left: 40px; }
+  .strip .k { font-size: 9px; font-weight: 700; letter-spacing: 0.24em; text-transform: uppercase; color: var(--ink-3); display: block; }
+  .strip .v { font-family: var(--mono); font-size: 19px; font-weight: 600; display: block; margin-top: 2px; }
+  .strip .v small { font-size: 11px; color: var(--ink-3); margin-left: 3px; }
+  /* main */
+  .main { flex: 1; min-height: 0; display: grid; grid-template-columns: 470px 1fr; }
+  .ledger { border-right: 3px solid var(--ink); display: flex; flex-direction: column; }
+  .ledger .hd { padding: 14px 40px 10px; font-size: 10px; font-weight: 700; letter-spacing: 0.26em; text-transform: uppercase; color: var(--ink-3); }
+  .led { display: flex; align-items: baseline; justify-content: space-between; padding: 12px 40px; border-top: 2px solid var(--ink); }
+  .led:first-of-type { border-top: 3px solid var(--ink); }
+  .led .k { font-size: 12px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; }
+  .led .v { font-family: var(--mono); font-size: 40px; font-weight: 700; letter-spacing: -0.03em; }
+  .led .v small { font-size: 15px; color: var(--ink-3); margin-left: 3px; letter-spacing: 0; }
+  .led.verm .v { color: var(--verm); }
+  .led .note { font-size: 10px; color: var(--ink-3); display: block; margin-top: 1px; }
+  .led .col { display: flex; flex-direction: column; }
+  .draw { min-width: 0; display: flex; flex-direction: column; }
+  .draw .hd { padding: 14px 40px 10px; font-size: 10px; font-weight: 700; letter-spacing: 0.26em; text-transform: uppercase; color: var(--ink-3); display: flex; justify-content: space-between; }
+  .draw .stage { flex: 1; min-height: 0; display: flex; align-items: center; padding: 0 40px; }
+  .draw .dims { flex: none; display: flex; gap: 0; border-top: 2px solid var(--ink); }
+  .draw .dims > div { flex: 1; padding: 8px 40px 8px 0; border-left: 1px solid var(--ink-3); padding-left: 12px; }
+  .draw .dims > div:first-child { border-left: 0; padding-left: 0; }
+  .draw .dims .k { font-size: 9px; font-weight: 700; letter-spacing: 0.2em; text-transform: uppercase; color: var(--ink-3); }
+  .draw .dims .v { font-family: var(--mono); font-size: 14px; font-weight: 600; }
+  /* bottom */
+  .bottom { flex: none; border-top: 3px solid var(--ink); display: grid; grid-template-columns: 1fr 1fr; }
+  .gz { padding: 10px 40px 8px; border-right: 3px solid var(--ink); }
+  .gz .hd { font-size: 10px; font-weight: 700; letter-spacing: 0.26em; text-transform: uppercase; color: var(--ink-3); display: flex; justify-content: space-between; padding-bottom: 4px; }
+  .facts { padding: 10px 40px 8px; display: grid; grid-template-columns: 1fr 1fr; gap: 2px 24px; align-content: start; }
+  .facts .hd { grid-column: 1 / -1; font-size: 10px; font-weight: 700; letter-spacing: 0.26em; text-transform: uppercase; color: var(--ink-3); padding-bottom: 4px; }
+  .facts span { font-family: var(--mono); font-size: 11px; color: var(--ink-2); white-space: nowrap; }
+  .facts span i { font-style: normal; color: var(--ink-3); }
+  .facts span b { color: var(--verm); font-weight: 600; }
+</style>
+</head>
+<body>
+<div class="shell">
+<header class="mast">
+    <div>
+      <h1>kayak<span>-</span>analyzer</h1>
+      <div class="sub">field sheet · static hydrostatics · one solved run</div>
+    </div>
+    <div class="r">
+      <b>kayak.stl · watertight</b>
+      2 714.4 × 613.1 × 325.1 mm<br>
+      2026-11-23 · sweep ±4.5° · fine 0.1°
+    </div>
+  </header>
+
+  <div class="strip">
+    <div><span class="k">Weight</span><span class="v num">75.0<small>kg</small></span></div>
+    <div><span class="k">LCG from bow</span><span class="v num">52.0<small>%</small></span></div>
+    <div><span class="k">KG above keel</span><span class="v num">280<small>mm</small></span></div>
+    <div><span class="k">Heel</span><span class="v num">0<small>deg</small></span></div>
+    <div><span class="k">Displacement</span><span class="v num">75.0<small>kg</small></span></div>
+  </div>
+
+  <div class="main">
+    <section class="ledger">
+      <div class="hd">The answers</div>
+      <div class="led">
+        <div class="col"><span class="k">Draft</span><span class="note">waterline at midship, keel at 0</span></div>
+        <span class="v num">94.0<small>mm</small></span>
+      </div>
+      <div class="led verm">
+        <div class="col"><span class="k">Trim</span><span class="note">positive is bow up</span></div>
+        <span class="v num">+3.60<small>°</small></span>
+      </div>
+      <div class="led">
+        <div class="col"><span class="k">GM</span><span class="note">KG 280 under KM 402</span></div>
+        <span class="v num">+122<small>mm</small></span>
+      </div>
+      <div class="led">
+        <div class="col"><span class="k">LCB–LCG</span><span class="note">residual of the 0.1° fine sweep</span></div>
+        <span class="v num">1.68<small>mm</small></span>
+      </div>
+      <div class="led">
+        <div class="col"><span class="k">Bow freeboard</span><span class="note">stern sits at 22.3 mm</span></div>
+        <span class="v num">222.2<small>mm</small></span>
+      </div>
+    </section>
+
+    <section class="draw">
+      <div class="hd"><span>Side elevation</span><span>Z-up · bow +X</span></div>
+      <div class="stage">
+        <svg viewBox="0 0 900 300" width="100%" height="100%" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Hull side elevation">
+          <defs><clipPath id="hullclip-g">
+            <path d="M 60 217 C 180 150 380 136 540 138 C 690 140 790 148 840 159 C 826 186 800 206 762 218 C 700 240 640 248 540 250 C 420 252 240 248 150 234 C 108 228 80 224 60 217 Z"/>
+          </clipPath></defs>
+          <line x1="26" y1="223" x2="874" y2="223" stroke="var(--verm)" stroke-width="2.5"/>
+          <rect x="26" y="223" width="848" height="90" fill="var(--verm)" opacity="0.12" clip-path="url(#hullclip-g)"/>
+          <path d="M 60 217 C 180 150 380 136 540 138 C 690 140 790 148 840 159 C 826 186 800 206 762 218 C 700 240 640 248 540 250 C 420 252 240 248 150 234 C 108 228 80 224 60 217 Z"
+                fill="none" stroke="var(--ink)" stroke-width="3" stroke-linejoin="round"/>
+          <line x1="828" y1="223" x2="828" y2="250" stroke="var(--ink)" stroke-width="2"/>
+          <line x1="820" y1="223" x2="836" y2="223" stroke="var(--ink)" stroke-width="2"/>
+          <line x1="820" y1="250" x2="836" y2="250" stroke="var(--ink)" stroke-width="2"/>
+          <text x="856" y="240" font-family="ui-monospace,monospace" font-size="12" font-weight="700" fill="var(--ink)">94.0</text>
+          <text x="854" y="150" font-family="var(--sans)" font-size="13" font-weight="800" fill="var(--ink)" text-anchor="end">BOW</text>
+          <text x="54" y="205" font-family="var(--sans)" font-size="13" font-weight="800" fill="var(--ink)" text-anchor="end">STERN</text>
+          <text x="450" y="290" font-family="var(--sans)" font-size="10" font-weight="700" letter-spacing="3" fill="var(--ink-3)" text-anchor="middle">TRIM +3.60° BOW UP · STERN FREEBOARD 22.3 MM</text>
+        </svg>
+      </div>
+      <div class="dims">
+        <div><span class="k">LOA</span><span class="v">2 714.4 mm</span></div>
+        <div><span class="k">Beam</span><span class="v">613.1 mm</span></div>
+        <div><span class="k">Depth</span><span class="v">325.1 mm</span></div>
+        <div><span class="k">LWL / BWL</span><span class="v">2 384 / 489 mm</span></div>
+      </div>
+    </section>
+  </div>
+<div class="bottom">
+    <section class="gz">
+      <div class="hd"><span>Righting arm GZ</span><span>end-tip immersion 41° · AVS 62°</span></div>
+      <svg viewBox="0 0 600 118" width="100%" height="86" preserveAspectRatio="xMidYMid meet" role="img" aria-label="GZ righting arm curve">
+        <line x1="20" y1="60" x2="580" y2="60" stroke="var(--ink-3)" stroke-width="1"/>
+        <line x1="437" y1="10" x2="437" y2="108" stroke="var(--moss)" stroke-width="1.5" stroke-dasharray="4 4"/>
+        <text x="443" y="20" font-family="ui-monospace,monospace" font-size="10" fill="var(--moss)">AVS 62°</text>
+        <path d="M20 60 L95 50 L170 40 L245 31 L300 25 L353 22 L405 26 L460 34 L500 46 L520 60 L560 76 L580 86"
+              fill="none" stroke="var(--verm)" stroke-width="3" stroke-linejoin="round"/>
+        <circle cx="353" cy="22" r="4" fill="var(--verm)"/>
+        <text x="353" y="14" font-family="ui-monospace,monospace" font-size="10" font-weight="700" fill="var(--ink)" text-anchor="middle">61 mm @ 38°</text>
+        <g font-family="ui-monospace,monospace" font-size="9" fill="var(--ink-3)" text-anchor="middle">
+          <text x="20" y="114">0</text><text x="160" y="114">20</text><text x="300" y="114">40</text><text x="440" y="114">60</text><text x="580" y="114">80</text>
+        </g>
+      </svg>
+    </section>
+    <section class="facts">
+      <div class="hd"><span>Flotation · form · stability</span><span>the fine print</span></div>
+      <span>waterplane <i>0.412 m²</i></span>
+      <span>TPC <i>0.0042</i></span>
+      <span>wetted <i>1.842e6 mm²</i></span>
+      <span>displacement <i>75.0 kg</i></span>
+      <span>Cb <i>0.4721</i></span>
+      <span>Cp <i>0.5813</i></span>
+      <span>Cm <i>0.8120</i></span>
+      <span>Cwp <i>0.6394</i></span>
+      <span>KB <i>58 mm</i></span>
+      <span>BM <i>344 mm</i></span>
+      <span>KM <i>402 mm</i></span>
+      <span>KG <i>280 mm</i></span>
+      <span>LCB–LCG <i><b>1.68 mm</b></i></span>
+      <span>GM <i><b>+122 mm</b></i></span>
+      <span>GZ max <i>61 mm @ 38°</i></span>
+      <span>AVS <i>62°</i></span>
+    </section>
+  </div>
+</div>
+</body>
+</html>

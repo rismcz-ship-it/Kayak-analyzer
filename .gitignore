@@ -1,6 +1,14 @@
 # Hermes agent internals (not part of school project)
 .hermes/
 
+# OpenCode agent internals — same reasoning as .hermes/: these are the
+# agent's own skills, not the project's code.
+.opencode/
+
+# Third-party transcripts kept for reference only (YouTube downloads).
+# They are other people's content and do not belong in this repository.
+docs/kole-jain-transcripts/
+
 # Superpowers plan workspaces (inline-execution scratch, likes .gitkeep-free)
 .superpowers/
 
