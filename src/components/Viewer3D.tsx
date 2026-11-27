@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { BufferAttribute, BufferGeometry, Group, Line, Mesh } from 'three'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
+import { createRecoveryGuard, watchContextLoss } from '../lib/viewer-context'
 import { viewerHeelDeg, viewerTrimDeg } from '../lib/viewer-conventions'
 
 interface Viewer3DProps {
@@ -428,8 +429,16 @@ export default function Viewer3D({
   // A WebGL-less machine (blocklisted driver, WebGL disabled, no GPU) makes the
   // mount pass's renderer construction throw, and an unguarded one took the
   // whole app down with it - so the pass reports it here and the JSX answers
-  // with one line instead of a blank panel.
+  // with one line instead of a blank panel. It now ALSO reports a context loss
+  // that stopped recovering (see `lib/viewer-context.ts`).
   const [glFailed, setGlFailed] = useState(false)
+  // A GL context that dies MID-SESSION (driver restart, TDR) gets no second
+  // chance from that construction guard, so the mount effect is re-run by
+  // bumping this epoch instead: a fresh renderer, a fresh scene, and the pose
+  // re-applied by the mount pass itself.
+  const [contextEpoch, setContextEpoch] = useState(0)
+  // Per-viewer, so a refusal here says nothing about the Compare stage's own.
+  const recoveryRef = useRef(createRecoveryGuard())
 
   // The latest result view, mirrored for the mount pass. The mount pass owns
   // the GL context and therefore depends on the MESH alone, but its initial
@@ -439,7 +448,8 @@ export default function Viewer3D({
   const viewRef = useRef<ViewerView>(EMPTY_VIEW)
   viewRef.current = { waterlineZ, trimDeg, heelDeg, lcg, lcb, pivot }
 
-  // --- Mount pass: once per mesh -------------------------------------------
+  // --- Mount pass: once per mesh, and again if the GL context is lost ------
+  // biome-ignore lint/correctness/useExhaustiveDependencies: contextEpoch is a rebuild trigger the body deliberately never reads - a lost GL context bumps it so React re-runs this whole pass
   useEffect(() => {
     const mount = mountRef.current
     if (!mount) return
@@ -471,6 +481,23 @@ export default function Viewer3D({
 
     const controls = new OrbitControls(camera, renderer.domElement)
     controls.enableDamping = true
+
+    // Registered only once a renderer exists, and removed first in the teardown
+    // below. `preventDefault` (inside the seam) is what keeps the context
+    // restorable; the handler itself just asks for a rebuild.
+    const stopWatching: () => void = watchContextLoss(renderer.domElement, () => {
+      if (!recoveryRef.current.onLoss()) {
+        // Not recovering: stop the loop, drop the dead canvas, and answer with the
+        // one line `glFailed` already renders. The scene is left for the unmount
+        // cleanup, which still runs when the tab goes away.
+        cancelAnimationFrame(raf)
+        stopWatching()
+        if (renderer.domElement.parentNode === mount) mount.removeChild(renderer.domElement)
+        setGlFailed(true)
+        return
+      }
+      setContextEpoch((n) => n + 1)
+    })
 
     // Lights (no shadow casters since shadows are disabled).
     const hemi = new THREE.HemisphereLight(0xffffff, 0x334155, 1.1)
@@ -616,10 +643,14 @@ export default function Viewer3D({
       raf = requestAnimationFrame(loop)
       controls.update()
       renderer.render(scene, camera)
+      // A frame drew, so the last recovery survived: the guard counts losses with
+      // no successful frame between them (see createRecoveryGuard).
+      recoveryRef.current.onFrame()
     }
     loop()
 
     return () => {
+      stopWatching()
       cancelAnimationFrame(raf)
       ro.disconnect()
       controls.dispose()
@@ -651,7 +682,9 @@ export default function Viewer3D({
       }
       refsRef.current = null
     }
-  }, [geometry])
+    // [geometry, contextEpoch]: the mesh owns the first build; a lost GL context
+    // bumps the epoch and rebuilds the whole stage from scratch.
+  }, [geometry, contextEpoch])
 
   // --- Update pass: per result ---------------------------------------------
   useEffect(() => {

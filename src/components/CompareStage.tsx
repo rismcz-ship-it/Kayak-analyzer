@@ -3,6 +3,7 @@ import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { fmt } from '../lib/format'
 import type { TrimSolveResult } from '../lib/hydrostatics'
+import { createRecoveryGuard, watchContextLoss } from '../lib/viewer-context'
 import type { LoadedMesh } from './Upload'
 import {
   applySharedWaterSurface,
@@ -132,7 +133,16 @@ export default function CompareStage({
   // A WebGL-less machine (blocklisted driver, WebGL disabled, no GPU) makes the
   // construction below throw, and an unguarded one left this stage entirely
   // blank - so the mount pass reports it here and the JSX answers in one line.
+  // It now ALSO reports a context loss that stopped recovering (see
+  // `lib/viewer-context.ts`).
   const [glFailed, setGlFailed] = useState(false)
+  // A GL context that dies MID-SESSION (driver restart, TDR) gets no second
+  // chance from that construction guard, so the mount effect is re-run by
+  // bumping this epoch instead: a fresh renderer, a fresh scene, and the slots
+  // and pose rebuilt into it by the effects below.
+  const [contextEpoch, setContextEpoch] = useState(0)
+  // Per-viewer, so a refusal here says nothing about the Analyze viewer's own.
+  const recoveryRef = useRef(createRecoveryGuard())
   const sceneRef = useRef<{
     scene: THREE.Scene
     camera: THREE.PerspectiveCamera
@@ -184,6 +194,7 @@ export default function CompareStage({
   }, [])
 
   // --- Mount pass: the context and the water plane, once ---------------------
+  // biome-ignore lint/correctness/useExhaustiveDependencies: contextEpoch is a rebuild trigger, not a value this body reads
   useEffect(() => {
     const mount = mountRef.current
     if (!mount) return
@@ -207,6 +218,23 @@ export default function CompareStage({
 
     const controls = new OrbitControls(camera, renderer.domElement)
     controls.enableDamping = true
+
+    // Registered only once a renderer exists, and removed first in the teardown
+    // below. `preventDefault` (inside the seam) is what keeps the context
+    // restorable; the handler itself just asks for a rebuild.
+    const stopWatching: () => void = watchContextLoss(renderer.domElement, () => {
+      if (!recoveryRef.current.onLoss()) {
+        // Not recovering: stop the loop, drop the dead canvas, and answer with the
+        // one line `glFailed` already renders. The scene is left for the unmount
+        // cleanup, which still runs when the tab goes away.
+        cancelAnimationFrame(raf)
+        stopWatching()
+        if (renderer.domElement.parentNode === mount) mount.removeChild(renderer.domElement)
+        setGlFailed(true)
+        return
+      }
+      setContextEpoch((n) => n + 1)
+    })
 
     // The same two lights the single viewer uses. The hull materials are flat
     // (`MeshBasicMaterial` in `makeSlotScene`), so lighting does not touch the
@@ -275,10 +303,14 @@ export default function CompareStage({
       raf = requestAnimationFrame(loop)
       controls.update()
       renderer.render(scene, camera)
+      // A frame drew, so the last recovery survived: the guard counts losses with
+      // no successful frame between them (see createRecoveryGuard).
+      recoveryRef.current.onFrame()
     }
     loop()
 
     return () => {
+      stopWatching()
       cancelAnimationFrame(raf)
       ro.disconnect()
       controls.dispose()
@@ -304,9 +336,12 @@ export default function CompareStage({
       }
       sceneRef.current = null
     }
-  }, [])
+    // The epoch is a rebuild trigger: a lost GL context bumps it, so React tears
+    // this scene down and builds a new one in the same effect.
+  }, [contextEpoch])
 
   // --- Slot build: whenever either slot's mesh changes -----------------------
+  // biome-ignore lint/correctness/useExhaustiveDependencies: contextEpoch is a rebuild trigger, not a value this body reads
   useEffect(() => {
     const built = sceneRef.current
     if (!built) return
@@ -329,9 +364,12 @@ export default function CompareStage({
     }
 
     fitView()
-  }, [entries, fitView])
+    // A context loss retires every slot in the mount teardown above, so the
+    // epoch re-runs this pass and the hulls come back into the NEW scene.
+  }, [entries, fitView, contextEpoch])
 
   // --- Pose + shared waterline: per result -----------------------------------
+  // biome-ignore lint/correctness/useExhaustiveDependencies: contextEpoch is a rebuild trigger, not a value this body reads
   useEffect(() => {
     const built = sceneRef.current
     if (!built) return
@@ -381,7 +419,9 @@ export default function CompareStage({
       built.floor.position.set(floorCentre.x, floorCentre.y, floorUnion.min.z)
       built.floor.scale.setScalar(Math.max(floorSize.x, floorSize.y, 1) * FLOOR_SPAN_FACTOR)
     }
-  }, [entries, resultA, resultB])
+    // The pose, the shared water surface and the floor all describe the NEW
+    // scene's hulls after a rebuild, so the epoch belongs here too.
+  }, [entries, resultA, resultB, contextEpoch])
 
   const dimsA = dimensionsOf(meshA)
   const dimsB = dimensionsOf(meshB)
