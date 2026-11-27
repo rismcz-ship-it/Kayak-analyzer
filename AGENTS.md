@@ -150,7 +150,10 @@ references/                   five target schemas for saved runs; no producer in
 `.opencode/skills/` is **not** built, **not** shipped and **not** covered by
 Biome or the typecheck. The skill packs are upstream content: the `threejs-*` ones are by
 OpenAEC-Foundation, `naval-architect` by K-Dense. Do not treat them as application code, and
-do not "fix" their contents to match this repo.
+do not "fix" their contents to match this repo. Only these project-scoped packs are tracked;
+the agent's general-purpose packs (`frontend-design`, `unslop`) are ignored **by name** in
+`.gitignore` — never by the directory, which would silently ignore a new project-scoped pack
+the first time it landed there.
 
 ## Keep it simple
 
