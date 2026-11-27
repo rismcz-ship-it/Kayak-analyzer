@@ -200,8 +200,13 @@ function foreignPose(slot: SlotState, record: RunRecord | null): boolean {
  * yet (the ~300 ms debounce, and the frame before the solver even starts).
  * The test is the LIVE answer's own conditions against the slot's current
  * ones - never the numbers being typed into, which are the slot's `inputs`.
+ *
+ * Exported for the display suite: it drives real slot states through this and
+ * renders the note the Difference block then shows, because the join between
+ * the table's flag and the block's note is the thing a pinned string factory
+ * cannot see. Two reads of one flag, not two derivations of it.
  */
-function columnStale(slot: SlotState): boolean {
+export function columnStale(slot: SlotState): boolean {
   return columnIsStale(slot.liveInputs, slot.solving, slot.inputs)
 }
 
@@ -667,7 +672,13 @@ export default function CompareView({
           </div>
 
           {anyResult ? (
-            <CompareDifference a={resultA} b={resultB} conditions={conditions}>
+            <CompareDifference
+              a={resultA}
+              b={resultB}
+              conditions={conditions}
+              staleA={columnA.stale}
+              staleB={columnB.stale}
+            >
               {/*
                 The two righting-arm curves, drawn between the metrics and the
                 sentence that reads them: the numbers say which is bigger, the
