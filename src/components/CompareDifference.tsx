@@ -3,6 +3,7 @@ import {
   barWidth,
   type DifferenceRow,
   differenceRows,
+  differenceStaleNote,
   differenceVerdict,
 } from '../lib/compare-difference'
 import type { TrimSolveResult } from '../lib/hydrostatics'
@@ -23,6 +24,18 @@ interface CompareDifferenceProps {
   b: TrimSolveResult | null
   /** The conditions the two runs differ in; empty when they are comparable. */
   conditions: string[]
+  /**
+   * Each column's answer is out of date with its own conditions - a re-solve
+   * is in flight, or the conditions have moved on and the new solve has not
+   * answered yet. That column's bars and curve on screen then belong to its
+   * last completed solve, not to what is in the fields now, so the block says
+   * which column is behind rather than presenting its numbers as current. The
+   * same `columnIsStale` the table's "(re-solving)" header reads, computed by
+   * the caller and passed down - never re-derived here, so the two markers
+   * cannot disagree.
+   */
+  staleA: boolean
+  staleB: boolean
   /**
    * Drawn between the metrics and the sentence that reads them - the two
    * righting-arm curves, which are the shape behind these numbers.
@@ -74,10 +87,22 @@ function Row({ row }: { row: DifferenceRow }) {
   )
 }
 
-export default function CompareDifference({ a, b, conditions, children }: CompareDifferenceProps) {
+export default function CompareDifference({
+  a,
+  b,
+  conditions,
+  staleA,
+  staleB,
+  children,
+}: CompareDifferenceProps) {
   const rows = differenceRows(a, b)
   const verdict = differenceVerdict(a, b)
+  // Two answers on screen is what draws the A − B heading, the delta column
+  // and the verdict sentence, so it is also what widens the stale note's
+  // scope: a stale column beside an EMPTY slot has no delta and no verdict
+  // below it to claim.
   const both = a !== null && b !== null
+  const staleNote = differenceStaleNote(staleA, staleB, both)
 
   return (
     <div className="mt-4">
@@ -86,6 +111,31 @@ export default function CompareDifference({ a, b, conditions, children }: Compar
         <span className="flex-1" />
         {both && <span className="text-[11px] text-ink-3">A − B</span>}
       </div>
+
+      {/*
+        Under the heading rather than beside it, and above the dimmed rows: it
+        qualifies the numbers below it, and the heading is the one place they
+        all sit under.
+
+        MOUNTED ALWAYS, with the styling applied only when there is a note to
+        style: a live region is announced for what CHANGES inside it, so one
+        inserted together with its first text - the slot's own solving line
+        does exactly that - is not reliably announced. An empty note leaves
+        this node in place with no classes and no children, which is a
+        zero-height box (the preflight resets the paragraph's margins), so the
+        persistent region costs nothing on screen. This is the one disclosure
+        that has to reach a screen-reader user mid-edit.
+      */}
+      <p
+        role="status"
+        className={
+          staleNote
+            ? 'mb-2 rounded-lg border border-warn/30 bg-warn/10 px-2 py-1 text-[11px] leading-snug text-warn'
+            : ''
+        }
+      >
+        {staleNote}
+      </p>
 
       <div className={both ? '' : 'opacity-40'}>
         {rows.map((row) => (

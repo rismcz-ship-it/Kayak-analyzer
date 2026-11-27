@@ -1,5 +1,6 @@
-// The Compare display seams: the angle-of-vanishing-stability cell and the
-// overlay caption (`src/lib/compare.ts`).
+// The Compare display seams: the angle-of-vanishing-stability cell, the
+// overlay caption (`src/lib/compare.ts`) and the Difference block's stale note
+// (`src/lib/compare-difference.ts`, rendered by `CompareDifference`).
 //
 // Both are pure TEXT that the table and the overlay render, and both were
 // wrong in ways a browser check would not catch:
@@ -41,8 +42,27 @@
 //      answer. `displayedName` / `displayedModelHash` own that rule for the
 //      columns, the panel and the export, and section 3 pins it.
 //
+//   6. And the Difference block read the same lie in a whole sentence: its
+//      bars, its two GZ curves, its A - B delta column and its verdict ("A
+//      floats stiffer", "36.6 mm more initial stability") come from the two
+//      answers on screen, which during every edit belong to a solve that has
+//      already finished. The table's header said "(re-solving)" over those
+//      very numbers while the block ahead of them presented them as the
+//      current comparison, so the block now names the column that is behind
+//      (`differenceStaleNote`, section 4). What the note CLAIMS follows what
+//      else is on screen: one column behind does not mean the other slot is
+//      empty, and with a second answer displayed the delta column and the
+//      verdict are drawn from the pair - so the note has to claim them, and
+//      to say they mix. Section 5 renders the real block, drives the flag the
+//      table reads (`columnStale`) through it, and reads the call site,
+//      because pinning a string factory proves nothing about the wiring that
+//      puts it on screen: with the props deleted, or both wired to the same
+//      column, every string check here still passes.
+//
 // Run: npm.cmd exec -- tsx tests/verify-compare-display.ts
 
+import { readFileSync } from 'node:fs'
+import * as React from 'react'
 import {
   avsCellText,
   compareOverlayCaption,
@@ -51,8 +71,9 @@ import {
   poseIsForeign,
   recordConditionLabel,
 } from '../src/lib/compare.js'
+import { differenceStaleNote } from '../src/lib/compare-difference.js'
 import { gzMarks } from '../src/lib/gz-marks.js'
-import type { GZPoint } from '../src/lib/hydrostatics.js'
+import type { GZPoint, TrimSolveResult } from '../src/lib/hydrostatics.js'
 import { SHA256_HEX_PATTERN } from '../src/lib/model-hash.js'
 
 let failures = 0
@@ -489,6 +510,404 @@ console.log('\n=== the displayed name is the hull the numbers describe ===')
     'two runs of one hull differ in their label',
   )
 }
+
+// --- 4. the Difference block's stale note -------------------------------------
+
+console.log('\n=== the Difference block names the column that is behind ===')
+
+{
+  // The block's bars, its two righting-arm curves, its delta column and its
+  // verdict sentence are all derived from the two answers on screen, and while
+  // a column is stale those belong to its LAST COMPLETED solve:
+  // `columnIsStale` is true from the first keystroke until the new answer
+  // lands (the ~300 ms debounce, then the sweep). For roughly a second per
+  // edit the delta column and "A floats stiffer" were that comparison
+  // presented as the current one, with nothing on screen saying so - the
+  // table's header had said "(re-solving)" over the very same numbers. The
+  // note is the block's own version of that, and the wording is pinned here so
+  // a bare "show the note whenever the solve is running" cannot drop the
+  // column it names, or the scope it covers. That scope is what else is on
+  // screen: with the other slot empty the block draws the stale column's own
+  // bars and curve and nothing else, while with two answers displayed it also
+  // draws the delta column and the verdict, both computed from the stale
+  // column's numbers - so the one-sided wording is pinned in BOTH shapes.
+  const note = differenceStaleNote
+
+  check(note(false, false, false) === null, 'no stale column: no note at all')
+  check(note(false, false, true) === null, 'no stale column: none with two results either')
+
+  // One column behind, the OTHER SLOT EMPTY. The block then draws only the
+  // stale column's own numbers: `differenceVerdict` is null without both
+  // results and the block hides its `A - B` heading, so there is no delta
+  // column and no verdict on screen to claim.
+  const onlyA = note(true, false, false)
+  check(onlyA !== null, 'A stale, B empty: a note appears')
+  check(onlyA?.includes('A is re-solving') === true, 'A stale, B empty: A is named', onlyA ?? '')
+  check(
+    onlyA?.includes('B') !== true,
+    'A stale, B empty: B is not named - nothing of its is on screen',
+    onlyA ?? '',
+  )
+  check(
+    onlyA?.includes('A and B') !== true,
+    'A stale, B empty: not the both-columns wording',
+    onlyA ?? '',
+  )
+
+  const onlyB = note(false, true, false)
+  check(onlyB?.includes('B is re-solving') === true, 'B stale, A empty: B is named', onlyB ?? '')
+  check(onlyB?.includes('A') !== true, 'B stale, A empty: A is not named', onlyB ?? '')
+  check(
+    onlyB?.includes('A and B') !== true,
+    'B stale, A empty: not the both-columns wording',
+    onlyB ?? '',
+  )
+
+  // One column behind, the OTHER SIDE HOLDING AN ANSWER - the common
+  // comparison: edit a condition in slot A while slot B holds a solve. Both
+  // answers are on screen, so the block draws the delta column and the
+  // verdict sentence, and BOTH are computed from the stale column's numbers.
+  // The narrowing wording - "the other side is current, and with the other
+  // slot empty there is nothing else on screen to claim" - is false exactly
+  // here, and it left the delta column and the verdict, the two artifacts
+  // that visibly change when the new solve lands, reading as the current
+  // comparison. The note now claims them, and says they MIX.
+  const mixedA = note(true, false, true)
+  check(mixedA !== null, 'A stale beside B: a note appears')
+  check(mixedA?.includes('A is re-solving') === true, 'A stale beside B: A is named', mixedA ?? '')
+  check(
+    mixedA?.includes("B's current answer") === true,
+    'A stale beside B: the other column is named as current',
+    mixedA ?? '',
+  )
+  check(
+    mixedA?.includes('delta') === true,
+    'A stale beside B: the delta column is claimed',
+    mixedA ?? '',
+  )
+  check(
+    mixedA?.includes('verdict') === true,
+    'A stale beside B: the verdict is claimed',
+    mixedA ?? '',
+  )
+  check(
+    mixedA?.includes('mix') === true,
+    'A stale beside B: the mixing is said, not implied',
+    mixedA ?? '',
+  )
+
+  const mixedB = note(false, true, true)
+  check(mixedB?.includes('B is re-solving') === true, 'B stale beside A: B is named', mixedB ?? '')
+  check(
+    mixedB?.includes("A's current answer") === true,
+    'B stale beside A: the other column is named as current',
+    mixedB ?? '',
+  )
+
+  const both = note(true, true, true)
+  check(both?.includes('A and B are re-solving') === true, 'both stale: both are named', both ?? '')
+  check(both?.includes('their') === true, 'both stale: plural possessive', both ?? '')
+
+  // PROVENANCE, not recency. `columnIsStale` has two legs and only one of them
+  // means the numbers are out of date: a value edited and then edited BACK
+  // leaves the answer on screen being the answer to the current conditions
+  // while a solve is still in flight, so "previous answers" would be a lie in
+  // that window. "Last completed solve" is true of every case the flag
+  // covers, because `live` is only ever written by a solve that finished.
+  for (const [label, text] of [
+    ['A', onlyA],
+    ['B', onlyB],
+    ['A beside B', mixedA],
+    ['B beside A', mixedB],
+    ['both', both],
+  ] as const) {
+    check(
+      text?.includes('last completed solve') === true,
+      `${label}: the numbers are attributed to the solve that produced them`,
+      text ?? '',
+    )
+    check(
+      text?.includes('previous answer') !== true,
+      `${label}: it does not claim the numbers are old - they may be current`,
+      text ?? '',
+    )
+  }
+
+  // SCOPE. What the note claims is what the block draws beside the stale
+  // column, so the one-sided wording is TWO cases, not one: with the other
+  // slot empty the block draws that column's own bars and curve and nothing
+  // else, while with two answers on screen it also draws the delta column and
+  // the verdict - and both are computed from the stale column's numbers.
+  for (const [label, text] of [
+    ['A', onlyA],
+    ['B', onlyB],
+  ] as const) {
+    check(text?.includes('its ') === true, `${label}: the scope is that column's own`, text ?? '')
+    check(text?.includes('their') !== true, `${label}: not the both-columns possessive`, text ?? '')
+    check(text?.includes('bars') === true, `${label}: the bars are in scope`, text ?? '')
+    check(text?.includes('curve') === true, `${label}: that column's curve is in scope`, text ?? '')
+    check(
+      text?.includes('curves') !== true,
+      `${label}: it claims no second curve - one is on screen`,
+      text ?? '',
+    )
+    check(
+      text?.includes('delta') !== true,
+      `${label}: no delta column with the other slot empty`,
+      text ?? '',
+    )
+    check(
+      text?.includes('verdict') !== true,
+      `${label}: no verdict with the other slot empty`,
+      text ?? '',
+    )
+  }
+  for (const [label, text] of [
+    ['A beside B', mixedA],
+    ['B beside A', mixedB],
+  ] as const) {
+    check(
+      text?.includes('its ') === true,
+      `${label}: the scope opens with that column's own`,
+      text ?? '',
+    )
+    check(text?.includes('their') !== true, `${label}: not the both-columns possessive`, text ?? '')
+    check(text?.includes('bars') === true, `${label}: the bars are in scope`, text ?? '')
+    check(text?.includes('curve') === true, `${label}: that column's curve is in scope`, text ?? '')
+    check(
+      text?.includes('curves') !== true,
+      `${label}: it claims no second curve of its - one is on screen`,
+      text ?? '',
+    )
+    check(text?.includes('delta') === true, `${label}: the delta column is in scope`, text ?? '')
+    check(text?.includes('verdict') === true, `${label}: the verdict is in scope`, text ?? '')
+  }
+
+  check(
+    both?.includes('bars, curves, delta and verdict') === true,
+    'both: all four are in scope',
+    both ?? '',
+  )
+  check(
+    mixedA?.includes(' — ') === true,
+    'the separator is the em dash the verdict sentence uses',
+    mixedA ?? '',
+  )
+  check(onlyA?.includes(' — ') === true, 'the same separator in the one-sided wording', onlyA ?? '')
+}
+
+// --- 5. the wiring: the block renders it, and the caller passes the flags -----
+
+console.log('\n=== the note reaches the screen, and the flags are the ones the table reads ===')
+
+// A pinned string factory proves nothing about the wiring. Delete the props,
+// or wire both to the same column, and every string check in section 4 still
+// passes - which is exactly the regression this change exists to prevent. So
+// render the real block, then read the real call site - and this time drive
+// the block with the flag the table actually reads, computed by `columnStale`
+// over real slot states, so the join between the two is exercised at runtime
+// rather than inferred from source text.
+//
+// tsx compiles the src components with the CLASSIC JSX transform, which emits
+// `React.createElement`, so the imported component module looks for a global
+// `React` when it is evaluated. It has to exist before that, hence the
+// dynamic imports rather than top-level ones. `CompareDifference` pulls in
+// `Viewer3D` for `SLOT_COLORS`, and three loads fine in Node as long as
+// nothing calls into a renderer - nothing here does. `CompareView` loads the
+// same way; importing it costs the rest of the Compare module graph (the
+// panels, the stage, the chart) and touches no browser global at import time.
+;(globalThis as { React?: unknown }).React = React
+const { renderToStaticMarkup } = await import('react-dom/server')
+const { default: CompareDifference } = await import('../src/components/CompareDifference.js')
+const { columnStale } = await import('../src/components/CompareView.js')
+
+// Stand-in runs. Only the fields the block reads are filled in: the six bars
+// pick draft/trim/GM/GZ-peak/AVS/LWL, and the verdict sentence reads GM, draft
+// and displacement. Nothing the note describes reads anything else.
+const staleResult = {
+  trimDeg: 1.2,
+  draftMm: 128,
+  displacementKg: 75,
+  GM: 107,
+  LWL: 2212,
+  gzCurve: [
+    { heelDeg: 0, GZ: 0 },
+    { heelDeg: 5, GZ: 8.9 },
+    { heelDeg: 45, GZ: -9.6 },
+  ],
+} as unknown as TrimSolveResult
+
+// The OTHER column's answer, current: different enough for the verdict to
+// have something to say, so "the verdict sentence really is on screen" is a
+// claim about the rendered markup rather than about an empty box.
+const liveResult = {
+  ...staleResult,
+  draftMm: 120,
+  displacementKg: 70,
+  GM: 130,
+} as unknown as TrimSolveResult
+
+const renderBlock = (
+  staleA: boolean,
+  staleB: boolean,
+  a: TrimSolveResult,
+  b: TrimSolveResult | null,
+) =>
+  renderToStaticMarkup(
+    React.createElement(CompareDifference, {
+      a,
+      b,
+      conditions: [],
+      staleA,
+      staleB,
+    }),
+  )
+
+const cleanMarkup = renderBlock(false, false, staleResult, null)
+check(cleanMarkup.includes('re-solving') !== true, 'rendered: nothing said when nothing is stale')
+// The live region is mounted permanently, not with its first text: a region
+// inserted together with its content is not reliably announced, and this is
+// the disclosure that has to reach a screen-reader user mid-edit. An empty
+// note therefore leaves an EMPTY region behind, with no styling to show.
+check(cleanMarkup.includes('role="status"') === true, 'rendered: the live region is always mounted')
+check(/<p role="status"[^>]*><\/p>/.test(cleanMarkup), 'rendered: the empty region holds no text')
+check(cleanMarkup.includes('border-warn') !== true, 'rendered: an empty note carries no styling')
+
+const staleMarkup = renderBlock(true, false, staleResult, null)
+check(staleMarkup.includes('A is re-solving') === true, 'rendered: the note reaches the markup')
+check(
+  (staleMarkup.match(/role="status"/g) ?? []).length === 1,
+  'rendered: one note, not one per row',
+)
+check(staleMarkup.includes('border-warn') === true, 'rendered: a note is styled as a warning')
+// Above the dimmed rows, not inside them: it qualifies those numbers, so
+// dimming it with them would dim the disclosure about them.
+check(
+  staleMarkup.indexOf('role="status"') < staleMarkup.indexOf('opacity-40'),
+  'rendered: the note sits outside the dimmed rows it describes',
+)
+check(
+  staleMarkup.includes('delta') !== true,
+  'rendered: with the other slot empty the note claims no delta',
+)
+check(
+  staleMarkup.includes('verdict') !== true,
+  'rendered: with the other slot empty the note claims no verdict',
+)
+// React's static markup escapes the apostrophe into its HTML entity, so the
+// string the DOM sees is not the plain one. The wording itself is pinned
+// unescaped in section 4, once; the checks below read the markup as it is
+// rendered.
+check(
+  staleMarkup.includes('B&#x27;s current answer') !== true,
+  'rendered: with the other slot empty B is not named',
+)
+
+// The one-sided case with the other side HOLDING an answer - the shape the
+// old wording got wrong. The rendered block really does draw the delta column
+// and the verdict sentence in this state, both computed from the stale
+// column's numbers, so the note has to claim them; naming them as absent
+// here would be the same lie the block exists to stop.
+const mixedMarkup = renderBlock(true, false, staleResult, liveResult)
+check(
+  mixedMarkup.includes('A is re-solving') === true,
+  'rendered: a stale column beside a live one still names itself',
+)
+check(mixedMarkup.includes('A − B') === true, 'rendered: the delta column really is on screen')
+check(mixedMarkup.includes('floats stiffer') === true, 'rendered: the verdict really is on screen')
+check(mixedMarkup.includes('delta') === true, 'rendered: the note claims the delta column')
+check(mixedMarkup.includes('verdict') === true, 'rendered: the note claims the verdict')
+
+check(
+  mixedMarkup.includes('B&#x27;s current answer') === true,
+  'rendered: the note says whose answer it is mixed with',
+)
+
+const bMarkup = renderBlock(false, true, liveResult, staleResult)
+check(bMarkup.includes('B is re-solving') === true, 'rendered: B naming B')
+check(bMarkup.includes('A is re-solving') !== true, 'rendered: and not A')
+check(
+  bMarkup.includes('A&#x27;s current answer') === true,
+  'rendered: the mirrored mixed case names A as current',
+)
+
+const bothMarkup = renderBlock(true, true, staleResult, liveResult)
+check(bothMarkup.includes('A and B are re-solving') === true, 'rendered: both stale names both')
+check(
+  bothMarkup.includes('bars, curves, delta and verdict') === true,
+  'rendered: the both-case claims the delta and the verdict too',
+)
+
+// The join the regexes below cannot see. The flags the table reads are
+// `columnStale`'s, computed once in `columnA` / `columnB`; the note is
+// rendered from those two values and nothing else. Slot A has answered at
+// 75 kg and its weight field now reads 90 (the edit); slot B has answered at
+// the conditions it shows.
+const inputs75 = { weightKg: 75, lcgPctLwl: 52, kgMm: 280, heelDeg: 0 }
+const inputs80 = { weightKg: 80, lcgPctLwl: 52, kgMm: 280, heelDeg: 0 }
+const inputs90 = { weightKg: 90, lcgPctLwl: 52, kgMm: 280, heelDeg: 0 }
+const slotA = {
+  recordId: null,
+  mesh: null,
+  inputs: inputs90,
+  live: staleResult,
+  liveInputs: inputs75,
+  solving: false,
+  progress: null,
+  error: null,
+  pickSeq: 0,
+}
+const slotB = {
+  recordId: null,
+  mesh: null,
+  inputs: inputs80,
+  live: liveResult,
+  liveInputs: inputs80,
+  solving: false,
+  progress: null,
+  error: null,
+  pickSeq: 0,
+}
+check(columnStale(slotA) === true, 'columnStale: an edited column is behind')
+check(columnStale(slotB) === false, 'columnStale: an unedited column is current')
+// The in-flight leg: a solve running with the fields UNCHANGED still marks
+// the column, and the note still says its numbers are the last completed
+// solve's - true there too, and the reason the wording is provenance rather
+// than recency.
+check(columnStale({ ...slotB, solving: true }) === true, 'columnStale: an in-flight solve is stale')
+// A slot with no live answer at all is never stale: `columnIsStale` reads
+// false without one, so a record snapshot on screen carries no marker.
+check(
+  columnStale({ ...slotB, live: null, liveInputs: null }) === false,
+  'columnStale: a record snapshot with no live answer is not stale',
+)
+const wiredMarkup = renderBlock(columnStale(slotA), columnStale(slotB), staleResult, liveResult)
+check(
+  wiredMarkup.includes('B&#x27;s current answer') === true,
+  "rendered: the table's own flags produce the mixed-case note",
+)
+check(wiredMarkup.includes('A is re-solving') === true, 'rendered: and name the edited column')
+
+// The call site: the block is handed the same `columnIsStale` the table header
+// reads, computed once in `columnA` / `columnB` and never re-derived here.
+const viewSource = new TextDecoder().decode(
+  readFileSync(new URL('../src/components/CompareView.tsx', import.meta.url)),
+)
+check(/staleA=\{columnA\.stale\}/.test(viewSource), 'the call site passes column A staleness')
+check(/staleB=\{columnB\.stale\}/.test(viewSource), 'the call site passes column B staleness')
+check(
+  (viewSource.match(/staleA=\{/g) ?? []).length === 1 &&
+    (viewSource.match(/staleB=\{/g) ?? []).length === 1,
+  'the call site passes each flag exactly once',
+)
+
+const blockSource = new TextDecoder().decode(
+  readFileSync(new URL('../src/components/CompareDifference.tsx', import.meta.url)),
+)
+check(
+  /const staleNote = differenceStaleNote\(staleA, staleB, both\)/.test(blockSource),
+  'the block derives the note from its two props and what is on screen',
+)
 
 console.log(
   failures === 0 ? '\nALL DISPLAY CHECKS PASSED' : `\n${failures} DISPLAY CHECK(S) FAILED`,

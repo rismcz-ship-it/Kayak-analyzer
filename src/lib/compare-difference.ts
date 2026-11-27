@@ -159,6 +159,69 @@ export function differenceRows(
 }
 
 /**
+ * The one line the Difference block shows while a column is re-solving.
+ *
+ * Everything the block draws below its heading - the six bars, the two
+ * righting-arm curves the caller passes in, the A − B delta column and the
+ * verdict sentence that reads the numbers - comes from the two answers on
+ * screen, and while a column is stale those are its LAST COMPLETED solve's,
+ * never the answer to whatever is in the fields right now. `columnIsStale` is
+ * true from the first keystroke until the new answer lands (the ~300 ms
+ * debounce, then the sweep), so saying nothing lets the delta column and
+ * "A floats stiffer" read as today's comparison. The block therefore names the
+ * column that is behind and says where its numbers come from.
+ *
+ * Provenance, not "out of date": staleness has two legs and only one of them
+ * means the numbers are stale. An edit moves the conditions
+ * (`!sameSlotInputs`), but `columnIsStale` is also true while a solve is
+ * merely IN FLIGHT - and a value edited and then edited back leaves the answer
+ * on screen being the answer to the current conditions. "Previous answers"
+ * would be a lie in that window, while "the last completed solve" is true in
+ * every case the flag covers: `live` is only ever written by a solve that
+ * finished.
+ *
+ * What the note CLAIMS depends on what else is on screen, which is why it
+ * takes `bothResults`: one column behind does not mean the other slot is
+ * empty. Editing A's conditions while slot B holds a solve - the common
+ * comparison - leaves both answers displayed, and the block then draws the
+ * delta column and the verdict sentence too (`differenceVerdict` is null
+ * without both results, and the block hides its `A − B` heading without
+ * them). Both are computed from the stale column's numbers, so the one-sided
+ * wording has to claim them: they MIX its last completed solve with the other
+ * column's current answer. Only when the other slot really is empty is there
+ * no delta and no verdict on screen, and the one-sided wording stops at that
+ * column's own bars and curve.
+ *
+ * Null when neither column is stale, which is the common case: the block then
+ * shows nothing at all.
+ */
+export function differenceStaleNote(
+  staleA: boolean,
+  staleB: boolean,
+  bothResults: boolean,
+): string | null {
+  if (!staleA && !staleB) return null
+  const both = staleA && staleB
+  const who = both ? 'A and B are' : staleA ? 'A is' : 'B is'
+  // The column that is NOT behind, named in the one-sided mixed wording.
+  const other = staleA ? 'B' : 'A'
+  // The stale column's own numbers, and nothing else: what the block draws
+  // with one answer on screen.
+  const ownScope = both
+    ? 'their bars and curves below are from their last completed solves'
+    : 'its bars and curve below are from its last completed solve'
+  // With two answers on screen the block also draws the delta column and the
+  // verdict, and both are computed from the stale column's numbers - the
+  // artifacts that visibly change when the new solve lands, and the ones the
+  // narrowing wording would have left to read as the current comparison.
+  const mixedScope = both
+    ? 'the bars, curves, delta and verdict below are from their last completed solves'
+    : `its bars and curve, the delta and the verdict below mix its last completed solve with ${other}'s current answer`
+  const scope = bothResults ? mixedScope : ownScope
+  return `${who} re-solving — ${scope}.`
+}
+
+/**
  * The bar's length, as a percentage of the track.
  *
  * Both bars of a row are scaled by the LARGER of the two, so the bigger number
