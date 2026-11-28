@@ -1,9 +1,15 @@
 # Hermes agent internals (not part of school project)
 .hermes/
 
-# OpenCode agent internals — same reasoning as .hermes/: these are the
-# agent's own skills, not the project's code.
-.opencode/
+# OpenCode agent internals — the agent's own GENERAL-purpose skills, not this
+# project's. The project-scoped packs under .opencode/skills/ (threejs-*,
+# computational-geometry, naval-architect) are deliberately tracked and
+# documented in AGENTS.md as vendored third-party content (MIT), so ignore the
+# general packs by name and never the directory: a blanket .opencode/ rule
+# contradicts 61 tracked files, and a future project-scoped pack would be
+# silently ignored the first time it landed here.
+.opencode/skills/frontend-design/
+.opencode/skills/unslop/
 
 # Third-party transcripts kept for reference only (YouTube downloads).
 # They are other people's content and do not belong in this repository.
